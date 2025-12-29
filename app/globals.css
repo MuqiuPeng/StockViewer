@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html,
+body {
+  max-width: 100vw;
+  overflow-x: hidden;
+}
+
+body {
+  background: white;
+}
+
+/* Ensure chart containers align properly */
+.chart-panel .candlestick-chart-container,
+.chart-panel .indicator-chart-container {
+  width: 100%;
+}
+
+/* Force TradingView charts to have consistent layout */
+.chart-panel [data-tv-chart-container] {
+  width: 100% !important;
+}
+
+/* Disable wheel and drag interactions on indicator chart */
+.chart-panel .indicator-chart-container {
+  position: relative;
+}
+
+/* Prevent wheel scrolling on indicator chart - use CSS as additional layer */
+.chart-panel .indicator-chart-disabled {
+  overflow: hidden;
+}
+
+.chart-panel .indicator-chart-disabled canvas {
+  /* Events are handled via JS, but CSS can help prevent default behaviors */
+  touch-action: none;
+}
+
