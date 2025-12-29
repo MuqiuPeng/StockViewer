@@ -84,4 +84,3 @@ npm start
 - **TradingView Lightweight Charts**
 - **PapaParse** (CSV parsing)
 - **Node.js** runtime for API routes
-
