@@ -3,6 +3,8 @@
 import { useState, useEffect } from 'react';
 import ChartPanel from './ChartPanel';
 import IndicatorSelector from './IndicatorSelector';
+import AddStockModal from './AddStockModal';
+import IndicatorManager from './IndicatorManager';
 
 interface DatasetInfo {
   name: string;
@@ -44,6 +46,8 @@ export default function StockDashboard() {
   const [enabledIndicators, setEnabledIndicators] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isAddStockModalOpen, setIsAddStockModalOpen] = useState(false);
+  const [isIndicatorManagerOpen, setIsIndicatorManagerOpen] = useState(false);
 
   // Load datasets list on mount
   useEffect(() => {
@@ -112,6 +116,24 @@ export default function StockDashboard() {
     });
   };
 
+  const refreshDatasets = async () => {
+    try {
+      const res = await fetch('/api/datasets');
+      const data = await res.json();
+      if (!data.error) {
+        setDatasets(data);
+      }
+    } catch (err) {
+      console.error('Failed to refresh datasets:', err);
+    }
+  };
+
+  const handleAddStockSuccess = async (datasetName: string) => {
+    setIsAddStockModalOpen(false);
+    await refreshDatasets();
+    setSelectedDataset(datasetName);
+  };
+
   return (
     <div className="stock-dashboard p-4">
       <h1 className="text-2xl font-bold mb-4">Stock Dashboard</h1>
@@ -126,23 +148,37 @@ export default function StockDashboard() {
         <label htmlFor="dataset-select" className="block text-sm font-medium mb-2">
           Select Dataset:
         </label>
-        <select
-          id="dataset-select"
-          value={selectedDataset}
-          onChange={(e) => setSelectedDataset(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded"
-          disabled={loading || datasets.length === 0}
-        >
-          {datasets.length === 0 ? (
-            <option value="">No datasets available</option>
-          ) : (
-            datasets.map((ds) => (
-              <option key={ds.name} value={ds.name}>
-                {ds.name} ({ds.rowCount} rows)
-              </option>
-            ))
-          )}
-        </select>
+        <div className="flex gap-2">
+          <select
+            id="dataset-select"
+            value={selectedDataset}
+            onChange={(e) => setSelectedDataset(e.target.value)}
+            className="flex-1 px-3 py-2 border border-gray-300 rounded"
+            disabled={loading || datasets.length === 0}
+          >
+            {datasets.length === 0 ? (
+              <option value="">No datasets available</option>
+            ) : (
+              datasets.map((ds) => (
+                <option key={ds.name} value={ds.name}>
+                  {ds.name} ({ds.rowCount} rows)
+                </option>
+              ))
+            )}
+          </select>
+          <button
+            onClick={() => setIsAddStockModalOpen(true)}
+            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500"
+          >
+            + Add Stock
+          </button>
+          <button
+            onClick={() => setIsIndicatorManagerOpen(true)}
+            className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+          >
+            Manage Indicators
+          </button>
+        </div>
       </div>
 
       {loading && (
@@ -169,6 +205,17 @@ export default function StockDashboard() {
           </div>
         </div>
       )}
+
+      <AddStockModal
+        isOpen={isAddStockModalOpen}
+        onClose={() => setIsAddStockModalOpen(false)}
+        onSuccess={handleAddStockSuccess}
+      />
+
+      <IndicatorManager
+        isOpen={isIndicatorManagerOpen}
+        onClose={() => setIsIndicatorManagerOpen(false)}
+      />
     </div>
   );
 }

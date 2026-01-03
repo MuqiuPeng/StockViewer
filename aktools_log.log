@@ -1,0 +1,12 @@
+2026-01-04 06:36:50,311 - AKToolsLog - INFO - 这是一个信息级别的日志消息
+2026-01-04 06:38:51,501 - AKToolsLog - INFO - 未找到该接口，请升级 AKShare 到最新版本并在文档中确认该接口的使用方式：https://akshare.akfamily.xyz
+2026-01-04 06:39:00,816 - AKToolsLog - INFO - 未找到该接口，请升级 AKShare 到最新版本并在文档中确认该接口的使用方式：https://akshare.akfamily.xyz
+2026-01-04 06:40:15,708 - AKToolsLog - INFO - 未找到该接口，请升级 AKShare 到最新版本并在文档中确认该接口的使用方式：https://akshare.akfamily.xyz
+2026-01-04 06:52:34,724 - AKToolsLog - INFO - 获取到 stock_zh_a_spot 的数据
+2026-01-04 06:54:36,097 - AKToolsLog - INFO - 请输入正确的参数错误 'date'，请升级 AKShare 到最新版本并在文档中确认该接口的使用方式：https://akshare.akfamily.xyz
+2026-01-04 06:57:53,865 - AKToolsLog - INFO - 获取到 stock_zh_a_hist 的数据
+2026-01-04 07:00:26,841 - AKToolsLog - INFO - 获取到 stock_zh_a_hist 的数据
+2026-01-04 07:12:57,461 - AKToolsLog - INFO - 获取到 stock_zh_a_hist 的数据
+2026-01-04 07:13:35,560 - AKToolsLog - INFO - 获取到 stock_zh_a_hist 的数据
+2026-01-04 07:16:10,647 - AKToolsLog - INFO - 获取到 stock_zh_a_hist 的数据
+2026-01-04 07:30:51,383 - AKToolsLog - INFO - 获取到 stock_zh_a_hist 的数据
