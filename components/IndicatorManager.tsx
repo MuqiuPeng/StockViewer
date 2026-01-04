@@ -17,9 +17,10 @@ interface Indicator {
 interface IndicatorManagerProps {
   isOpen: boolean;
   onClose: () => void;
+  onRefreshDataset?: () => void;
 }
 
-export default function IndicatorManager({ isOpen, onClose }: IndicatorManagerProps) {
+export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: IndicatorManagerProps) {
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -53,18 +54,52 @@ export default function IndicatorManager({ isOpen, onClose }: IndicatorManagerPr
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete "${name}"?`)) {
-      return;
-    }
-
     try {
-      const response = await fetch(`/api/indicators/${id}`, {
+      // First check if indicator has dependents
+      const checkResponse = await fetch(`/api/indicators/${id}?checkOnly=true`, {
+        method: 'DELETE',
+      });
+      const checkData = await checkResponse.json();
+
+      let shouldDelete = false;
+      let cascade = false;
+
+      if (checkData.hasDependents && checkData.dependents.length > 0) {
+        // Show warning about dependents
+        const dependentNames = checkData.dependents.map((d: any) => d.name).join('\n  • ');
+        const message = `Warning: "${name}" is used by other indicators:\n  • ${dependentNames}\n\nDeleting it will also delete all dependent indicators.\n\nDo you want to proceed?`;
+
+        if (confirm(message)) {
+          shouldDelete = true;
+          cascade = true;
+        }
+      } else {
+        // No dependents, simple confirmation
+        if (confirm(`Are you sure you want to delete "${name}"?`)) {
+          shouldDelete = true;
+        }
+      }
+
+      if (!shouldDelete) {
+        return;
+      }
+
+      // Perform deletion
+      const deleteUrl = `/api/indicators/${id}${cascade ? '?cascade=true' : ''}`;
+      const response = await fetch(deleteUrl, {
         method: 'DELETE',
       });
 
       if (!response.ok) {
         const data = await response.json();
         throw new Error(data.message || 'Failed to delete indicator');
+      }
+
+      const result = await response.json();
+
+      // Show success message
+      if (cascade && result.deletedCount > 1) {
+        alert(`Successfully deleted ${result.deletedCount} indicators:\n  • ${result.deleted.map((d: any) => d.name).join('\n  • ')}`);
       }
 
       await loadIndicators();
@@ -198,6 +233,7 @@ export default function IndicatorManager({ isOpen, onClose }: IndicatorManagerPr
             isOpen={isApplyOpen}
             onClose={handleApplyClose}
             indicatorId={selectedIndicatorId}
+            onSuccess={onRefreshDataset}
           />
         )}
       </div>

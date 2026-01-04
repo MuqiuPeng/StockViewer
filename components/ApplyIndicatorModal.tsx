@@ -6,6 +6,7 @@ interface ApplyIndicatorModalProps {
   isOpen: boolean;
   onClose: () => void;
   indicatorId: string;
+  onSuccess?: () => void;
 }
 
 interface DatasetInfo {
@@ -24,6 +25,7 @@ export default function ApplyIndicatorModal({
   isOpen,
   onClose,
   indicatorId,
+  onSuccess,
 }: ApplyIndicatorModalProps) {
   const [datasets, setDatasets] = useState<DatasetInfo[]>([]);
   const [selectedStocks, setSelectedStocks] = useState<Set<string>>(new Set());
@@ -55,6 +57,10 @@ export default function ApplyIndicatorModal({
         setError(data.message || 'Failed to load datasets');
       } else {
         setDatasets(data || []);
+        // Auto-select all stocks
+        const allStockNames = (data || []).map((ds: DatasetInfo) => ds.name);
+        setApplyToAll(true);
+        setSelectedStocks(new Set(allStockNames));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load datasets');
@@ -114,6 +120,14 @@ export default function ApplyIndicatorModal({
 
       setResults(data.results);
       setProgress({ current: stocksToApply.length, total: stocksToApply.length });
+
+      // Call onSuccess callback if provided and there were successful applications
+      if (onSuccess && data.results) {
+        const hasSuccess = Object.values(data.results).some((r: any) => r.success);
+        if (hasSuccess) {
+          onSuccess();
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error');
     } finally {

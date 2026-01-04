@@ -3,6 +3,10 @@ import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { getCsvDirectory } from '@/lib/datasets';
 import { getDatasetInfo } from '@/lib/csv';
+import { loadIndicators } from '@/lib/indicator-storage';
+import { executePythonIndicator } from '@/lib/python-executor';
+import { addIndicatorColumn } from '@/lib/csv-updater';
+import { topologicalSort } from '@/lib/indicator-dependencies';
 import Papa from 'papaparse';
 
 export const runtime = 'nodejs';
@@ -24,6 +28,7 @@ const COLUMN_MAPPING: Record<string, string> = {
 
 interface RequestBody {
   symbol: string;
+  dataSource?: string;
 }
 
 function validateStockSymbol(symbol: string): boolean {
@@ -50,7 +55,7 @@ function getDateRange(): { startDate: string; endDate: string } {
 export async function POST(request: Request) {
   try {
     const body: RequestBody = await request.json();
-    const { symbol } = body;
+    const { symbol, dataSource = 'stock_zh_a_hist' } = body;
 
     // Validate symbol
     if (!symbol || !validateStockSymbol(symbol)) {
@@ -63,8 +68,16 @@ export async function POST(request: Request) {
     // Get date range
     const { startDate, endDate } = getDateRange();
 
-    // Fetch data from local API
-    const apiUrl = `http://127.0.0.1:8080/api/public/stock_zh_a_hist?symbol=${symbol}&start_date=${startDate}&end_date=${endDate}&adjust=qfq`;
+    // Fetch data from local API based on data source
+    let apiUrl: string;
+    if (dataSource === 'stock_zh_a_hist') {
+      apiUrl = `http://127.0.0.1:8080/api/public/stock_zh_a_hist?symbol=${symbol}&start_date=${startDate}&end_date=${endDate}&adjust=qfq`;
+    } else {
+      return NextResponse.json(
+        { error: 'Invalid data source', message: `Unknown data source: ${dataSource}` },
+        { status: 400 }
+      );
+    }
 
     const response = await fetch(apiUrl);
     if (!response.ok) {
@@ -102,12 +115,76 @@ export async function POST(request: Request) {
     const csvDir = getCsvDirectory();
     await mkdir(csvDir, { recursive: true });
 
-    // Write file
-    const filename = `${symbol}.csv`;
+    // Write file with data source in filename: {symbol}_{dataSource}.csv
+    // For backward compatibility, if dataSource is stock_zh_a_hist, use {symbol}.csv
+    const filename = dataSource === 'stock_zh_a_hist' 
+      ? `${symbol}.csv`
+      : `${symbol}_${dataSource}.csv`;
     const filePath = join(csvDir, filename);
     await writeFile(filePath, csv, 'utf-8');
 
-    // Get dataset info
+    // Automatically apply all indicators
+    try {
+      const indicators = await loadIndicators();
+
+      if (indicators.length > 0) {
+        // Sort indicators by dependencies (topological sort)
+        const sortedIndicators = topologicalSort(indicators);
+        console.log(`Applying ${sortedIndicators.length} indicators to ${symbol} in dependency order...`);
+
+        for (const indicator of sortedIndicators) {
+          try {
+            // Reload CSV data each time to include previously applied indicators
+            const { readFile } = await import('fs/promises');
+            const currentCsvContent = await readFile(filePath, 'utf-8');
+            const parsed = Papa.parse(currentCsvContent, { header: true, skipEmptyLines: true });
+            const currentData = parsed.data as any[];
+
+            // Convert to format expected by Python executor
+            const dataRecords = currentData.map((row: any) => {
+              const record: any = {
+                date: row.date,
+                open: parseFloat(row.open) || 0,
+                high: parseFloat(row.high) || 0,
+                low: parseFloat(row.low) || 0,
+                close: parseFloat(row.close) || 0,
+                volume: parseFloat(row.volume) || 0,
+              };
+              // Include all other columns (previously calculated indicators)
+              for (const key in row) {
+                if (!['date', 'open', 'high', 'low', 'close', 'volume'].includes(key)) {
+                  const value = parseFloat(row[key]);
+                  record[key] = isNaN(value) ? null : value;
+                }
+              }
+              return record;
+            });
+
+            // Execute the indicator
+            const result = await executePythonIndicator({
+              code: indicator.pythonCode,
+              data: dataRecords
+            });
+
+            if (result.success && result.values) {
+              // Add the indicator column to the CSV
+              await addIndicatorColumn(filename, indicator.outputColumn, result.values);
+              console.log(`Applied indicator ${indicator.name} to ${symbol}`);
+            } else {
+              console.warn(`Failed to apply indicator ${indicator.name} to ${symbol}:`, result.error);
+            }
+          } catch (err) {
+            console.error(`Error applying indicator ${indicator.name} to ${symbol}:`, err);
+            // Continue with other indicators even if one fails
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to apply indicators:', err);
+      // Don't fail the whole operation if indicator application fails
+    }
+
+    // Get dataset info (after indicators have been applied)
     const datasetInfo = await getDatasetInfo(filename);
 
     return NextResponse.json({

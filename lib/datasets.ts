@@ -9,6 +9,7 @@ export interface DatasetInfo {
   columns: string[];
   indicators: string[];
   rowCount: number;
+  dataSource?: string; // e.g., 'stock_zh_a_hist'
 }
 
 /**

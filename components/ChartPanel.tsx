@@ -19,7 +19,10 @@ interface IndicatorData {
 interface ChartPanelProps {
   candles: CandleData[];
   indicators: Record<string, IndicatorData[]>;
-  enabledIndicators: Set<string>;
+  enabledIndicators1: Set<string>;
+  enabledIndicators2: Set<string>;
+  colorMap: Map<string, string>;
+  onCrosshairMove?: (time: number | null) => void;
 }
 
 // Predefined color palette for indicators
@@ -53,20 +56,26 @@ const commonTimeScaleOptions = {
 export default function ChartPanel({
   candles,
   indicators,
-  enabledIndicators,
+  enabledIndicators1,
+  enabledIndicators2,
+  colorMap,
+  onCrosshairMove,
 }: ChartPanelProps) {
   const candlestickContainerRef = useRef<HTMLDivElement>(null);
-  const indicatorContainerRef = useRef<HTMLDivElement>(null);
+  const indicator1ContainerRef = useRef<HTMLDivElement>(null);
+  const indicator2ContainerRef = useRef<HTMLDivElement>(null);
   const candlestickChartRef = useRef<IChartApi | null>(null);
-  const indicatorChartRef = useRef<IChartApi | null>(null);
+  const indicator1ChartRef = useRef<IChartApi | null>(null);
+  const indicator2ChartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
-  const indicatorSeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
-  const indicatorColorMapRef = useRef<Map<string, string>>(new Map());
-  const syncUnsubscribeRef = useRef<(() => void) | null>(null);
+  const indicator1SeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
+  const indicator2SeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
+  const syncUnsubscribe1Ref = useRef<(() => void) | null>(null);
+  const syncUnsubscribe2Ref = useRef<(() => void) | null>(null);
 
-  // Initialize both charts
+  // Initialize all three charts
   useEffect(() => {
-    if (!candlestickContainerRef.current || !indicatorContainerRef.current) return;
+    if (!candlestickContainerRef.current || !indicator1ContainerRef.current || !indicator2ContainerRef.current) return;
 
     // Create candlestick chart (top chart)
     const candlestickChart = createChart(candlestickContainerRef.current, {
@@ -75,7 +84,7 @@ export default function ChartPanel({
         textColor: 'black',
       },
       width: candlestickContainerRef.current.clientWidth,
-      height: 400,
+      height: 350,
       grid: {
         vertLines: { color: '#e0e0e0' },
         horzLines: { color: '#e0e0e0' },
@@ -96,15 +105,15 @@ export default function ChartPanel({
       },
     });
 
-    // Create indicator chart (bottom chart)
+    // Create first indicator chart
     // Disable scroll and scale interactions - it will be driven by the main chart
-    const indicatorChart = createChart(indicatorContainerRef.current, {
+    const indicator1Chart = createChart(indicator1ContainerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: 'white' },
         textColor: 'black',
       },
-      width: indicatorContainerRef.current.clientWidth,
-      height: 300,
+      width: indicator1ContainerRef.current.clientWidth,
+      height: 250,
       grid: {
         vertLines: { color: '#e0e0e0' },
         horzLines: { color: '#e0e0e0' },
@@ -125,9 +134,38 @@ export default function ChartPanel({
       },
     });
 
-    // Disable mouse wheel and drag interactions on indicator chart
+    // Create second indicator chart
+    const indicator2Chart = createChart(indicator2ContainerRef.current, {
+      layout: {
+        background: { type: ColorType.Solid, color: 'white' },
+        textColor: 'black',
+      },
+      width: indicator2ContainerRef.current.clientWidth,
+      height: 250,
+      grid: {
+        vertLines: { color: '#e0e0e0' },
+        horzLines: { color: '#e0e0e0' },
+      },
+      timeScale: commonTimeScaleOptions,
+      rightPriceScale: {
+        borderColor: '#d1d4dc',
+        scaleMargins: {
+          top: 0.1,
+          bottom: 0.1,
+        },
+        entireTextOnly: true,
+        minimumWidth: 80,
+        autoScale: true,
+      },
+      leftPriceScale: {
+        visible: false,
+      },
+    });
+
+    // Disable mouse wheel and drag interactions on both indicator charts
     // Use capture phase to intercept events before TradingView handles them
-    const indicatorContainer = indicatorContainerRef.current;
+    const indicator1Container = indicator1ContainerRef.current;
+    const indicator2Container = indicator2ContainerRef.current;
     
     const preventWheel = (e: WheelEvent) => {
       e.preventDefault();
@@ -149,76 +187,88 @@ export default function ChartPanel({
     // Use capture phase to catch events before TradingView
     const wheelOptions = { passive: false, capture: true } as const;
     const mouseOptions = { passive: false, capture: true } as const;
-    
-    // Add to container
-    indicatorContainer.addEventListener('wheel', preventWheel, wheelOptions);
-    indicatorContainer.addEventListener('mousedown', preventDrag, mouseOptions);
 
-    // Setup prevention on canvas and chart elements
-    const setupCanvasPrevention = () => {
-      const canvas = indicatorContainer.querySelector('canvas');
-      if (canvas) {
-        // Remove existing listeners if any, then add new ones
-        canvas.removeEventListener('wheel', preventWheel, wheelOptions);
-        canvas.removeEventListener('mousedown', preventDrag, mouseOptions);
-        canvas.addEventListener('wheel', preventWheel, wheelOptions);
-        canvas.addEventListener('mousedown', preventDrag, mouseOptions);
-        
-        // Also prevent on the parent div that TradingView creates
-        const chartDiv = canvas.parentElement;
-        if (chartDiv && chartDiv !== indicatorContainer) {
-          chartDiv.removeEventListener('wheel', preventWheel, wheelOptions);
-          chartDiv.removeEventListener('mousedown', preventDrag, mouseOptions);
-          chartDiv.addEventListener('wheel', preventWheel, wheelOptions);
-          chartDiv.addEventListener('mousedown', preventDrag, mouseOptions);
-        }
-      }
-    };
+    // Setup prevention for a container
+    const setupContainerPrevention = (container: HTMLDivElement) => {
+      container.addEventListener('wheel', preventWheel, wheelOptions);
+      container.addEventListener('mousedown', preventDrag, mouseOptions);
 
-    // Use MutationObserver to catch canvas creation
-    const observer = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        mutation.addedNodes.forEach((node) => {
-          if (node.nodeType === 1) { // Element node
-            const element = node as Element;
-            if (element.tagName === 'CANVAS' || element.querySelector('canvas')) {
-              setupCanvasPrevention();
-            }
+      const setupCanvasPrevention = () => {
+        const canvas = container.querySelector('canvas');
+        if (canvas) {
+          canvas.removeEventListener('wheel', preventWheel, wheelOptions);
+          canvas.removeEventListener('mousedown', preventDrag, mouseOptions);
+          canvas.addEventListener('wheel', preventWheel, wheelOptions);
+          canvas.addEventListener('mousedown', preventDrag, mouseOptions);
+
+          const chartDiv = canvas.parentElement;
+          if (chartDiv && chartDiv !== container) {
+            chartDiv.removeEventListener('wheel', preventWheel, wheelOptions);
+            chartDiv.removeEventListener('mousedown', preventDrag, mouseOptions);
+            chartDiv.addEventListener('wheel', preventWheel, wheelOptions);
+            chartDiv.addEventListener('mousedown', preventDrag, mouseOptions);
           }
+        }
+      };
+
+      const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+          mutation.addedNodes.forEach((node) => {
+            if (node.nodeType === 1) {
+              const element = node as Element;
+              if (element.tagName === 'CANVAS' || element.querySelector('canvas')) {
+                setupCanvasPrevention();
+              }
+            }
+          });
         });
       });
-    });
 
-    observer.observe(indicatorContainer, {
-      childList: true,
-      subtree: true,
-    });
+      observer.observe(container, {
+        childList: true,
+        subtree: true,
+      });
 
-    // Also try immediately and with delays
-    setupCanvasPrevention();
-    const timeouts = [
-      setTimeout(setupCanvasPrevention, 50),
-      setTimeout(setupCanvasPrevention, 100),
-      setTimeout(setupCanvasPrevention, 300),
-      setTimeout(setupCanvasPrevention, 500),
-    ];
+      setupCanvasPrevention();
+      const timeouts = [
+        setTimeout(setupCanvasPrevention, 50),
+        setTimeout(setupCanvasPrevention, 100),
+        setTimeout(setupCanvasPrevention, 300),
+        setTimeout(setupCanvasPrevention, 500),
+      ];
 
-    // Store cleanup functions
-    const cleanupFunctions: Array<() => void> = [
-      () => {
-        observer.disconnect();
-        timeouts.forEach(clearTimeout);
-      },
-      () => indicatorContainer.removeEventListener('wheel', preventWheel, wheelOptions),
-      () => indicatorContainer.removeEventListener('mousedown', preventDrag, mouseOptions),
-    ];
+      return {
+        cleanup: () => {
+          observer.disconnect();
+          timeouts.forEach(clearTimeout);
+          container.removeEventListener('wheel', preventWheel, wheelOptions);
+          container.removeEventListener('mousedown', preventDrag, mouseOptions);
+          const canvas = container.querySelector('canvas');
+          if (canvas) {
+            canvas.removeEventListener('wheel', preventWheel, wheelOptions);
+            canvas.removeEventListener('mousedown', preventDrag, mouseOptions);
+          }
+          const chartDiv = container.querySelector('div');
+          if (chartDiv && chartDiv !== container) {
+            chartDiv.removeEventListener('wheel', preventWheel, wheelOptions);
+            chartDiv.removeEventListener('mousedown', preventDrag, mouseOptions);
+          }
+        }
+      };
+    };
+
+    // Setup prevention for both indicator containers
+    const cleanup1 = setupContainerPrevention(indicator1Container);
+    const cleanup2 = setupContainerPrevention(indicator2Container);
 
     candlestickChartRef.current = candlestickChart;
-    indicatorChartRef.current = indicatorChart;
+    indicator1ChartRef.current = indicator1Chart;
+    indicator2ChartRef.current = indicator2Chart;
 
-    // Apply common time scale options to both charts to ensure alignment
+    // Apply common time scale options to all charts to ensure alignment
     candlestickChart.applyOptions({ timeScale: commonTimeScaleOptions });
-    indicatorChart.applyOptions({ timeScale: commonTimeScaleOptions });
+    indicator1Chart.applyOptions({ timeScale: commonTimeScaleOptions });
+    indicator2Chart.applyOptions({ timeScale: commonTimeScaleOptions });
 
     // Add candlestick series to the first chart
     const candlestickSeries = candlestickChart.addCandlestickSeries({
@@ -229,6 +279,26 @@ export default function ChartPanel({
       wickDownColor: '#ef5350',
     });
     candlestickSeriesRef.current = candlestickSeries;
+
+    // Subscribe to crosshair move events on all charts
+    // This will track when user hovers over any chart
+    const crosshairUnsubscribe1 = candlestickChart.subscribeCrosshairMove((param) => {
+      if (onCrosshairMove) {
+        onCrosshairMove(param.time as number | null);
+      }
+    });
+
+    const crosshairUnsubscribe2 = indicator1Chart.subscribeCrosshairMove((param) => {
+      if (onCrosshairMove) {
+        onCrosshairMove(param.time as number | null);
+      }
+    });
+
+    const crosshairUnsubscribe3 = indicator2Chart.subscribeCrosshairMove((param) => {
+      if (onCrosshairMove) {
+        onCrosshairMove(param.time as number | null);
+      }
+    });
 
     // One-way sync: only candlestick chart drives indicator chart
     // This avoids circular sync issues
@@ -258,9 +328,14 @@ export default function ChartPanel({
           width: candlestickContainerRef.current.clientWidth,
         });
       }
-      if (indicatorContainerRef.current && indicatorChartRef.current) {
-        indicatorChartRef.current.applyOptions({
-          width: indicatorContainerRef.current.clientWidth,
+      if (indicator1ContainerRef.current && indicator1ChartRef.current) {
+        indicator1ChartRef.current.applyOptions({
+          width: indicator1ContainerRef.current.clientWidth,
+        });
+      }
+      if (indicator2ContainerRef.current && indicator2ChartRef.current) {
+        indicator2ChartRef.current.applyOptions({
+          width: indicator2ContainerRef.current.clientWidth,
         });
       }
       // Price scale widths are now fixed via minimumWidth, no need to sync
@@ -270,26 +345,31 @@ export default function ChartPanel({
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      if (syncUnsubscribeRef.current) {
-        syncUnsubscribeRef.current();
-        syncUnsubscribeRef.current = null;
+      if (syncUnsubscribe1Ref.current) {
+        syncUnsubscribe1Ref.current();
+        syncUnsubscribe1Ref.current = null;
+      }
+      if (syncUnsubscribe2Ref.current) {
+        syncUnsubscribe2Ref.current();
+        syncUnsubscribe2Ref.current = null;
+      }
+      // Clean up crosshair subscriptions
+      if (typeof crosshairUnsubscribe1 === 'function') {
+        crosshairUnsubscribe1();
+      }
+      if (typeof crosshairUnsubscribe2 === 'function') {
+        crosshairUnsubscribe2();
+      }
+      if (typeof crosshairUnsubscribe3 === 'function') {
+        crosshairUnsubscribe3();
       }
       // Clean up indicator chart interaction prevention
-      cleanupFunctions.forEach(cleanup => cleanup());
-      
-      // Clean up canvas event listeners
-      const canvas = indicatorContainer.querySelector('canvas');
-      if (canvas) {
-        canvas.removeEventListener('wheel', preventWheel, wheelOptions);
-        canvas.removeEventListener('mousedown', preventDrag, mouseOptions);
-      }
-      const chartDiv = indicatorContainer.querySelector('div');
-      if (chartDiv && chartDiv !== indicatorContainer) {
-        chartDiv.removeEventListener('wheel', preventWheel, wheelOptions);
-        chartDiv.removeEventListener('mousedown', preventDrag, mouseOptions);
-      }
+      cleanup1.cleanup();
+      cleanup2.cleanup();
+
       candlestickChart.remove();
-      indicatorChart.remove();
+      indicator1Chart.remove();
+      indicator2Chart.remove();
     };
   }, []);
 
@@ -297,63 +377,67 @@ export default function ChartPanel({
   // Critical order: setData -> fitContent -> setup sync -> immediate align
   useEffect(() => {
     const candlestickChart = candlestickChartRef.current;
-    const indicatorChart = indicatorChartRef.current;
-    
-    if (!candlestickChart || !indicatorChart) return;
-    
+    const indicator1Chart = indicator1ChartRef.current;
+    const indicator2Chart = indicator2ChartRef.current;
+
+    if (!candlestickChart || !indicator1Chart || !indicator2Chart) return;
+
     if (candlestickSeriesRef.current && candles.length > 0) {
       // Step 1: Set data for main chart
       candlestickSeriesRef.current.setData(candles as any);
-      
+
       // Step 2: Fit content on main chart only
       candlestickChart.timeScale().fitContent();
-      
+
       // Step 3: Set up one-way sync if not already set up
-      if (!syncUnsubscribeRef.current) {
-        const syncTimeScaleOneWay = (source: IChartApi, target: IChartApi) => {
-          const onSource = () => {
-            try {
-              const range = source.timeScale().getVisibleLogicalRange();
-              if (range) {
-                target.timeScale().setVisibleLogicalRange(range);
-              }
-            } catch (error) {
-              console.warn('Failed to sync time range:', error);
+      const syncTimeScaleOneWay = (source: IChartApi, target: IChartApi) => {
+        const onSource = () => {
+          try {
+            const range = source.timeScale().getVisibleLogicalRange();
+            if (range) {
+              target.timeScale().setVisibleLogicalRange(range);
             }
-          };
-          source.timeScale().subscribeVisibleLogicalRangeChange(onSource);
-          return () => source.timeScale().unsubscribeVisibleLogicalRangeChange(onSource);
+          } catch (error) {
+            console.warn('Failed to sync time range:', error);
+          }
         };
-        
-        syncUnsubscribeRef.current = syncTimeScaleOneWay(candlestickChart, indicatorChart);
+        source.timeScale().subscribeVisibleLogicalRangeChange(onSource);
+        return () => source.timeScale().unsubscribeVisibleLogicalRangeChange(onSource);
+      };
+
+      if (!syncUnsubscribe1Ref.current) {
+        syncUnsubscribe1Ref.current = syncTimeScaleOneWay(candlestickChart, indicator1Chart);
       }
-      
-      // Step 4: Immediately align the indicator chart
+      if (!syncUnsubscribe2Ref.current) {
+        syncUnsubscribe2Ref.current = syncTimeScaleOneWay(candlestickChart, indicator2Chart);
+      }
+
+      // Step 4: Immediately align both indicator charts
       requestAnimationFrame(() => {
         try {
           const logicalRange = candlestickChart.timeScale().getVisibleLogicalRange();
           if (logicalRange) {
-            indicatorChart.timeScale().setVisibleLogicalRange(logicalRange);
+            indicator1Chart.timeScale().setVisibleLogicalRange(logicalRange);
+            indicator2Chart.timeScale().setVisibleLogicalRange(logicalRange);
           }
         } catch (error) {
-          console.warn('Failed to immediately align indicator chart:', error);
+          console.warn('Failed to immediately align indicator charts:', error);
         }
       });
     }
   }, [candles]);
 
-  // Update indicator series
-  // Step 1: Set data for indicator lines
+  // Update indicator series for Chart 1
   useEffect(() => {
-    if (!indicatorChartRef.current) return;
+    if (!indicator1ChartRef.current) return;
 
-    const currentSeries = indicatorSeriesRef.current;
-    const chart = indicatorChartRef.current;
+    const currentSeries = indicator1SeriesRef.current;
+    const chart = indicator1ChartRef.current;
 
     // Remove disabled indicators
     const indicatorsToRemove: string[] = [];
     for (const [indicator, series] of currentSeries.entries()) {
-      if (!enabledIndicators.has(indicator)) {
+      if (!enabledIndicators1.has(indicator)) {
         try {
           chart.removeSeries(series);
           indicatorsToRemove.push(indicator);
@@ -363,44 +447,30 @@ export default function ChartPanel({
         }
       }
     }
-    // Remove from map after iteration
     indicatorsToRemove.forEach(indicator => {
       currentSeries.delete(indicator);
     });
 
     // Add new enabled indicators
-    for (const indicator of enabledIndicators) {
+    for (const indicator of enabledIndicators1) {
       if (!currentSeries.has(indicator) && indicators[indicator]) {
-        // Get or assign a color for this indicator
-        if (!indicatorColorMapRef.current.has(indicator)) {
-          const colorIndex = indicatorColorMapRef.current.size;
-          indicatorColorMapRef.current.set(indicator, getIndicatorColor(colorIndex));
-        }
-        const color = indicatorColorMapRef.current.get(indicator)!;
-        
-        // Use compact formatter for volume to keep price scale width consistent
-        const isVolume = indicator.toLowerCase().includes('volume');
-        const priceFormat = isVolume
-          ? {
-              type: 'custom' as const,
-              formatter: (price: number) => {
-                // Format large numbers with K/M/B or 万/亿 notation
-                if (price >= 100000000) {
-                  return (price / 100000000).toFixed(2) + '亿';
-                } else if (price >= 10000) {
-                  return (price / 10000).toFixed(2) + '万';
-                } else if (price >= 1000) {
-                  return (price / 1000).toFixed(2) + 'K';
-                }
-                return price.toFixed(0);
-              },
-              minMove: 1,
+        const color = colorMap.get(indicator) || getIndicatorColor(0);
+
+        // Use scientific notation for indicator charts
+        const priceFormat = {
+          type: 'custom' as const,
+          formatter: (price: number) => {
+            // Use scientific notation for all values
+            if (price === 0) return '0';
+            const absPrice = Math.abs(price);
+            if (absPrice >= 1 || absPrice < 0.0001) {
+              return price.toExponential(2);
             }
-          : {
-              type: 'price' as const,
-              precision: 4,
-              minMove: 0.0001,
-            };
+            // For values between 0.0001 and 1, use regular notation with appropriate precision
+            return price.toFixed(4);
+          },
+          minMove: 0.0001,
+        };
 
         const lineSeries = chart.addLineSeries({
           color: color,
@@ -409,7 +479,6 @@ export default function ChartPanel({
         });
         currentSeries.set(indicator, lineSeries);
 
-        // Set data (filter out null values)
         const data = indicators[indicator].filter(d => d.value !== null).map(d => ({
           time: d.time as any,
           value: d.value as number,
@@ -418,7 +487,7 @@ export default function ChartPanel({
       }
     }
 
-    // Update data for existing series
+    // Update data and colors for existing series to match the shared color map
     for (const [indicator, series] of currentSeries.entries()) {
       if (indicators[indicator]) {
         const data = indicators[indicator].filter(d => d.value !== null).map(d => ({
@@ -426,11 +495,15 @@ export default function ChartPanel({
           value: d.value as number,
         }));
         series.setData(data);
+        // Update color to match the shared color map
+        const newColor = colorMap.get(indicator);
+        if (newColor) {
+          series.applyOptions({ color: newColor });
+        }
       }
     }
 
-    // After setting indicator data, align with main chart
-    // The one-way sync will handle future updates, but we need to align immediately
+    // Align with main chart
     const candlestickChart = candlestickChartRef.current;
     if (candles.length > 0 && candlestickChart) {
       requestAnimationFrame(() => {
@@ -440,29 +513,131 @@ export default function ChartPanel({
             chart.timeScale().setVisibleLogicalRange(logicalRange);
           }
         } catch (error) {
-          console.warn('Failed to sync time range from candlestick to indicator:', error);
+          console.warn('Failed to sync time range from candlestick to indicator1:', error);
         }
       });
     }
-  }, [enabledIndicators, indicators, candles.length]);
+  }, [enabledIndicators1, indicators, candles.length, colorMap]);
+
+  // Update indicator series for Chart 2
+  useEffect(() => {
+    if (!indicator2ChartRef.current) return;
+
+    const currentSeries = indicator2SeriesRef.current;
+    const chart = indicator2ChartRef.current;
+
+    // Color map is already built in Chart 1 effect, just use it
+
+    // Remove disabled indicators
+    const indicatorsToRemove: string[] = [];
+    for (const [indicator, series] of currentSeries.entries()) {
+      if (!enabledIndicators2.has(indicator)) {
+        try {
+          chart.removeSeries(series);
+          indicatorsToRemove.push(indicator);
+        } catch (error) {
+          console.warn(`Failed to remove series for indicator ${indicator}:`, error);
+          indicatorsToRemove.push(indicator);
+        }
+      }
+    }
+    indicatorsToRemove.forEach(indicator => {
+      currentSeries.delete(indicator);
+    });
+
+    // Add new enabled indicators
+    for (const indicator of enabledIndicators2) {
+      if (!currentSeries.has(indicator) && indicators[indicator]) {
+        const color = colorMap.get(indicator) || getIndicatorColor(0);
+
+        // Use scientific notation for indicator charts
+        const priceFormat = {
+          type: 'custom' as const,
+          formatter: (price: number) => {
+            // Use scientific notation for all values
+            if (price === 0) return '0';
+            const absPrice = Math.abs(price);
+            if (absPrice >= 1 || absPrice < 0.0001) {
+              return price.toExponential(2);
+            }
+            // For values between 0.0001 and 1, use regular notation with appropriate precision
+            return price.toFixed(4);
+          },
+          minMove: 0.0001,
+        };
+
+        const lineSeries = chart.addLineSeries({
+          color: color,
+          lineWidth: 2,
+          priceFormat: priceFormat,
+        });
+        currentSeries.set(indicator, lineSeries);
+
+        const data = indicators[indicator].filter(d => d.value !== null).map(d => ({
+          time: d.time as any,
+          value: d.value as number,
+        }));
+        lineSeries.setData(data);
+      }
+    }
+
+    // Update data and colors for existing series to match the shared color map
+    for (const [indicator, series] of currentSeries.entries()) {
+      if (indicators[indicator]) {
+        const data = indicators[indicator].filter(d => d.value !== null).map(d => ({
+          time: d.time as any,
+          value: d.value as number,
+        }));
+        series.setData(data);
+        // Update color to match the shared color map
+        const newColor = colorMap.get(indicator);
+        if (newColor) {
+          series.applyOptions({ color: newColor });
+        }
+      }
+    }
+
+    // Align with main chart
+    const candlestickChart = candlestickChartRef.current;
+    if (candles.length > 0 && candlestickChart) {
+      requestAnimationFrame(() => {
+        try {
+          const logicalRange = candlestickChart.timeScale().getVisibleLogicalRange();
+          if (logicalRange) {
+            chart.timeScale().setVisibleLogicalRange(logicalRange);
+          }
+        } catch (error) {
+          console.warn('Failed to sync time range from candlestick to indicator2:', error);
+        }
+      });
+    }
+  }, [enabledIndicators2, indicators, candles.length, colorMap]);
 
   // Effect to ensure charts maintain same width for alignment
   // Only sync once after mount/data updates, not repeatedly
   useEffect(() => {
     const syncWidths = () => {
       const candlestickContainer = candlestickContainerRef.current;
-      const indicatorContainer = indicatorContainerRef.current;
+      const indicator1Container = indicator1ContainerRef.current;
+      const indicator2Container = indicator2ContainerRef.current;
       const candlestickChart = candlestickChartRef.current;
-      const indicatorChart = indicatorChartRef.current;
-      
-      if (!candlestickContainer || !indicatorContainer || !candlestickChart || !indicatorChart) {
+      const indicator1Chart = indicator1ChartRef.current;
+      const indicator2Chart = indicator2ChartRef.current;
+
+      if (!candlestickContainer || !indicator1Container || !indicator2Container ||
+          !candlestickChart || !indicator1Chart || !indicator2Chart) {
         return;
       }
 
-      const width = Math.min(candlestickContainer.clientWidth, indicatorContainer.clientWidth);
+      const width = Math.min(
+        candlestickContainer.clientWidth,
+        indicator1Container.clientWidth,
+        indicator2Container.clientWidth
+      );
       if (width > 0) {
         candlestickChart.applyOptions({ width });
-        indicatorChart.applyOptions({ width });
+        indicator1Chart.applyOptions({ width });
+        indicator2Chart.applyOptions({ width });
       }
     };
 
@@ -472,24 +647,29 @@ export default function ChartPanel({
     return () => {
       clearTimeout(timeoutId);
     };
-  }, [candles.length, enabledIndicators.size]);
+  }, [candles.length, enabledIndicators1.size, enabledIndicators2.size]);
 
   return (
-    <div className="chart-panel flex flex-col gap-2">
+    <div className="chart-panel flex flex-col gap-1">
       <div className="candlestick-chart-container">
-        <h3 className="text-sm font-semibold mb-1">K线图 (OHLC)</h3>
-        <div 
-          ref={candlestickContainerRef} 
-          className="w-full" 
-          style={{ height: '400px', position: 'relative' }} 
+        <div
+          ref={candlestickContainerRef}
+          className="w-full"
+          style={{ height: '350px', position: 'relative' }}
         />
       </div>
       <div className="indicator-chart-container">
-        <h3 className="text-sm font-semibold mb-1">指标图</h3>
-        <div 
-          ref={indicatorContainerRef} 
-          className="w-full indicator-chart-disabled" 
-          style={{ height: '300px', position: 'relative' }} 
+        <div
+          ref={indicator1ContainerRef}
+          className="w-full indicator-chart-disabled"
+          style={{ height: '250px', position: 'relative' }}
+        />
+      </div>
+      <div className="indicator-chart-container">
+        <div
+          ref={indicator2ContainerRef}
+          className="w-full indicator-chart-disabled"
+          style={{ height: '250px', position: 'relative' }}
         />
       </div>
     </div>

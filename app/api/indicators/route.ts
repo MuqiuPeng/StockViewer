@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { loadIndicators, saveIndicator } from '@/lib/indicator-storage';
 import { validatePythonCode } from '@/lib/indicator-validator';
+import { detectDependencies } from '@/lib/detect-dependencies';
 
 export const runtime = 'nodejs';
 
@@ -44,13 +45,17 @@ export async function POST(request: Request) {
       );
     }
 
+    // Detect dependencies from Python code
+    const allIndicators = await loadIndicators();
+    const dependencies = detectDependencies(pythonCode, allIndicators);
+
     // Create indicator
     const indicator = await saveIndicator({
       name,
       description,
       pythonCode,
       outputColumn: outputColumn || name,
-      dependencies: [],
+      dependencies,
     });
 
     return NextResponse.json({

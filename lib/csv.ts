@@ -224,6 +224,7 @@ export async function getDatasetInfo(filename: string): Promise<{
   columns: string[];
   indicators: string[];
   rowCount: number;
+  dataSource?: string;
 }> {
   const fileStats = await getCsvFileStats(filename);
   if (!fileStats.exists) {
@@ -290,6 +291,17 @@ export async function getDatasetInfo(filename: string): Promise<{
               });
 
               const name = filename.replace(/\.csv$/i, '');
+              
+              // Extract data source from filename: {symbol}_{dataSource}.csv or {symbol}.csv (defaults to stock_zh_a_hist)
+              let dataSource: string | undefined;
+              const nameParts = name.split('_');
+              if (nameParts.length > 1) {
+                // Has data source: {symbol}_{dataSource}
+                dataSource = nameParts.slice(1).join('_');
+              } else {
+                // Legacy format: {symbol} - default to stock_zh_a_hist
+                dataSource = 'stock_zh_a_hist';
+              }
 
               resolve({
                 name,
@@ -297,6 +309,7 @@ export async function getDatasetInfo(filename: string): Promise<{
                 columns: headers,
                 indicators: indicatorColumns,
                 rowCount: validRowCount,
+                dataSource,
               });
             },
             error: (error) => {

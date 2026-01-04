@@ -10,8 +10,14 @@ interface AddStockModalProps {
 
 export default function AddStockModal({ isOpen, onClose, onSuccess }: AddStockModalProps) {
   const [stockSymbol, setStockSymbol] = useState('');
+  const [dataSource, setDataSource] = useState('stock_zh_a_hist');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Available data sources
+  const dataSources = [
+    { value: 'stock_zh_a_hist', label: 'stock_zh_a_hist' }
+  ];
 
   if (!isOpen) return null;
 
@@ -38,7 +44,7 @@ export default function AddStockModal({ isOpen, onClose, onSuccess }: AddStockMo
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ symbol: trimmedSymbol }),
+        body: JSON.stringify({ symbol: trimmedSymbol, dataSource }),
       });
 
       const data = await response.json();
@@ -51,6 +57,7 @@ export default function AddStockModal({ isOpen, onClose, onSuccess }: AddStockMo
 
       // Success
       setStockSymbol('');
+      setDataSource('stock_zh_a_hist');
       setIsLoading(false);
       onSuccess(data.dataset.name);
 
@@ -63,6 +70,7 @@ export default function AddStockModal({ isOpen, onClose, onSuccess }: AddStockMo
   const handleClose = () => {
     if (!isLoading) {
       setStockSymbol('');
+      setDataSource('stock_zh_a_hist');
       setError(null);
       onClose();
     }
@@ -81,6 +89,25 @@ export default function AddStockModal({ isOpen, onClose, onSuccess }: AddStockMo
         <h2 className="text-xl font-bold mb-4">Add Stock</h2>
 
         <form onSubmit={handleSubmit}>
+          <div className="mb-4">
+            <label htmlFor="data-source" className="block text-sm font-medium mb-2">
+              Data Source
+            </label>
+            <select
+              id="data-source"
+              value={dataSource}
+              onChange={(e) => setDataSource(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isLoading}
+            >
+              {dataSources.map((ds) => (
+                <option key={ds.value} value={ds.value}>
+                  {ds.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
           <div className="mb-4">
             <label htmlFor="stock-symbol" className="block text-sm font-medium mb-2">
               Stock Symbol
