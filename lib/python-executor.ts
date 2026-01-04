@@ -5,11 +5,12 @@ import { existsSync } from 'fs';
 export interface PythonExecutionInput {
   code: string;
   data: Record<string, any>[];
+  isGroup?: boolean;  // NEW: indicates group mode for MyTT indicators
 }
 
 export interface PythonExecutionResult {
   success: boolean;
-  values?: (number | null)[];
+  values?: (number | null)[] | Record<string, (number | null)[]>;  // Single array OR dict for groups
   error?: string;
   type?: string;
 }

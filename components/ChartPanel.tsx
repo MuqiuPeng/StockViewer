@@ -281,10 +281,40 @@ export default function ChartPanel({
     candlestickSeriesRef.current = candlestickSeries;
 
     // Subscribe to crosshair move events on all charts
-    // This will track when user hovers over any chart
+    // Synchronize crosshair across all three charts
     const crosshairUnsubscribe1 = candlestickChart.subscribeCrosshairMove((param) => {
       if (onCrosshairMove) {
         onCrosshairMove(param.time as number | null);
+      }
+
+      // Sync crosshair to other charts
+      if (param.time && param.point) {
+        const candleSeries = candlestickSeriesRef.current;
+        if (candleSeries) {
+          // Get the price at this time point
+          const candleData = param.seriesData.get(candleSeries);
+          if (candleData && 'close' in candleData) {
+            // Sync to indicator charts - use any series from those charts
+            const indicator1Series = Array.from(indicator1SeriesRef.current.values())[0];
+            const indicator2Series = Array.from(indicator2SeriesRef.current.values())[0];
+
+            if (indicator1Series) {
+              const indicator1Data = param.seriesData.get(indicator1Series);
+              const price1 = indicator1Data && 'value' in indicator1Data ? indicator1Data.value : 0;
+              indicator1Chart.setCrosshairPosition(price1, param.time, indicator1Series);
+            }
+
+            if (indicator2Series) {
+              const indicator2Data = param.seriesData.get(indicator2Series);
+              const price2 = indicator2Data && 'value' in indicator2Data ? indicator2Data.value : 0;
+              indicator2Chart.setCrosshairPosition(price2, param.time, indicator2Series);
+            }
+          }
+        }
+      } else {
+        // Clear crosshair on other charts
+        indicator1Chart.clearCrosshairPosition();
+        indicator2Chart.clearCrosshairPosition();
       }
     });
 
@@ -292,11 +322,53 @@ export default function ChartPanel({
       if (onCrosshairMove) {
         onCrosshairMove(param.time as number | null);
       }
+
+      // Sync crosshair to other charts
+      if (param.time && param.point) {
+        const candleSeries = candlestickSeriesRef.current;
+        const indicator2Series = Array.from(indicator2SeriesRef.current.values())[0];
+
+        if (candleSeries) {
+          const candleData = param.seriesData.get(candleSeries);
+          const price = candleData && 'close' in candleData ? candleData.close : 0;
+          candlestickChart.setCrosshairPosition(price, param.time, candleSeries);
+        }
+
+        if (indicator2Series) {
+          const indicator2Data = param.seriesData.get(indicator2Series);
+          const price2 = indicator2Data && 'value' in indicator2Data ? indicator2Data.value : 0;
+          indicator2Chart.setCrosshairPosition(price2, param.time, indicator2Series);
+        }
+      } else {
+        candlestickChart.clearCrosshairPosition();
+        indicator2Chart.clearCrosshairPosition();
+      }
     });
 
     const crosshairUnsubscribe3 = indicator2Chart.subscribeCrosshairMove((param) => {
       if (onCrosshairMove) {
         onCrosshairMove(param.time as number | null);
+      }
+
+      // Sync crosshair to other charts
+      if (param.time && param.point) {
+        const candleSeries = candlestickSeriesRef.current;
+        const indicator1Series = Array.from(indicator1SeriesRef.current.values())[0];
+
+        if (candleSeries) {
+          const candleData = param.seriesData.get(candleSeries);
+          const price = candleData && 'close' in candleData ? candleData.close : 0;
+          candlestickChart.setCrosshairPosition(price, param.time, candleSeries);
+        }
+
+        if (indicator1Series) {
+          const indicator1Data = param.seriesData.get(indicator1Series);
+          const price1 = indicator1Data && 'value' in indicator1Data ? indicator1Data.value : 0;
+          indicator1Chart.setCrosshairPosition(price1, param.time, indicator1Series);
+        }
+      } else {
+        candlestickChart.clearCrosshairPosition();
+        indicator1Chart.clearCrosshairPosition();
       }
     });
 

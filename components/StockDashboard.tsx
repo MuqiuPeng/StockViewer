@@ -55,6 +55,7 @@ export default function StockDashboard() {
   const [lastDataDate, setLastDataDate] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [definedIndicators, setDefinedIndicators] = useState<string[]>([]);
+  const [indicatorGroups, setIndicatorGroups] = useState<Set<string>>(new Set());
   const [crosshairTime, setCrosshairTime] = useState<number | null>(null);
 
   // Base indicators from API (not custom calculated)
@@ -103,6 +104,15 @@ export default function StockDashboard() {
         if (data.indicators) {
           const outputColumns = data.indicators.map((ind: any) => ind.outputColumn);
           setDefinedIndicators(outputColumns);
+
+          // Track which indicators are groups
+          const groups = new Set<string>();
+          data.indicators.forEach((ind: any) => {
+            if (ind.isGroup && ind.groupName) {
+              groups.add(ind.groupName);
+            }
+          });
+          setIndicatorGroups(groups);
         }
       })
       .catch((err) => {
@@ -231,6 +241,29 @@ export default function StockDashboard() {
     loadDatasetData();
   }, [selectedDataset]);
 
+  // Helper function to check if an indicator column should be shown
+  const isDefinedIndicator = (indicatorName: string): boolean => {
+    // Check if it's a base indicator
+    if (BASE_INDICATORS.includes(indicatorName)) {
+      return true;
+    }
+
+    // Check if it's a single indicator
+    if (definedIndicators.includes(indicatorName)) {
+      return true;
+    }
+
+    // Check if it's a group indicator column (groupName:indicatorName)
+    if (indicatorName.includes(':')) {
+      const groupName = indicatorName.split(':')[0];
+      if (indicatorGroups.has(groupName)) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
   const handleToggleIndicator1 = (indicator: string) => {
     setEnabledIndicators1((prev) => {
       const next = new Set(prev);
@@ -324,6 +357,15 @@ export default function StockDashboard() {
       if (indicatorsData.indicators) {
         const outputColumns = indicatorsData.indicators.map((ind: any) => ind.outputColumn);
         setDefinedIndicators(outputColumns);
+
+        // Track which indicators are groups
+        const groups = new Set<string>();
+        indicatorsData.indicators.forEach((ind: any) => {
+          if (ind.isGroup && ind.groupName) {
+            groups.add(ind.groupName);
+          }
+        });
+        setIndicatorGroups(groups);
       }
     } catch (err: any) {
       console.error('Failed to reload dataset:', err);
@@ -417,21 +459,21 @@ export default function StockDashboard() {
           <div className="lg:col-span-1 flex flex-col space-y-4 min-h-0">
             <IndicatorSelector
               indicators={datasetData.meta.indicators.filter((ind: string) =>
-                BASE_INDICATORS.includes(ind) || definedIndicators.includes(ind)
+                isDefinedIndicator(ind)
               )}
               enabledIndicators={enabledIndicators1}
               onToggle={handleToggleIndicator1}
-              title="指标图 1"
+              title="Indicator Chart 1"
               defaultCollapsed={true}
               colorMap={indicatorColorMap}
             />
             <IndicatorSelector
               indicators={datasetData.meta.indicators.filter((ind: string) =>
-                BASE_INDICATORS.includes(ind) || definedIndicators.includes(ind)
+                isDefinedIndicator(ind)
               )}
               enabledIndicators={enabledIndicators2}
               onToggle={handleToggleIndicator2}
-              title="指标图 2"
+              title="Indicator Chart 2"
               defaultCollapsed={true}
               colorMap={indicatorColorMap}
             />
@@ -445,6 +487,7 @@ export default function StockDashboard() {
                 enabledIndicators2={enabledIndicators2}
                 baseIndicators={BASE_INDICATORS}
                 definedIndicators={definedIndicators}
+                indicatorGroups={indicatorGroups}
               />
             </div>
           </div>

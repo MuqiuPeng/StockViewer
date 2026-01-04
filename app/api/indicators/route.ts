@@ -26,7 +26,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, description, pythonCode, outputColumn } = body;
+    const { name, description, pythonCode, outputColumn, isGroup, groupName, expectedOutputs } = body;
 
     // Validate required fields
     if (!name || !description || !pythonCode) {
@@ -34,6 +34,32 @@ export async function POST(request: Request) {
         { error: 'Missing required fields', message: 'name, description, and pythonCode are required' },
         { status: 400 }
       );
+    }
+
+    // For group indicators, validate expectedOutputs
+    if (isGroup) {
+      if (!groupName) {
+        return NextResponse.json(
+          { error: 'Missing required fields', message: 'groupName is required for group indicators' },
+          { status: 400 }
+        );
+      }
+
+      if (!expectedOutputs || !Array.isArray(expectedOutputs) || expectedOutputs.length === 0) {
+        return NextResponse.json(
+          { error: 'Invalid expectedOutputs', message: 'Group indicators must specify expectedOutputs as a non-empty array' },
+          { status: 400 }
+        );
+      }
+
+      // Filter out empty strings
+      const filteredOutputs = expectedOutputs.filter((output: string) => output.trim() !== '');
+      if (filteredOutputs.length === 0) {
+        return NextResponse.json(
+          { error: 'Invalid expectedOutputs', message: 'expectedOutputs must contain at least one non-empty string' },
+          { status: 400 }
+        );
+      }
     }
 
     // Validate Python code
@@ -54,8 +80,11 @@ export async function POST(request: Request) {
       name,
       description,
       pythonCode,
-      outputColumn: outputColumn || name,
+      outputColumn: isGroup ? groupName : (outputColumn || name),  // Use groupName for groups
       dependencies,
+      isGroup: isGroup || false,
+      groupName: isGroup ? groupName : undefined,
+      expectedOutputs: isGroup ? expectedOutputs.filter((output: string) => output.trim() !== '') : undefined,
     });
 
     return NextResponse.json({

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getIndicatorById } from '@/lib/indicator-storage';
 import { executePythonIndicator } from '@/lib/python-executor';
-import { addIndicatorColumn } from '@/lib/csv-updater';
+import { addIndicatorColumn, addIndicatorGroupColumns } from '@/lib/csv-updater';
 import { loadDataset } from '@/lib/csv';
 
 export const runtime = 'nodejs';
@@ -77,6 +77,7 @@ export async function POST(request: Request) {
         const executionResult = await executePythonIndicator({
           code: indicator.pythonCode,
           data: dataRecords,
+          isGroup: indicator.isGroup || false,
         });
 
         if (!executionResult.success) {
@@ -87,17 +88,56 @@ export async function POST(request: Request) {
           continue;
         }
 
-        // Add new column to CSV
-        await addIndicatorColumn(
-          filename,
-          indicator.outputColumn,
-          executionResult.values!
-        );
+        // Apply to CSV based on indicator type
+        if (indicator.isGroup) {
+          // Group indicator - validate and add multiple columns
+          const valuesDict = executionResult.values as Record<string, (number | null)[]>;
 
-        results[symbol] = {
-          success: true,
-          rowsProcessed: dataRecords.length,
-        };
+          // Validate returned keys match expected outputs
+          if (!valuesDict || typeof valuesDict !== 'object') {
+            results[symbol] = {
+              success: false,
+              error: 'Group indicator must return a dictionary of values',
+            };
+            continue;
+          }
+
+          const returnedKeys = Object.keys(valuesDict);
+          const expectedKeys = indicator.expectedOutputs || [];
+          const missingKeys = expectedKeys.filter(k => !returnedKeys.includes(k));
+
+          if (missingKeys.length > 0) {
+            results[symbol] = {
+              success: false,
+              error: `Missing expected outputs: ${missingKeys.join(', ')}`,
+            };
+            continue;
+          }
+
+          // Add group columns to CSV
+          await addIndicatorGroupColumns(
+            filename,
+            indicator.groupName!,
+            valuesDict
+          );
+
+          results[symbol] = {
+            success: true,
+            rowsProcessed: dataRecords.length,
+          };
+        } else {
+          // Single indicator - add one column
+          await addIndicatorColumn(
+            filename,
+            indicator.outputColumn,
+            executionResult.values as (number | null)[]
+          );
+
+          results[symbol] = {
+            success: true,
+            rowsProcessed: dataRecords.length,
+          };
+        }
       } catch (error) {
         results[symbol] = {
           success: false,

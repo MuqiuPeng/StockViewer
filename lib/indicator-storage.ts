@@ -7,10 +7,15 @@ export interface Indicator {
   name: string;
   description: string;
   pythonCode: string;
-  outputColumn: string;
+  outputColumn: string;           // For single indicators (or group name for groups)
   createdAt: string;
   updatedAt?: string;
   dependencies: string[];
+
+  // NEW FIELDS for indicator groups
+  isGroup?: boolean;              // true for MyTT group indicators
+  groupName?: string;             // e.g., "MACD" (same as outputColumn for groups)
+  expectedOutputs?: string[];     // e.g., ["DIF", "DEA", "MACD"]
 }
 
 interface IndicatorsFile {

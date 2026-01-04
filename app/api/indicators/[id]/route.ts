@@ -41,7 +41,7 @@ export async function PUT(
 ) {
   try {
     const body = await request.json();
-    const { name, description, pythonCode, outputColumn } = body;
+    const { name, description, pythonCode, outputColumn, isGroup, groupName, expectedOutputs } = body;
 
     // Validate Python code if provided
     if (pythonCode) {
@@ -54,11 +54,43 @@ export async function PUT(
       }
     }
 
+    // For group indicators, validate expectedOutputs if provided
+    if (isGroup !== undefined && isGroup) {
+      if (groupName !== undefined && !groupName) {
+        return NextResponse.json(
+          { error: 'Missing required fields', message: 'groupName is required for group indicators' },
+          { status: 400 }
+        );
+      }
+
+      if (expectedOutputs !== undefined) {
+        if (!Array.isArray(expectedOutputs) || expectedOutputs.length === 0) {
+          return NextResponse.json(
+            { error: 'Invalid expectedOutputs', message: 'Group indicators must specify expectedOutputs as a non-empty array' },
+            { status: 400 }
+          );
+        }
+
+        const filteredOutputs = expectedOutputs.filter((output: string) => output.trim() !== '');
+        if (filteredOutputs.length === 0) {
+          return NextResponse.json(
+            { error: 'Invalid expectedOutputs', message: 'expectedOutputs must contain at least one non-empty string' },
+            { status: 400 }
+          );
+        }
+      }
+    }
+
     const updates: any = {};
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
     if (pythonCode !== undefined) updates.pythonCode = pythonCode;
     if (outputColumn !== undefined) updates.outputColumn = outputColumn;
+    if (isGroup !== undefined) updates.isGroup = isGroup;
+    if (groupName !== undefined) updates.groupName = groupName;
+    if (expectedOutputs !== undefined) {
+      updates.expectedOutputs = expectedOutputs.filter((output: string) => output.trim() !== '');
+    }
 
     // Re-detect dependencies if Python code is being updated
     if (pythonCode !== undefined) {

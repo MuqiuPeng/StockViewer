@@ -8,6 +8,9 @@ interface Indicator {
   description: string;
   pythonCode: string;
   outputColumn: string;
+  isGroup?: boolean;
+  groupName?: string;
+  expectedOutputs?: string[];
 }
 
 interface IndicatorEditorModalProps {
@@ -33,15 +36,40 @@ const CODE_TEMPLATE = `def calculate(data):
     # Example: 20-day Simple Moving Average
     return data['close'].rolling(20).mean()`;
 
+const MYTT_TEMPLATE = `def calculate(data):
+    """
+    Calculate indicator group using MyTT functions.
+
+    Args:
+        data: pandas DataFrame with columns:
+            - date (datetime)
+            - open, high, low, close, volume (float)
+            - All existing indicators
+
+    Returns:
+        dict with indicator_name: values (numpy array or pandas Series)
+    """
+    # Example: MACD indicator group
+    DIF, DEA, MACD_hist = MACD(data['close'].values, SHORT=12, LONG=26, M=9)
+
+    return {
+        'DIF': DIF,
+        'DEA': DEA,
+        'MACD': MACD_hist
+    }`;
+
 export default function IndicatorEditorModal({
   isOpen,
   onClose,
   onSuccess,
   indicator,
 }: IndicatorEditorModalProps) {
+  const [indicatorType, setIndicatorType] = useState<'custom' | 'mytt_group'>('custom');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [outputColumn, setOutputColumn] = useState('');
+  const [groupName, setGroupName] = useState('');
+  const [expectedOutputs, setExpectedOutputs] = useState<string[]>(['']);
   const [pythonCode, setPythonCode] = useState('');
   const [activeTab, setActiveTab] = useState<'text' | 'upload'>('text');
   const [isLoading, setIsLoading] = useState(false);
@@ -51,26 +79,37 @@ export default function IndicatorEditorModal({
 
   useEffect(() => {
     if (indicator) {
+      setIndicatorType(indicator.isGroup ? 'mytt_group' : 'custom');
       setName(indicator.name);
       setDescription(indicator.description);
       setOutputColumn(indicator.outputColumn);
+      setGroupName(indicator.groupName || '');
+      setExpectedOutputs(indicator.expectedOutputs || ['']);
       setPythonCode(indicator.pythonCode);
     } else {
+      setIndicatorType('custom');
       setName('');
       setDescription('');
       setOutputColumn('');
+      setGroupName('');
+      setExpectedOutputs(['']);
       setPythonCode('');
     }
     setError(null);
     setValidationMessage(null);
   }, [indicator, isOpen]);
 
-  // Auto-fill output column from name
+  // Auto-fill output column or groupName from name
   useEffect(() => {
-    if (!indicator && name && !outputColumn) {
-      setOutputColumn(name.replace(/\s+/g, '_'));
+    if (!indicator && name) {
+      const normalized = name.replace(/\s+/g, '_');
+      if (indicatorType === 'mytt_group' && !groupName) {
+        setGroupName(normalized);
+      } else if (indicatorType === 'custom' && !outputColumn) {
+        setOutputColumn(normalized);
+      }
     }
-  }, [name, indicator, outputColumn]);
+  }, [name, indicator, outputColumn, groupName, indicatorType]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -99,7 +138,10 @@ export default function IndicatorEditorModal({
       const response = await fetch('/api/validate-indicator', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pythonCode }),
+        body: JSON.stringify({
+          pythonCode,
+          isGroup: indicatorType === 'mytt_group'
+        }),
       });
 
       const data = await response.json();
@@ -126,6 +168,20 @@ export default function IndicatorEditorModal({
       return;
     }
 
+    // Validate group-specific fields
+    if (indicatorType === 'mytt_group') {
+      if (!groupName) {
+        setError('Group name is required for MyTT indicators');
+        return;
+      }
+
+      const filteredOutputs = expectedOutputs.filter(o => o.trim() !== '');
+      if (filteredOutputs.length === 0) {
+        setError('At least one expected output is required for MyTT indicators');
+        return;
+      }
+    }
+
     setIsLoading(true);
 
     try {
@@ -134,15 +190,25 @@ export default function IndicatorEditorModal({
         : '/api/indicators';
       const method = indicator ? 'PUT' : 'POST';
 
+      const requestBody: any = {
+        name,
+        description,
+        pythonCode,
+      };
+
+      if (indicatorType === 'mytt_group') {
+        requestBody.isGroup = true;
+        requestBody.groupName = groupName;
+        requestBody.expectedOutputs = expectedOutputs.filter(o => o.trim() !== '');
+      } else {
+        requestBody.isGroup = false;
+        requestBody.outputColumn = outputColumn || name;
+      }
+
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name,
-          description,
-          pythonCode,
-          outputColumn: outputColumn || name,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
@@ -164,6 +230,10 @@ export default function IndicatorEditorModal({
     setPythonCode(CODE_TEMPLATE);
   };
 
+  const handleInsertMyTTTemplate = () => {
+    setPythonCode(MYTT_TEMPLATE);
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -179,6 +249,25 @@ export default function IndicatorEditorModal({
         </h2>
 
         <form onSubmit={handleSubmit}>
+          <div className="mb-4">
+            <label htmlFor="indicatorType" className="block text-sm font-medium mb-2">
+              Indicator Type <span className="text-red-500">*</span>
+            </label>
+            <select
+              id="indicatorType"
+              value={indicatorType}
+              onChange={(e) => setIndicatorType(e.target.value as 'custom' | 'mytt_group')}
+              className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isLoading || !!indicator}
+            >
+              <option value="custom">Custom Python (Single Indicator)</option>
+              <option value="mytt_group">MyTT Library Group (Multiple Indicators)</option>
+            </select>
+            {indicator && (
+              <p className="text-xs text-gray-500 mt-1">Type cannot be changed after creation</p>
+            )}
+          </div>
+
           <div className="mb-4">
             <label htmlFor="name" className="block text-sm font-medium mb-2">
               Name <span className="text-red-500">*</span>
@@ -211,20 +300,83 @@ export default function IndicatorEditorModal({
             />
           </div>
 
-          <div className="mb-4">
-            <label htmlFor="outputColumn" className="block text-sm font-medium mb-2">
-              Output Column Name
-            </label>
-            <input
-              id="outputColumn"
-              type="text"
-              value={outputColumn}
-              onChange={(e) => setOutputColumn(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Auto-filled from name"
-              disabled={isLoading}
-            />
-          </div>
+          {indicatorType === 'custom' ? (
+            <div className="mb-4">
+              <label htmlFor="outputColumn" className="block text-sm font-medium mb-2">
+                Output Column Name
+              </label>
+              <input
+                id="outputColumn"
+                type="text"
+                value={outputColumn}
+                onChange={(e) => setOutputColumn(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Auto-filled from name"
+                disabled={isLoading}
+              />
+            </div>
+          ) : (
+            <>
+              <div className="mb-4">
+                <label htmlFor="groupName" className="block text-sm font-medium mb-2">
+                  Group Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="groupName"
+                  type="text"
+                  value={groupName}
+                  onChange={(e) => setGroupName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., MACD, KDJ, BOLL"
+                  disabled={isLoading}
+                  required
+                />
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium mb-2">
+                  Expected Outputs <span className="text-red-500">*</span>
+                </label>
+                <div className="text-xs text-gray-500 mb-2">
+                  List the indicator names your calculate function will return in the dict
+                </div>
+                {expectedOutputs.map((output, idx) => (
+                  <div key={idx} className="flex gap-2 mb-2">
+                    <input
+                      type="text"
+                      value={output}
+                      onChange={(e) => {
+                        const newOutputs = [...expectedOutputs];
+                        newOutputs[idx] = e.target.value;
+                        setExpectedOutputs(newOutputs);
+                      }}
+                      placeholder={idx === 0 ? "e.g., DIF" : idx === 1 ? "e.g., DEA" : "e.g., MACD"}
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      disabled={isLoading}
+                    />
+                    {expectedOutputs.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setExpectedOutputs(expectedOutputs.filter((_, i) => i !== idx))}
+                        className="px-3 py-2 bg-red-500 text-white rounded text-sm hover:bg-red-600"
+                        disabled={isLoading}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setExpectedOutputs([...expectedOutputs, ''])}
+                  className="px-3 py-2 bg-gray-200 rounded text-sm hover:bg-gray-300"
+                  disabled={isLoading}
+                >
+                  + Add Output
+                </button>
+              </div>
+            </>
+          )}
 
           <div className="mb-4">
             <label className="block text-sm font-medium mb-2">
@@ -254,13 +406,23 @@ export default function IndicatorEditorModal({
               >
                 Upload File
               </button>
-              <button
-                type="button"
-                onClick={handleInsertTemplate}
-                className="ml-auto px-3 py-1 bg-gray-600 text-white rounded hover:bg-gray-700"
-              >
-                Insert Template
-              </button>
+              {indicatorType === 'custom' ? (
+                <button
+                  type="button"
+                  onClick={handleInsertTemplate}
+                  className="ml-auto px-3 py-1 bg-gray-600 text-white rounded hover:bg-gray-700"
+                >
+                  Insert Template
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleInsertMyTTTemplate}
+                  className="ml-auto px-3 py-1 bg-gray-600 text-white rounded hover:bg-gray-700"
+                >
+                  Insert MyTT Template
+                </button>
+              )}
             </div>
 
             {activeTab === 'text' ? (

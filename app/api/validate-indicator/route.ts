@@ -8,7 +8,7 @@ export const runtime = 'nodejs';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { pythonCode } = body;
+    const { pythonCode, isGroup } = body;
 
     if (!pythonCode) {
       return NextResponse.json(
@@ -39,6 +39,7 @@ export async function POST(request: Request) {
       const result = await executePythonIndicator({
         code: pythonCode,
         data: sampleData,
+        isGroup: isGroup || false,
       });
 
       if (!result.success) {
