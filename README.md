@@ -74,10 +74,23 @@ A comprehensive stock analysis dashboard built with Next.js that displays real-t
 
 ### Required Software
 - **Node.js** 18+
-- **Python 3.8+** with pip
-- **Local Stock API** running on `http://127.0.0.1:8080`
+- **Python 3.8+** with pip and virtualenv (pyenv recommended)
+- **aktools** - Chinese stock market data API library
 
 ### Python Dependencies
+The project requires two separate Python environments:
+
+#### 1. AKTools API (for stock data fetching)
+```bash
+# Create a virtual environment for aktools
+python -m venv aktools-env
+source aktools-env/bin/activate  # On Windows: aktools-env\Scripts\activate
+
+# Install aktools
+pip install aktools
+```
+
+#### 2. Indicator Calculation (for custom indicators)
 ```bash
 pip install pandas>=2.0.0 numpy>=1.24.0
 ```
@@ -115,13 +128,40 @@ Create `.env.local` to customize settings:
 CSV_DIR=/path/to/your/csv/files
 ```
 
-### 5. Start Local Stock API
-Ensure your stock data API is running on `http://127.0.0.1:8080` with endpoint:
-```
-GET /api/public/stock_zh_a_hist?symbol={6-digit-code}&start_date={YYYYMMDD}&end_date={YYYYMMDD}&adjust=qfq
+### 5. Start AKTools API Server
+The application requires the aktools API server running locally:
+
+```bash
+# Activate the aktools virtual environment
+source aktools-env/bin/activate  # On Windows: aktools-env\Scripts\activate
+
+# Start the API server on 127.0.0.1:8080
+python -m aktools
 ```
 
+The server provides the following endpoint for fetching Chinese A-share stock data:
+```
+GET http://127.0.0.1:8080/api/public/stock_zh_a_hist?symbol={6-digit-code}&start_date={YYYYMMDD}&end_date={YYYYMMDD}&adjust=qfq
+```
+
+**Note:** Keep this terminal running while using the application. The API must be accessible at `http://127.0.0.1:8080`.
+
 ## Running the Application
+
+### Quick Start (3 terminals needed)
+
+**Terminal 1: AKTools API Server**
+```bash
+source aktools-env/bin/activate
+python -m aktools
+# Keep running - provides stock data at http://127.0.0.1:8080
+```
+
+**Terminal 2: Next.js Development Server**
+```bash
+npm run dev
+# Open http://localhost:3000
+```
 
 ### Development Mode
 ```bash
@@ -129,11 +169,15 @@ npm run dev
 ```
 Open [http://localhost:3000](http://localhost:3000)
 
+**Prerequisites:** Ensure aktools API is running on `http://127.0.0.1:8080` before starting the Next.js server.
+
 ### Production Build
 ```bash
 npm run build
 npm start
 ```
+
+**Prerequisites:** Ensure aktools API is running before starting production server.
 
 ## Usage Guide
 
@@ -388,7 +432,14 @@ Error: No module named 'pandas'
 ```
 Error: Failed to fetch stock data
 ```
-**Solution**: Ensure local stock API is running on http://127.0.0.1:8080
+**Solution**:
+1. Ensure aktools API is running: `python -m aktools`
+2. Check that the API is accessible at http://127.0.0.1:8080
+3. Verify aktools is installed: `pip list | grep aktools`
+4. Test the API endpoint:
+   ```bash
+   curl "http://127.0.0.1:8080/api/public/stock_zh_a_hist?symbol=000001&start_date=20240101&end_date=20240201&adjust=qfq"
+   ```
 
 ### Circular Dependencies
 ```

@@ -1,3 +1,20 @@
 {
-  "indicators": []
+  "indicators": [
+    {
+      "name": "MACD",
+      "description": "macd",
+      "pythonCode": "def calculate(data):\n    \"\"\"\n    Calculate indicator group using MyTT functions.\n\n    Args:\n        data: pandas DataFrame with columns:\n            - date (datetime)\n            - open, high, low, close, volume (float)\n            - All existing indicators\n\n    Returns:\n        dict with indicator_name: values (numpy array or pandas Series)\n    \"\"\"\n    # Example: MACD indicator group\n    DIF, DEA, MACD_hist = MACD(data['close'].values, SHORT=12, LONG=26, M=9)\n\n    return {\n        'DIF': DIF,\n        'DEA': DEA,\n        'MACD': MACD_hist\n    }",
+      "outputColumn": "MACD",
+      "dependencies": [],
+      "isGroup": true,
+      "groupName": "MACD",
+      "expectedOutputs": [
+        "DIF",
+        "DEA",
+        "MACD"
+      ],
+      "id": "0296107e-991b-41e0-af75-031ec88bd95b",
+      "createdAt": "2026-01-04T21:34:40.684Z"
+    }
+  ]
 }
