@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Editor from '@monaco-editor/react';
 
 interface Indicator {
   id: string;
@@ -76,6 +77,10 @@ export default function IndicatorEditorModal({
   const [isValidating, setIsValidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
+  const [syntaxWarnings, setSyntaxWarnings] = useState<string[]>([]);
+  const [showSyntaxHelp, setShowSyntaxHelp] = useState(false);
+  const [editorInstance, setEditorInstance] = useState<any>(null);
+  const [monacoInstance, setMonacoInstance] = useState<any>(null);
 
   useEffect(() => {
     if (indicator) {
@@ -233,6 +238,132 @@ export default function IndicatorEditorModal({
   const handleInsertMyTTTemplate = () => {
     setPythonCode(MYTT_TEMPLATE);
   };
+
+  // Basic syntax checking with line numbers
+  const checkBasicSyntax = (code: string) => {
+    const warnings: string[] = [];
+    const markers: any[] = [];
+
+    if (!code.trim()) {
+      return { warnings, markers };
+    }
+
+    const lines = code.split('\n');
+
+    // Check for calculate function definition
+    const hasCalculate = code.includes('def calculate(data)');
+    if (!hasCalculate) {
+      warnings.push('Missing "def calculate(data):" function definition');
+      markers.push({
+        severity: 4, // Warning
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: 1,
+        endColumn: 100,
+        message: 'Missing "def calculate(data):" function definition'
+      });
+    }
+
+    // Check for return statement
+    const hasReturn = code.includes('return');
+    if (!hasReturn) {
+      warnings.push('Missing return statement');
+      const lastLine = lines.length;
+      markers.push({
+        severity: 4, // Warning
+        startLineNumber: lastLine,
+        startColumn: 1,
+        endLineNumber: lastLine,
+        endColumn: lines[lastLine - 1]?.length || 1,
+        message: 'Missing return statement'
+      });
+    }
+
+    // Check for balanced parentheses
+    const openParen = (code.match(/\(/g) || []).length;
+    const closeParen = (code.match(/\)/g) || []).length;
+    if (openParen !== closeParen) {
+      const msg = `Unbalanced parentheses: ${openParen} open, ${closeParen} close`;
+      warnings.push(msg);
+
+      // Find line with imbalance
+      let balance = 0;
+      let errorLine = 1;
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        balance += (line.match(/\(/g) || []).length;
+        balance -= (line.match(/\)/g) || []).length;
+        if (balance < 0) {
+          errorLine = i + 1;
+          break;
+        }
+      }
+
+      markers.push({
+        severity: 8, // Error
+        startLineNumber: errorLine,
+        startColumn: 1,
+        endLineNumber: errorLine,
+        endColumn: lines[errorLine - 1]?.length || 1,
+        message: msg
+      });
+    }
+
+    // Check for balanced brackets
+    const openBracket = (code.match(/\[/g) || []).length;
+    const closeBracket = (code.match(/\]/g) || []).length;
+    if (openBracket !== closeBracket) {
+      const msg = `Unbalanced brackets: ${openBracket} open, ${closeBracket} close`;
+      warnings.push(msg);
+      markers.push({
+        severity: 8,
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: 1,
+        endColumn: 100,
+        message: msg
+      });
+    }
+
+    // Check for balanced braces
+    const openBrace = (code.match(/\{/g) || []).length;
+    const closeBrace = (code.match(/\}/g) || []).length;
+    if (openBrace !== closeBrace) {
+      const msg = `Unbalanced braces: ${openBrace} open, ${closeBrace} close`;
+      warnings.push(msg);
+      markers.push({
+        severity: 8,
+        startLineNumber: 1,
+        startColumn: 1,
+        endLineNumber: 1,
+        endColumn: 100,
+        message: msg
+      });
+    }
+
+    return { warnings, markers };
+  };
+
+  // Check syntax when code changes and update editor markers
+  useEffect(() => {
+    if (pythonCode && editorInstance && monacoInstance) {
+      const { warnings, markers } = checkBasicSyntax(pythonCode);
+      setSyntaxWarnings(warnings);
+
+      // Set markers in Monaco editor
+      const model = editorInstance.getModel();
+      if (model) {
+        monacoInstance.editor.setModelMarkers(model, 'python-syntax', markers);
+      }
+    } else if (editorInstance && monacoInstance) {
+      // Clear markers if no code
+      const model = editorInstance.getModel();
+      if (model) {
+        monacoInstance.editor.setModelMarkers(model, 'python-syntax', []);
+      }
+      setSyntaxWarnings([]);
+    }
+  }, [pythonCode, editorInstance, monacoInstance]);
 
   if (!isOpen) return null;
 
@@ -426,15 +557,78 @@ export default function IndicatorEditorModal({
             </div>
 
             {activeTab === 'text' ? (
-              <textarea
-                value={pythonCode}
-                onChange={(e) => setPythonCode(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded font-mono text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                rows={12}
-                placeholder="def calculate(data):&#10;    return data['close'].rolling(20).mean()"
-                disabled={isLoading}
-                required
-              />
+              <div className="relative">
+                <div className="border border-gray-300 rounded overflow-hidden">
+                  <Editor
+                    height="600px"
+                    defaultLanguage="python"
+                    value={pythonCode}
+                    onChange={(value) => setPythonCode(value || '')}
+                    onMount={(editor, monaco) => {
+                      setEditorInstance(editor);
+                      setMonacoInstance(monaco);
+                    }}
+                    theme="vs-light"
+                    options={{
+                      minimap: { enabled: true },
+                      fontSize: 13,
+                      lineNumbers: 'on',
+                      scrollBeyondLastLine: false,
+                      automaticLayout: true,
+                      tabSize: 4,
+                      insertSpaces: true,
+                      wordWrap: 'off',
+                      readOnly: isLoading,
+                      formatOnPaste: true,
+                      formatOnType: true,
+                      suggestOnTriggerCharacters: true,
+                      quickSuggestions: true,
+                      parameterHints: { enabled: true },
+                      folding: true,
+                      bracketPairColorization: { enabled: true },
+                      guides: {
+                        indentation: true,
+                        bracketPairs: true
+                      }
+                    }}
+                    loading={<div className="p-4 text-gray-500">Loading editor...</div>}
+                  />
+                </div>
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowSyntaxHelp(!showSyntaxHelp)}
+                    className="text-xs text-blue-600 hover:text-blue-700 underline"
+                  >
+                    {showSyntaxHelp ? '▼ Hide' : '▶ Show'} Python Syntax Help
+                  </button>
+
+                  {showSyntaxHelp && (
+                    <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded text-xs space-y-2">
+                      <div>
+                        <strong>Available in namespace:</strong>
+                        <code className="block mt-1 bg-white p-1 rounded">pd (pandas), np (numpy), data (DataFrame), MyTT (library)</code>
+                      </div>
+                      <div>
+                        <strong>Data columns:</strong>
+                        <code className="block mt-1 bg-white p-1 rounded">date, open, high, low, close, volume, turnover, amplitude, change_pct, etc.</code>
+                      </div>
+                      <div>
+                        <strong>Single indicator return:</strong>
+                        <code className="block mt-1 bg-white p-1 rounded">return data['close'].rolling(20).mean()</code>
+                      </div>
+                      <div>
+                        <strong>Group indicator return:</strong>
+                        <code className="block mt-1 bg-white p-1 rounded">return {'{'}  'DIF': dif_values, 'DEA': dea_values {'}'}</code>
+                      </div>
+                      <div>
+                        <strong>Common functions:</strong>
+                        <code className="block mt-1 bg-white p-1 rounded">rolling(), shift(), diff(), mean(), std(), min(), max()</code>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
             ) : (
               <div className="border-2 border-dashed border-gray-300 rounded p-4 text-center">
                 <input
@@ -458,6 +652,17 @@ export default function IndicatorEditorModal({
               </div>
             )}
           </div>
+
+          {syntaxWarnings.length > 0 && (
+            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded text-sm">
+              <div className="font-semibold mb-1">⚠️ Syntax Warnings:</div>
+              <ul className="list-disc list-inside space-y-1">
+                {syntaxWarnings.map((warning, idx) => (
+                  <li key={idx}>{warning}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {error && (
             <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded text-sm">

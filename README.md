@@ -21,14 +21,31 @@ A comprehensive stock analysis dashboard built with Next.js that displays real-t
 - **Color Consistency**: Unified color scheme across all charts and selectors
 
 ### 🔧 Custom Python Indicators
+- **Dual Indicator Modes**:
+  - **Custom Python**: Single indicator with user-defined calculation
+  - **MyTT Library Group**: Multiple related indicators from one calculation (e.g., MACD → DIF, DEA, MACD)
 - **Indicator Manager**: Full CRUD interface for creating and managing custom indicators
-- **Python Execution**: Write Python code to calculate custom technical indicators
-- **Code Editor**:
-  - Text area with syntax support
+- **Python Execution**: Write Python code to calculate custom technical indicators with MyTT library support
+- **Professional Code Editor** (Monaco Editor - same as VS Code):
+  - Full Python syntax highlighting with color coding
+  - Line numbers and code folding
+  - IntelliSense autocomplete and parameter hints
+  - Real-time syntax checking with error markers
+  - Minimap for code overview
+  - Auto-indentation and bracket matching
+  - Find/replace, multi-cursor editing
+  - Format on paste/type
   - File upload for .py files
   - Code validation before saving
+  - Expandable syntax help with examples
+- **MyTT Library Integration**:
+  - Built-in Chinese technical analysis library
+  - 60+ indicator functions (MACD, KDJ, RSI, BOLL, etc.)
+  - Group indicators return dict of multiple outputs
+  - Stored as `groupName:indicatorName` columns (e.g., `MACD:DIF`)
 - **Dependencies**:
   - Automatic dependency detection (indicators can use other indicators)
+  - Support for group indicator column references (`MACD:DIF`)
   - Topological sorting ensures correct calculation order
   - Cascade deletion warnings when removing indicators with dependents
 - **Auto-Apply**: Automatically applies all indicators when adding/updating stocks
@@ -167,13 +184,51 @@ def calculate(data):
     return (price - sma) / sma * 100  # Percentage above/below SMA
 ```
 
+#### Example 4: MyTT Group Indicator (MACD)
+```python
+def calculate(data):
+    """
+    Calculate MACD indicator group using MyTT library
+
+    Args:
+        data: pandas DataFrame with OHLC data
+
+    Returns:
+        dict with indicator_name: values (numpy array or pandas Series)
+    """
+    # MyTT.MACD returns three arrays: DIF, DEA, MACD
+    DIF, DEA, MACD_hist = MACD(data['close'].values, SHORT=12, LONG=26, M=9)
+
+    return {
+        'DIF': DIF,
+        'DEA': DEA,
+        'MACD': MACD_hist
+    }
+```
+
+#### Example 5: Using Group Indicator Output
+```python
+def calculate(data):
+    """Calculate buy signal from MACD crossover (requires MACD group)"""
+    # Reference group indicator columns using groupName:indicatorName
+    dif = data['MACD:DIF']
+    dea = data['MACD:DEA']
+
+    # Buy signal when DIF crosses above DEA
+    return (dif > dea).astype(int)
+```
+
 ### Managing Indicators
 1. Click **"Manage Indicators"** button
 2. **Create**: Click "+ Create New Indicator"
-   - Enter name, description, and Python code
+   - Select indicator type: Custom Python or MyTT Library Group
+   - Enter name, description, and Python code in Monaco Editor
+   - For groups: specify group name and expected outputs (e.g., DIF, DEA, MACD)
+   - Use "Insert Template" or "Insert MyTT Template" for quick start
+   - Real-time syntax checking shows errors as you type
    - Validate code before saving
 3. **Apply**: Select stocks to apply indicator to (all selected by default)
-4. **Edit**: Modify existing indicator code
+4. **Edit**: Modify existing indicator code (type cannot be changed after creation)
 5. **Delete**: Remove indicators (warns if other indicators depend on it)
 
 ### Viewing Charts
@@ -287,10 +342,12 @@ Indicators are stored in `/data/indicators/indicators.json`:
 - **Frontend**: Next.js 14 (App Router), React, TypeScript
 - **UI Framework**: Tailwind CSS
 - **Charts**: TradingView Lightweight Charts
+- **Code Editor**: Monaco Editor (@monaco-editor/react) - VS Code editor
 - **Data Processing**:
   - PapaParse (CSV parsing)
   - Python (indicator calculation via child_process)
   - pandas, numpy (Python data processing)
+  - MyTT (Chinese technical analysis library)
 - **Runtime**: Node.js (API routes, Python subprocess)
 
 ## Security Considerations
