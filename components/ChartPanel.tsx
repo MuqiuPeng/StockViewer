@@ -720,6 +720,20 @@ export default function ChartPanel({
   if (!hasIndicators1) candlestickHeight += 250; // Add indicator 1 space
   if (!hasIndicators2) candlestickHeight += 250; // Add indicator 2 space
 
+  // Resize candlestick chart when indicator visibility changes
+  useEffect(() => {
+    const candlestickChart = candlestickChartRef.current;
+    if (!candlestickChart) return;
+
+    // Calculate height based on visible indicators
+    let newHeight = 350; // Base height
+    if (enabledIndicators1.size === 0) newHeight += 250;
+    if (enabledIndicators2.size === 0) newHeight += 250;
+
+    // Apply new height to the chart
+    candlestickChart.applyOptions({ height: newHeight });
+  }, [enabledIndicators1.size, enabledIndicators2.size]);
+
   return (
     <div className="chart-panel flex flex-col gap-1">
       <div className="candlestick-chart-container">
