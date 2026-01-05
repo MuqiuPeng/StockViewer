@@ -151,9 +151,9 @@ export default function DataPanel({
   return (
     <div className="data-panel p-3 bg-gray-50 border border-gray-200 rounded h-full flex flex-col">
       <div className="text-xs font-semibold text-gray-600 mb-2">
-        {date.toLocaleDateString('zh-CN', { 
-          year: 'numeric', 
-          month: '2-digit', 
+        {date.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: '2-digit',
           day: '2-digit',
           weekday: 'short'
         })}
