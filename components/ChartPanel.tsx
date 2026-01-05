@@ -711,29 +711,42 @@ export default function ChartPanel({
     };
   }, [candles.length, enabledIndicators1.size, enabledIndicators2.size]);
 
+  // Calculate which indicator charts should be visible
+  const hasIndicators1 = enabledIndicators1.size > 0;
+  const hasIndicators2 = enabledIndicators2.size > 0;
+
+  // Calculate candlestick chart height based on visible indicator charts
+  let candlestickHeight = 350; // Base height
+  if (!hasIndicators1) candlestickHeight += 250; // Add indicator 1 space
+  if (!hasIndicators2) candlestickHeight += 250; // Add indicator 2 space
+
   return (
     <div className="chart-panel flex flex-col gap-1">
       <div className="candlestick-chart-container">
         <div
           ref={candlestickContainerRef}
           className="w-full"
-          style={{ height: '350px', position: 'relative' }}
+          style={{ height: `${candlestickHeight}px`, position: 'relative' }}
         />
       </div>
-      <div className="indicator-chart-container">
-        <div
-          ref={indicator1ContainerRef}
-          className="w-full indicator-chart-disabled"
-          style={{ height: '250px', position: 'relative' }}
-        />
-      </div>
-      <div className="indicator-chart-container">
-        <div
-          ref={indicator2ContainerRef}
-          className="w-full indicator-chart-disabled"
-          style={{ height: '250px', position: 'relative' }}
-        />
-      </div>
+      {hasIndicators1 && (
+        <div className="indicator-chart-container">
+          <div
+            ref={indicator1ContainerRef}
+            className="w-full indicator-chart-disabled"
+            style={{ height: '250px', position: 'relative' }}
+          />
+        </div>
+      )}
+      {hasIndicators2 && (
+        <div className="indicator-chart-container">
+          <div
+            ref={indicator2ContainerRef}
+            className="w-full indicator-chart-disabled"
+            style={{ height: '250px', position: 'relative' }}
+          />
+        </div>
+      )}
     </div>
   );
 }
