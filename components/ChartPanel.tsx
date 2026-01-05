@@ -723,6 +723,9 @@ export default function ChartPanel({
   // Resize candlestick chart when indicator visibility changes
   useEffect(() => {
     const candlestickChart = candlestickChartRef.current;
+    const indicator1Chart = indicator1ChartRef.current;
+    const indicator2Chart = indicator2ChartRef.current;
+
     if (!candlestickChart) return;
 
     // Calculate height based on visible indicators
@@ -732,6 +735,22 @@ export default function ChartPanel({
 
     // Apply new height to the chart
     candlestickChart.applyOptions({ height: newHeight });
+
+    // Force resize on indicator charts when they become visible
+    // This ensures they render correctly after being hidden with display: none
+    if (indicator1Chart && enabledIndicators1.size > 0 && indicator1ContainerRef.current) {
+      indicator1Chart.applyOptions({
+        width: indicator1ContainerRef.current.clientWidth,
+        height: 250,
+      });
+    }
+
+    if (indicator2Chart && enabledIndicators2.size > 0 && indicator2ContainerRef.current) {
+      indicator2Chart.applyOptions({
+        width: indicator2ContainerRef.current.clientWidth,
+        height: 250,
+      });
+    }
   }, [enabledIndicators1.size, enabledIndicators2.size]);
 
   return (
