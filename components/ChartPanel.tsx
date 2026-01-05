@@ -729,24 +729,26 @@ export default function ChartPanel({
           style={{ height: `${candlestickHeight}px`, position: 'relative' }}
         />
       </div>
-      {hasIndicators1 && (
-        <div className="indicator-chart-container">
-          <div
-            ref={indicator1ContainerRef}
-            className="w-full indicator-chart-disabled"
-            style={{ height: '250px', position: 'relative' }}
-          />
-        </div>
-      )}
-      {hasIndicators2 && (
-        <div className="indicator-chart-container">
-          <div
-            ref={indicator2ContainerRef}
-            className="w-full indicator-chart-disabled"
-            style={{ height: '250px', position: 'relative' }}
-          />
-        </div>
-      )}
+      <div
+        className="indicator-chart-container"
+        style={{ display: hasIndicators1 ? 'block' : 'none' }}
+      >
+        <div
+          ref={indicator1ContainerRef}
+          className="w-full indicator-chart-disabled"
+          style={{ height: '250px', position: 'relative' }}
+        />
+      </div>
+      <div
+        className="indicator-chart-container"
+        style={{ display: hasIndicators2 ? 'block' : 'none' }}
+      >
+        <div
+          ref={indicator2ContainerRef}
+          className="w-full indicator-chart-disabled"
+          style={{ height: '250px', position: 'relative' }}
+        />
+      </div>
     </div>
   );
 }
