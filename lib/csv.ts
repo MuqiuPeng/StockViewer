@@ -208,7 +208,7 @@ export async function loadDataset(filename: string): Promise<DatasetData> {
           reject(error instanceof Error ? error : new Error('Failed to parse CSV'));
         }
       },
-      error: (error) => {
+      error: (error: Error) => {
         reject(new Error(`CSV parsing error: ${error.message}`));
       },
     });
@@ -312,7 +312,7 @@ export async function getDatasetInfo(filename: string): Promise<{
                 dataSource,
               });
             },
-            error: (error) => {
+            error: (error: Error) => {
               reject(new Error(`CSV parsing error: ${error.message}`));
             },
           });
@@ -320,7 +320,7 @@ export async function getDatasetInfo(filename: string): Promise<{
           reject(error instanceof Error ? error : new Error('Failed to parse CSV'));
         }
       },
-      error: (error) => {
+      error: (error: Error) => {
         reject(new Error(`CSV parsing error: ${error.message}`));
       },
     });

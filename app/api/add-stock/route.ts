@@ -5,8 +5,9 @@ import { getCsvDirectory } from '@/lib/datasets';
 import { getDatasetInfo } from '@/lib/csv';
 import { loadIndicators } from '@/lib/indicator-storage';
 import { executePythonIndicator } from '@/lib/python-executor';
-import { addIndicatorColumn } from '@/lib/csv-updater';
+import { addIndicatorColumn, addIndicatorGroupColumns } from '@/lib/csv-updater';
 import { topologicalSort } from '@/lib/indicator-dependencies';
+import { API_CONFIG } from '@/lib/env';
 import Papa from 'papaparse';
 
 export const runtime = 'nodejs';
@@ -71,7 +72,7 @@ export async function POST(request: Request) {
     // Fetch data from local API based on data source
     let apiUrl: string;
     if (dataSource === 'stock_zh_a_hist') {
-      apiUrl = `http://127.0.0.1:8080/api/public/stock_zh_a_hist?symbol=${symbol}&start_date=${startDate}&end_date=${endDate}&adjust=qfq`;
+      apiUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/stock_zh_a_hist?symbol=${symbol}&start_date=${startDate}&end_date=${endDate}&adjust=qfq`;
     } else {
       return NextResponse.json(
         { error: 'Invalid data source', message: `Unknown data source: ${dataSource}` },
@@ -163,13 +164,23 @@ export async function POST(request: Request) {
             // Execute the indicator
             const result = await executePythonIndicator({
               code: indicator.pythonCode,
-              data: dataRecords
+              data: dataRecords,
+              isGroup: indicator.isGroup || false
             });
 
             if (result.success && result.values) {
-              // Add the indicator column to the CSV
-              await addIndicatorColumn(filename, indicator.outputColumn, result.values);
-              console.log(`Applied indicator ${indicator.name} to ${symbol}`);
+              // Handle group indicators vs single indicators
+              if (indicator.isGroup && indicator.groupName) {
+                // Group indicator - add multiple columns
+                const valuesDict = result.values as Record<string, (number | null)[]>;
+                await addIndicatorGroupColumns(filename, indicator.groupName, valuesDict);
+                console.log(`Applied group indicator ${indicator.name} to ${symbol}`);
+              } else {
+                // Single indicator - add one column
+                const valuesArray = result.values as (number | null)[];
+                await addIndicatorColumn(filename, indicator.outputColumn, valuesArray);
+                console.log(`Applied indicator ${indicator.name} to ${symbol}`);
+              }
             } else {
               console.warn(`Failed to apply indicator ${indicator.name} to ${symbol}:`, result.error);
             }

@@ -6,6 +6,7 @@ import IndicatorSelector from './IndicatorSelector';
 import AddStockModal from './AddStockModal';
 import IndicatorManager from './IndicatorManager';
 import DataPanel from './DataPanel';
+import { API_CONFIG } from '@/lib/env';
 
 interface DatasetInfo {
   name: string;
@@ -210,7 +211,7 @@ export default function StockDashboard() {
           };
 
           // Check for newer data from API
-          fetch(`http://127.0.0.1:8080/api/public/stock_zh_a_hist?symbol=${selectedDataset}&start_date=${formatDate(tenDaysAgo)}&end_date=${formatDate(today)}&adjust=qfq`)
+          fetch(`${API_CONFIG.AKTOOLS_URL}/api/public/stock_zh_a_hist?symbol=${selectedDataset}&start_date=${formatDate(tenDaysAgo)}&end_date=${formatDate(today)}&adjust=qfq`)
             .then(res => res.json())
             .then(apiData => {
               if (apiData && apiData.data && apiData.data.length > 0) {

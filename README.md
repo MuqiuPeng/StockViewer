@@ -123,9 +123,56 @@ pip install -r requirements.txt
 ```
 
 ### 4. Configure Environment (Optional)
-Create `.env.local` to customize settings:
+Copy the example environment file and customize as needed:
 ```bash
-CSV_DIR=/path/to/your/csv/files
+cp .env.local.example .env.local
+```
+
+Available environment variables:
+
+#### API Configuration
+- `NEXT_PUBLIC_AKTOOLS_API_URL` - AKTools API endpoint (default: `http://127.0.0.1:8080`)
+  - Change this if running aktools on a different host/port
+
+#### Python Execution
+- `PYTHON_EXECUTABLE` - Python executable path (default: `python3`)
+  - Example: `/usr/local/bin/python3` or `path/to/venv/bin/python`
+- `PYTHON_TIMEOUT_MS` - Python script timeout in milliseconds (default: `300000` = 5 minutes)
+  - Increase for large datasets or complex indicators
+
+#### Data Storage
+- `CSV_DIR` - CSV data directory (default: `{project_root}/data/csv`)
+  - Example: `/custom/path/to/csv/files`
+- `MAX_CSV_SIZE_MB` - Maximum CSV file size in MB (default: `50`)
+- `INDICATORS_FILE` - Indicators storage file (default: `{project_root}/data/indicators/indicators.json`)
+
+#### Performance & Caching (Future Features)
+- `ENABLE_DATASET_CACHE` - Enable dataset caching (default: `false`)
+- `DATASET_CACHE_TTL` - Cache TTL in seconds (default: `300` = 5 minutes)
+
+#### Security & Rate Limiting (Future Features)
+- `ENABLE_RATE_LIMITING` - Enable request rate limiting (default: `false`)
+- `RATE_LIMIT_PER_MINUTE` - Max requests per minute (default: `60`)
+
+#### Development & Debugging
+- `DEBUG` - Enable debug logging (default: `false`)
+- `LOG_LEVEL` - Log level: `error`, `warn`, `info`, `debug` (default: `info`)
+- `LOG_DIR` - Log directory (default: `{project_root}/logs`)
+
+Example `.env.local`:
+```bash
+# Custom AKTools API URL
+NEXT_PUBLIC_AKTOOLS_API_URL=http://192.168.1.100:8080
+
+# Increase timeout for complex indicators
+PYTHON_TIMEOUT_MS=600000
+
+# Custom Python executable
+PYTHON_EXECUTABLE=/usr/local/bin/python3
+
+# Enable debug logging
+DEBUG=true
+LOG_LEVEL=debug
 ```
 
 ### 5. Start AKTools API Server
@@ -418,9 +465,15 @@ Error: Python 3 required. Install Python 3.8+
 
 ### Indicator Calculation Timeout
 ```
-Error: Calculation timeout. Optimize your code.
+Error: Python execution timeout (5 minutes)
 ```
-**Solution**: Simplify indicator logic or increase timeout in `/lib/python-executor.ts`
+**Solution**:
+1. Simplify indicator logic to reduce computation time
+2. Or increase timeout via environment variable:
+   ```bash
+   # .env.local
+   PYTHON_TIMEOUT_MS=600000  # 10 minutes
+   ```
 
 ### Missing Dependencies
 ```
@@ -439,6 +492,11 @@ Error: Failed to fetch stock data
 4. Test the API endpoint:
    ```bash
    curl "http://127.0.0.1:8080/api/public/stock_zh_a_hist?symbol=000001&start_date=20240101&end_date=20240201&adjust=qfq"
+   ```
+5. If running aktools on a different host/port, configure the API URL:
+   ```bash
+   # .env.local
+   NEXT_PUBLIC_AKTOOLS_API_URL=http://192.168.1.100:8080
    ```
 
 ### Circular Dependencies

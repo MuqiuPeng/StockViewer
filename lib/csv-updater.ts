@@ -73,7 +73,7 @@ export async function addIndicatorGroupColumns(
           reject(error);
         }
       },
-      error: (error) => {
+      error: (error: Error) => {
         reject(new Error(`CSV parsing error: ${error.message}`));
       },
     });
@@ -128,7 +128,7 @@ export async function addIndicatorColumn(
           reject(error);
         }
       },
-      error: (error) => {
+      error: (error: Error) => {
         reject(new Error(`CSV parsing error: ${error.message}`));
       },
     });

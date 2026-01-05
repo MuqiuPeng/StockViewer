@@ -1,6 +1,7 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import { existsSync } from 'fs';
+import { PYTHON_CONFIG } from './env';
 
 export interface PythonExecutionInput {
   code: string;
@@ -21,19 +22,20 @@ export async function executePythonIndicator(
   return new Promise((resolve, reject) => {
     const pythonScript = path.join(process.cwd(), 'data', 'python', 'executor.py');
 
-    // Get Python executable - prioritize local venv
+    // Get Python executable - prioritize env config, then local venv
     let pythonExecutable: string;
-    
-    // Check for explicit Python path first
-    if (process.env.PYTHON_PATH || process.env.PYTHON_EXECUTABLE) {
-      pythonExecutable = process.env.PYTHON_PATH || process.env.PYTHON_EXECUTABLE!;
+
+    // Check for configured Python path first
+    if (PYTHON_CONFIG.EXECUTABLE !== 'python3') {
+      // Custom Python executable specified in env
+      pythonExecutable = PYTHON_CONFIG.EXECUTABLE;
     } else {
       // Look for local venv in project directory
       const venvPath = path.join(process.cwd(), 'venv');
-      const venvPython = process.platform === 'win32' 
+      const venvPython = process.platform === 'win32'
         ? path.join(venvPath, 'Scripts', 'python.exe')
         : path.join(venvPath, 'bin', 'python');
-      
+
       if (existsSync(venvPython)) {
         pythonExecutable = venvPython;
       } else {
@@ -80,11 +82,12 @@ export async function executePythonIndicator(
     pythonProcess.stdin.write(JSON.stringify(input));
     pythonProcess.stdin.end();
 
-    // Timeout after 5 minutes
+    // Timeout from environment config
     const timeout = setTimeout(() => {
       pythonProcess.kill();
-      reject(new Error('Python execution timeout (5 minutes)'));
-    }, 5 * 60 * 1000);
+      const timeoutMinutes = Math.floor(PYTHON_CONFIG.TIMEOUT_MS / 60000);
+      reject(new Error(`Python execution timeout (${timeoutMinutes} minutes)`));
+    }, PYTHON_CONFIG.TIMEOUT_MS);
 
     pythonProcess.on('close', () => {
       clearTimeout(timeout);

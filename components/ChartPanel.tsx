@@ -282,7 +282,7 @@ export default function ChartPanel({
 
     // Subscribe to crosshair move events on all charts
     // Synchronize crosshair across all three charts
-    const crosshairUnsubscribe1 = candlestickChart.subscribeCrosshairMove((param) => {
+    candlestickChart.subscribeCrosshairMove((param) => {
       if (onCrosshairMove) {
         onCrosshairMove(param.time as number | null);
       }
@@ -318,7 +318,7 @@ export default function ChartPanel({
       }
     });
 
-    const crosshairUnsubscribe2 = indicator1Chart.subscribeCrosshairMove((param) => {
+    indicator1Chart.subscribeCrosshairMove((param) => {
       if (onCrosshairMove) {
         onCrosshairMove(param.time as number | null);
       }
@@ -345,7 +345,7 @@ export default function ChartPanel({
       }
     });
 
-    const crosshairUnsubscribe3 = indicator2Chart.subscribeCrosshairMove((param) => {
+    indicator2Chart.subscribeCrosshairMove((param) => {
       if (onCrosshairMove) {
         onCrosshairMove(param.time as number | null);
       }
@@ -424,16 +424,6 @@ export default function ChartPanel({
       if (syncUnsubscribe2Ref.current) {
         syncUnsubscribe2Ref.current();
         syncUnsubscribe2Ref.current = null;
-      }
-      // Clean up crosshair subscriptions
-      if (typeof crosshairUnsubscribe1 === 'function') {
-        crosshairUnsubscribe1();
-      }
-      if (typeof crosshairUnsubscribe2 === 'function') {
-        crosshairUnsubscribe2();
-      }
-      if (typeof crosshairUnsubscribe3 === 'function') {
-        crosshairUnsubscribe3();
       }
       // Clean up indicator chart interaction prevention
       cleanup1.cleanup();
