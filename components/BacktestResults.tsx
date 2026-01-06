@@ -168,6 +168,14 @@ function PortfolioBacktestResults({
   const [tradesPerPage, setTradesPerPage] = useState(25);
   const [currentPage, setCurrentPage] = useState(1);
 
+  // Hover state for nearest trade info
+  const [hoveredTime, setHoveredTime] = useState<number | null>(null);
+  const [nearestLeftTrade, setNearestLeftTrade] = useState<any>(null);
+  const [nearestRightTrade, setNearestRightTrade] = useState<any>(null);
+
+  // Stock names mapping: code -> name
+  const [stockNames, setStockNames] = useState<Record<string, string>>({});
+
   // Calculate drawdown data
   const drawdownData = useMemo(() => {
     const data: Array<{ date: string; drawdown: number; drawdownPct: number }> = [];
@@ -210,6 +218,46 @@ function PortfolioBacktestResults({
 
     return filtered;
   }, [stockCandles, portfolioResult.dateRange]);
+
+  // Load stock names from dataset metadata
+  useEffect(() => {
+    const loadStockNames = async () => {
+      try {
+        const response = await fetch('/api/datasets');
+        if (!response.ok) return;
+
+        const datasets = await response.json();
+        const namesMap: Record<string, string> = {};
+
+        datasets.forEach((dataset: any) => {
+          // Extract stock code from filename (e.g., "000001" from "000001_stock_zh_a_hist.csv")
+          const filenameWithoutExt = dataset.filename.replace(/\.csv$/i, '');
+          const stockCode = filenameWithoutExt.split('_')[0];
+
+          // Map code to name
+          if (dataset.name) {
+            namesMap[stockCode] = dataset.name;
+          }
+          // Also map by symbol if available
+          if (dataset.symbol) {
+            namesMap[dataset.symbol] = dataset.name;
+          }
+        });
+
+        setStockNames(namesMap);
+      } catch (error) {
+        console.error('Failed to load stock names:', error);
+      }
+    };
+
+    loadStockNames();
+  }, []);
+
+  // Helper function to get stock display name
+  const getStockDisplayName = (symbol: string) => {
+    const name = stockNames[symbol];
+    return name ? `${name} (${symbol})` : symbol;
+  };
 
   // Load candlestick data for selected stock
   useEffect(() => {
@@ -571,7 +619,7 @@ function PortfolioBacktestResults({
     toolTip.style.boxShadow = '0 2px 5px rgba(0,0,0,0.1)';
     container.appendChild(toolTip);
 
-    // Update tooltip position and content
+    // Update tooltip and track hover for nearest trades
     chart.subscribeCrosshairMove((param) => {
       if (
         param.point === undefined ||
@@ -580,10 +628,39 @@ function PortfolioBacktestResults({
         param.point.y < 0
       ) {
         toolTip.style.display = 'none';
+        setHoveredTime(null);
+        setNearestLeftTrade(null);
+        setNearestRightTrade(null);
         return;
       }
 
-      // Find if there's a trade at this time
+      const currentTime = param.time as number;
+      setHoveredTime(currentTime);
+
+      // Find nearest left and right trades
+      let leftTrade = null;
+      let rightTrade = null;
+      let leftDistance = Infinity;
+      let rightDistance = Infinity;
+
+      stockTradeMarkers.forEach(trade => {
+        const tradeTime = new Date(trade.execution_date || trade.date).getTime() / 1000;
+        const distance = tradeTime - currentTime;
+
+        if (distance <= 0 && Math.abs(distance) < leftDistance) {
+          leftDistance = Math.abs(distance);
+          leftTrade = trade;
+        }
+        if (distance > 0 && distance < rightDistance) {
+          rightDistance = distance;
+          rightTrade = trade;
+        }
+      });
+
+      setNearestLeftTrade(leftTrade);
+      setNearestRightTrade(rightTrade);
+
+      // Find if there's a trade at this exact time for tooltip
       const trade = stockTradeMarkers.find(t => {
         const tradeTime = new Date(t.execution_date || t.date).getTime() / 1000;
         return tradeTime === param.time;
@@ -1309,7 +1386,7 @@ function PortfolioBacktestResults({
             >
               {portfolioResult.symbols.map((symbol) => (
                 <option key={symbol} value={symbol}>
-                  {symbol}
+                  {getStockDisplayName(symbol)}
                 </option>
               ))}
             </select>
@@ -1321,19 +1398,126 @@ function PortfolioBacktestResults({
           {/* Price Chart with Buy/Sell Markers */}
           <div>
             <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-              <span className="text-blue-600">📊</span> {selectedStockSymbol} - Price Chart with Buy/Sell Signals
+              <span className="text-blue-600">📊</span> {getStockDisplayName(selectedStockSymbol)} - Price Chart with Buy/Sell Signals
             </h3>
             <div className="bg-white p-4 rounded-lg border shadow-sm">
               {isLoadingCandles ? (
                 <div className="text-center py-12 text-gray-500">
                   <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-3"></div>
-                  <p className="text-sm">Loading chart data for {selectedStockSymbol}...</p>
+                  <p className="text-sm">Loading chart data for {getStockDisplayName(selectedStockSymbol)}...</p>
                   <p className="text-xs mt-2 text-gray-400">Check browser console for details if this takes too long</p>
                 </div>
               ) : filteredStockCandles.length > 0 ? (
-                <div ref={priceChartContainerRef} style={{ position: 'relative' }}>
-                  <div ref={priceChartRef} />
-                </div>
+                <>
+                  <div ref={priceChartContainerRef} style={{ position: 'relative' }}>
+                    <div ref={priceChartRef} />
+                  </div>
+
+                  {/* Trade Detail Panels */}
+                  <div className="mt-4 grid grid-cols-2 gap-4">
+                    {/* Nearest Left Trade */}
+                    <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+                      <h4 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">
+                        Previous Trade
+                      </h4>
+                      {nearestLeftTrade ? (
+                        <div className="space-y-1 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Type:</span>
+                            <span className={`font-medium ${nearestLeftTrade.type === 'buy' ? 'text-blue-600 dark:text-blue-400' : 'text-red-600 dark:text-red-400'}`}>
+                              {nearestLeftTrade.type === 'buy' ? 'Buy' : 'Sell'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Date:</span>
+                            <span className="font-medium text-gray-900 dark:text-white">
+                              {nearestLeftTrade.execution_date || nearestLeftTrade.date}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Price:</span>
+                            <span className="font-medium text-gray-900 dark:text-white">
+                              ¥{nearestLeftTrade.price?.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Size:</span>
+                            <span className="font-medium text-gray-900 dark:text-white">
+                              {nearestLeftTrade.size}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Value:</span>
+                            <span className="font-medium text-gray-900 dark:text-white">
+                              ¥{nearestLeftTrade.value?.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Execution:</span>
+                            <span className="font-medium text-gray-900 dark:text-white text-xs">
+                              {nearestLeftTrade.execution_mode === 'close' ? 'Same Day Close' : 'Next Open'}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-400 dark:text-gray-500 italic">
+                          No previous trade
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Nearest Right Trade */}
+                    <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+                      <h4 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">
+                        Next Trade
+                      </h4>
+                      {nearestRightTrade ? (
+                        <div className="space-y-1 text-sm">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Type:</span>
+                            <span className={`font-medium ${nearestRightTrade.type === 'buy' ? 'text-blue-600 dark:text-blue-400' : 'text-red-600 dark:text-red-400'}`}>
+                              {nearestRightTrade.type === 'buy' ? 'Buy' : 'Sell'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Date:</span>
+                            <span className="font-medium text-gray-900 dark:text-white">
+                              {nearestRightTrade.execution_date || nearestRightTrade.date}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Price:</span>
+                            <span className="font-medium text-gray-900 dark:text-white">
+                              ¥{nearestRightTrade.price?.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Size:</span>
+                            <span className="font-medium text-gray-900 dark:text-white">
+                              {nearestRightTrade.size}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Value:</span>
+                            <span className="font-medium text-gray-900 dark:text-white">
+                              ¥{nearestRightTrade.value?.toFixed(2)}
+                            </span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600 dark:text-gray-400">Execution:</span>
+                            <span className="font-medium text-gray-900 dark:text-white text-xs">
+                              {nearestRightTrade.execution_mode === 'close' ? 'Same Day Close' : 'Next Open'}
+                            </span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-sm text-gray-400 dark:text-gray-500 italic">
+                          No next trade
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
               ) : stockCandles.length > 0 && filteredStockCandles.length === 0 ? (
                 <div className="text-center py-12 text-yellow-50 border border-yellow-200 rounded">
                   <p className="text-sm text-yellow-800 font-medium">No data available in the selected date range</p>
@@ -1341,7 +1525,7 @@ function PortfolioBacktestResults({
                 </div>
               ) : (
                 <div className="text-center py-12 text-red-50 border border-red-200 rounded">
-                  <p className="text-sm text-red-800 font-medium">Unable to load chart data for {selectedStockSymbol}</p>
+                  <p className="text-sm text-red-800 font-medium">Unable to load chart data for {getStockDisplayName(selectedStockSymbol)}</p>
                   <p className="text-xs mt-2 text-red-600">Please check the browser console for error details</p>
                 </div>
               )}

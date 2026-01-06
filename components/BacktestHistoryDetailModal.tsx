@@ -70,13 +70,32 @@ export default function BacktestHistoryDetailModal({
           </h2>
 
           {/* Summary */}
-          <div className="mb-4">
-            <div className="font-medium text-gray-900 dark:text-white">{entry.strategyName}</div>
-            <div className="text-sm text-gray-500 dark:text-gray-400">
+          <div className="mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
+            <div className="font-medium text-lg text-gray-900 dark:text-white">{entry.strategyName}</div>
+            <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
               {new Date(entry.createdAt).toLocaleString()}
             </div>
-            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Type: {entry.target.type === 'single' ? 'Single Stock' : entry.target.type === 'portfolio' ? 'Portfolio' : 'Group'}
+            <div className="mt-2 space-y-1">
+              <div className="flex items-center text-sm">
+                <span className="text-gray-600 dark:text-gray-400 w-24">Type:</span>
+                <span className="font-medium text-gray-900 dark:text-white">
+                  {entry.target.type === 'single' ? 'Single Stock' : entry.target.type === 'portfolio' ? 'Portfolio' : 'Group'}
+                </span>
+              </div>
+              <div className="flex items-center text-sm">
+                <span className="text-gray-600 dark:text-gray-400 w-24">Target:</span>
+                <span className="font-medium text-gray-900 dark:text-white">
+                  {entry.target.type === 'single' && entry.target.datasetName && (
+                    <span>📊 {entry.target.datasetName}</span>
+                  )}
+                  {entry.target.type === 'portfolio' && entry.target.symbols && (
+                    <span>📈 {entry.target.symbols.length} stocks: {entry.target.symbols.join(', ')}</span>
+                  )}
+                  {entry.target.type === 'group' && entry.target.groupName && (
+                    <span>📁 {entry.target.groupName}</span>
+                  )}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -120,17 +139,8 @@ export default function BacktestHistoryDetailModal({
             <div className="text-sm space-y-1 text-gray-700 dark:text-gray-300">
               <div>Initial Cash: ¥{entry.parameters.initialCash.toLocaleString()}</div>
               <div>Commission: {(entry.parameters.commission * 100).toFixed(2)}%</div>
-              {entry.parameters.startDate && <div>Start: {entry.parameters.startDate}</div>}
-              {entry.parameters.endDate && <div>End: {entry.parameters.endDate}</div>}
-              {entry.target.type === 'single' && entry.target.datasetName && (
-                <div>Dataset: {entry.target.datasetName}</div>
-              )}
-              {entry.target.type === 'portfolio' && entry.target.symbols && (
-                <div>Symbols: {entry.target.symbols.join(', ')}</div>
-              )}
-              {entry.target.type === 'group' && entry.target.groupName && (
-                <div>Group: {entry.target.groupName}</div>
-              )}
+              {entry.parameters.startDate && <div>Start Date: {entry.parameters.startDate}</div>}
+              {entry.parameters.endDate && <div>End Date: {entry.parameters.endDate}</div>}
             </div>
           </div>
 

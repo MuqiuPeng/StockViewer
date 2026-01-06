@@ -151,6 +151,10 @@ export async function POST(request: Request) {
       const dataset = await loadDataset(actualTarget.datasetName);
       const filteredDataset = filterDatasetByDateRange(dataset, startDate, endDate);
 
+      // Get dataset metadata for display name
+      const datasetMetadata = await findDataset(actualTarget.datasetName);
+      const displayName = datasetMetadata?.name || actualTarget.datasetName;
+
       const startTime = Date.now();
       const result = await executeBacktest({
         strategyCode: strategy.pythonCode,
@@ -190,7 +194,7 @@ export async function POST(request: Request) {
           strategyType: strategy.strategyType || 'single',
           target: {
             type: 'single',
-            datasetName: actualTarget.datasetName,
+            datasetName: displayName,
           },
           parameters: {
             initialCash: initialCash || 100000,
