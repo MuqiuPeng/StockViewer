@@ -34,6 +34,9 @@ export default function DatasetManagement() {
   const [isAddStockModalOpen, setIsAddStockModalOpen] = useState(false);
   const [isGroupManagerOpen, setIsGroupManagerOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState<Record<string, boolean>>({});
+  const [selectedDatasets, setSelectedDatasets] = useState<Set<string>>(new Set());
+  const [showAddToGroupModal, setShowAddToGroupModal] = useState(false);
+  const [targetDatasetForGroup, setTargetDatasetForGroup] = useState<string | null>(null);
 
   useEffect(() => {
     loadDatasets();
@@ -131,6 +134,133 @@ export default function DatasetManagement() {
     await loadGroups();
   };
 
+  const handleSelectDataset = (filename: string) => {
+    const newSelected = new Set(selectedDatasets);
+    if (newSelected.has(filename)) {
+      newSelected.delete(filename);
+    } else {
+      newSelected.add(filename);
+    }
+    setSelectedDatasets(newSelected);
+  };
+
+  const handleSelectAll = (datasets: DatasetInfo[]) => {
+    if (selectedDatasets.size === datasets.length) {
+      setSelectedDatasets(new Set());
+    } else {
+      setSelectedDatasets(new Set(datasets.map(ds => ds.filename)));
+    }
+  };
+
+  const handleBatchUpdate = async () => {
+    if (selectedDatasets.size === 0) {
+      alert('Please select at least one dataset');
+      return;
+    }
+
+    if (!confirm(`Update ${selectedDatasets.size} selected dataset(s)?`)) {
+      return;
+    }
+
+    const selectedArray = Array.from(selectedDatasets);
+    for (const filename of selectedArray) {
+      const dataset = datasets.find(ds => ds.filename === filename);
+      if (dataset) {
+        await handleUpdate(dataset.name);
+      }
+    }
+    setSelectedDatasets(new Set());
+  };
+
+  const handleBatchDelete = async () => {
+    if (selectedDatasets.size === 0) {
+      alert('Please select at least one dataset');
+      return;
+    }
+
+    if (!confirm(`Delete ${selectedDatasets.size} selected dataset(s)? This action cannot be undone.`)) {
+      return;
+    }
+
+    const selectedArray = Array.from(selectedDatasets);
+    for (const filename of selectedArray) {
+      const dataset = datasets.find(ds => ds.filename === filename);
+      if (dataset) {
+        try {
+          const response = await fetch('/api/datasets', {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: dataset.name }),
+          });
+
+          if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.message || 'Failed to delete dataset');
+          }
+        } catch (err) {
+          alert(`Failed to delete ${dataset.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+      }
+    }
+
+    await loadDatasets();
+    setSelectedDatasets(new Set());
+  };
+
+  const handleBatchAddToGroup = () => {
+    if (selectedDatasets.size === 0) {
+      alert('Please select at least one dataset');
+      return;
+    }
+    setTargetDatasetForGroup('batch');
+    setShowAddToGroupModal(true);
+  };
+
+  const handleAddToGroup = (filename: string) => {
+    setTargetDatasetForGroup(filename);
+    setShowAddToGroupModal(true);
+  };
+
+  const handleAddToGroupConfirm = async (groupId: string) => {
+    try {
+      const group = groups.find(g => g.id === groupId);
+      if (!group) {
+        throw new Error('Group not found');
+      }
+
+      const datasetsToAdd = targetDatasetForGroup === 'batch'
+        ? Array.from(selectedDatasets)
+        : [targetDatasetForGroup!];
+
+      const updatedDatasetNames = [...new Set([...group.datasetNames, ...datasetsToAdd])];
+
+      const response = await fetch('/api/groups', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: groupId,
+          name: group.name,
+          description: group.description,
+          datasetNames: updatedDatasetNames,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to add to group');
+      }
+
+      await loadGroups();
+      setShowAddToGroupModal(false);
+      setTargetDatasetForGroup(null);
+      if (targetDatasetForGroup === 'batch') {
+        setSelectedDatasets(new Set());
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to add to group');
+    }
+  };
+
   // Group datasets: first by custom groups, then by data source
   // Datasets can appear in both custom groups AND their data source groups
   const groupedDatasets: Record<string, { type: 'group' | 'datasource'; datasets: DatasetInfo[] }> = {};
@@ -198,7 +328,7 @@ export default function DatasetManagement() {
         </div>
       )}
 
-      <div className="mb-4 flex gap-2">
+      <div className="mb-4 flex gap-2 flex-wrap">
         <button
           onClick={() => setIsAddStockModalOpen(true)}
           className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
@@ -211,6 +341,33 @@ export default function DatasetManagement() {
         >
           📁 Manage Groups
         </button>
+
+        {selectedDatasets.size > 0 && (
+          <>
+            <div className="border-l border-gray-300 mx-2"></div>
+            <span className="px-3 py-2 bg-blue-100 text-blue-800 rounded font-medium">
+              {selectedDatasets.size} selected
+            </span>
+            <button
+              onClick={handleBatchUpdate}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              🔄 Update Selected
+            </button>
+            <button
+              onClick={handleBatchAddToGroup}
+              className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
+            >
+              📁 Add to Group
+            </button>
+            <button
+              onClick={handleBatchDelete}
+              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+            >
+              🗑️ Delete Selected
+            </button>
+          </>
+        )}
       </div>
 
       {loading ? (
@@ -248,6 +405,14 @@ export default function DatasetManagement() {
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="bg-gray-100">
+                      <th className="border p-2 text-center w-12">
+                        <input
+                          type="checkbox"
+                          checked={groupData.datasets.every(ds => selectedDatasets.has(ds.filename))}
+                          onChange={() => handleSelectAll(groupData.datasets)}
+                          className="cursor-pointer"
+                        />
+                      </th>
                       <th className="border p-2 text-left">Name</th>
                       <th className="border p-2 text-left">Start Date</th>
                       <th className="border p-2 text-left">End Date</th>
@@ -262,6 +427,14 @@ export default function DatasetManagement() {
                       .sort((a, b) => a.name.localeCompare(b.name))
                       .map((dataset) => (
                         <tr key={dataset.name} className="hover:bg-gray-50">
+                          <td className="border p-2 text-center">
+                            <input
+                              type="checkbox"
+                              checked={selectedDatasets.has(dataset.filename)}
+                              onChange={() => handleSelectDataset(dataset.filename)}
+                              className="cursor-pointer"
+                            />
+                          </td>
                           <td className="border p-2 font-medium">{dataset.name}</td>
                           <td className="border p-2 text-sm">
                             {dataset.firstDate ? dataset.firstDate.split('T')[0] : 'N/A'}
@@ -281,17 +454,23 @@ export default function DatasetManagement() {
                             </span>
                           </td>
                           <td className="border p-2">
-                            <div className="flex gap-2">
+                            <div className="flex gap-1 flex-wrap">
                               <button
                                 onClick={() => handleUpdate(dataset.name)}
                                 disabled={isUpdating[dataset.name]}
-                                className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+                                className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50"
                               >
                                 {isUpdating[dataset.name] ? 'Updating...' : 'Update'}
                               </button>
                               <button
+                                onClick={() => handleAddToGroup(dataset.filename)}
+                                className="px-2 py-1 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700"
+                              >
+                                + Group
+                              </button>
+                              <button
                                 onClick={() => handleDelete(dataset.name)}
-                                className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                                className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
                               >
                                 Delete
                               </button>
@@ -318,6 +497,72 @@ export default function DatasetManagement() {
         onClose={() => setIsAddStockModalOpen(false)}
         onSuccess={handleAddStockSuccess}
       />
+
+      {/* Add to Group Modal */}
+      {showAddToGroupModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black bg-opacity-50"
+            onClick={() => {
+              setShowAddToGroupModal(false);
+              setTargetDatasetForGroup(null);
+            }}
+          />
+          <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4">Add to Group</h2>
+
+            {groups.length === 0 ? (
+              <div className="text-center py-4">
+                <p className="text-gray-600 mb-4">No groups available. Create a group first.</p>
+                <button
+                  onClick={() => {
+                    setShowAddToGroupModal(false);
+                    setIsGroupManagerOpen(true);
+                  }}
+                  className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
+                >
+                  Create Group
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-sm text-gray-600 mb-3">
+                  {targetDatasetForGroup === 'batch'
+                    ? `Select a group to add ${selectedDatasets.size} dataset(s):`
+                    : 'Select a group to add this dataset:'}
+                </p>
+                {groups.map(group => (
+                  <button
+                    key={group.id}
+                    onClick={() => handleAddToGroupConfirm(group.id)}
+                    className="w-full text-left px-4 py-3 border rounded hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="font-medium">{group.name}</div>
+                    {group.description && (
+                      <div className="text-sm text-gray-600">{group.description}</div>
+                    )}
+                    <div className="text-xs text-gray-500 mt-1">
+                      {group.datasetNames.length} dataset(s)
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => {
+                  setShowAddToGroupModal(false);
+                  setTargetDatasetForGroup(null);
+                }}
+                className="px-4 py-2 border rounded hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
