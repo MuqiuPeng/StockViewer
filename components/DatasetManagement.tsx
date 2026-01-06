@@ -264,10 +264,10 @@ export default function DatasetManagement() {
                         <tr key={dataset.name} className="hover:bg-gray-50">
                           <td className="border p-2 font-medium">{dataset.name}</td>
                           <td className="border p-2 text-sm">
-                            {dataset.firstDate || 'N/A'}
+                            {dataset.firstDate ? dataset.firstDate.split('T')[0] : 'N/A'}
                           </td>
                           <td className="border p-2 text-sm">
-                            {dataset.lastDate || 'N/A'}
+                            {dataset.lastDate ? dataset.lastDate.split('T')[0] : 'N/A'}
                           </td>
                           <td className="border p-2 text-sm text-gray-600">
                             {dataset.lastUpdate
