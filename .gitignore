@@ -45,12 +45,9 @@ yarn-error.log*
 next-env.d.ts
 
 # data
-/data/csv/*.csv
-/data/groups
+/data
 
 # logs
 /logs
 *.log
 *.log.*
-
-data/datasets/names.json
