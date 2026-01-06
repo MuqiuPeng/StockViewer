@@ -6,6 +6,9 @@ import IndicatorSelector from './IndicatorSelector';
 import AddStockModal from './AddStockModal';
 import IndicatorManager from './IndicatorManager';
 import DataPanel from './DataPanel';
+import StrategyManager from './StrategyManager';
+import RunBacktestModal from './RunBacktestModal';
+import BacktestPanel from './BacktestPanel';
 import { API_CONFIG } from '@/lib/env';
 
 interface DatasetInfo {
@@ -58,6 +61,12 @@ export default function StockDashboard() {
   const [definedIndicators, setDefinedIndicators] = useState<string[]>([]);
   const [indicatorGroups, setIndicatorGroups] = useState<Set<string>>(new Set());
   const [crosshairTime, setCrosshairTime] = useState<number | null>(null);
+  const [isStrategyManagerOpen, setIsStrategyManagerOpen] = useState(false);
+  const [isRunBacktestOpen, setIsRunBacktestOpen] = useState(false);
+  const [strategies, setStrategies] = useState<any[]>([]);
+  const [isBacktestLoading, setIsBacktestLoading] = useState(false);
+  const [backtestResults, setBacktestResults] = useState<any>(null);
+  const [isBacktestPanelOpen, setIsBacktestPanelOpen] = useState(false);
 
   // Base indicators from API (not custom calculated)
   const BASE_INDICATORS = ['volume', 'turnover', 'amplitude', 'change_pct', 'change_amount', 'turnover_rate'];
@@ -118,6 +127,18 @@ export default function StockDashboard() {
       })
       .catch((err) => {
         console.error('Failed to load indicators:', err);
+      });
+
+    // Load strategies
+    fetch('/api/strategies')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.strategies) {
+          setStrategies(data.strategies);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load strategies:', err);
       });
   }, []);
 
@@ -434,6 +455,19 @@ export default function StockDashboard() {
         >
           Manage Indicators
         </button>
+        <button
+          onClick={() => setIsStrategyManagerOpen(true)}
+          className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 whitespace-nowrap"
+        >
+          Manage Strategies
+        </button>
+        <button
+          onClick={() => setIsRunBacktestOpen(true)}
+          className="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500 whitespace-nowrap"
+          disabled={!selectedDataset || strategies.length === 0}
+        >
+          Run Backtest
+        </button>
       </div>
 
       {loading && (
@@ -516,6 +550,73 @@ export default function StockDashboard() {
         onClose={() => setIsIndicatorManagerOpen(false)}
         onRefreshDataset={reloadCurrentDataset}
       />
+
+      <StrategyManager
+        isOpen={isStrategyManagerOpen}
+        onClose={() => {
+          setIsStrategyManagerOpen(false);
+          // Reload strategies
+          fetch('/api/strategies')
+            .then((res) => res.json())
+            .then((data) => {
+              if (data.strategies) {
+                setStrategies(data.strategies);
+              }
+            })
+            .catch((err) => {
+              console.error('Failed to reload strategies:', err);
+            });
+        }}
+      />
+
+      <RunBacktestModal
+        isOpen={isRunBacktestOpen}
+        onClose={() => setIsRunBacktestOpen(false)}
+        onRun={async (strategyId, datasetName, initialCash, commission, parameters) => {
+          setIsBacktestLoading(true);
+          setIsRunBacktestOpen(false);
+          try {
+            const response = await fetch('/api/backtest', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                strategyId,
+                datasetName,
+                initialCash,
+                commission,
+                parameters,
+              }),
+            });
+
+            const data = await response.json();
+            if (data.error) {
+              alert(`Backtest failed: ${data.message}`);
+              return;
+            }
+
+            setBacktestResults(data.result);
+            setIsBacktestPanelOpen(true);
+          } catch (err) {
+            alert(`Failed to run backtest: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          } finally {
+            setIsBacktestLoading(false);
+          }
+        }}
+        currentDataset={selectedDataset}
+        strategies={strategies}
+        isLoading={isBacktestLoading}
+      />
+
+      {backtestResults && datasetData && (
+        <BacktestPanel
+          metrics={backtestResults.metrics}
+          equityCurve={backtestResults.equityCurve}
+          tradeMarkers={backtestResults.tradeMarkers}
+          candles={datasetData.candles}
+          isOpen={isBacktestPanelOpen}
+          onClose={() => setIsBacktestPanelOpen(false)}
+        />
+      )}
     </div>
   );
 }

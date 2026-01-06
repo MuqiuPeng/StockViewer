@@ -73,6 +73,16 @@ export default function ChartPanel({
   const syncUnsubscribe1Ref = useRef<(() => void) | null>(null);
   const syncUnsubscribe2Ref = useRef<(() => void) | null>(null);
 
+  // Helper to update chart height based on container
+  const updateChartHeight = (chart: IChartApi | null, container: HTMLDivElement | null) => {
+    if (chart && container && container.clientHeight > 0) {
+      chart.applyOptions({
+        width: container.clientWidth,
+        height: container.clientHeight,
+      });
+    }
+  };
+
   // Initialize all three charts
   useEffect(() => {
     if (!candlestickContainerRef.current || !indicator1ContainerRef.current || !indicator2ContainerRef.current) return;
@@ -84,7 +94,7 @@ export default function ChartPanel({
         textColor: 'black',
       },
       width: candlestickContainerRef.current.clientWidth,
-      height: 350,
+      height: candlestickContainerRef.current.clientHeight || 350,
       grid: {
         vertLines: { color: '#e0e0e0' },
         horzLines: { color: '#e0e0e0' },
@@ -113,7 +123,7 @@ export default function ChartPanel({
         textColor: 'black',
       },
       width: indicator1ContainerRef.current.clientWidth,
-      height: 250,
+      height: indicator1ContainerRef.current.clientHeight || 250,
       grid: {
         vertLines: { color: '#e0e0e0' },
         horzLines: { color: '#e0e0e0' },
@@ -141,7 +151,7 @@ export default function ChartPanel({
         textColor: 'black',
       },
       width: indicator2ContainerRef.current.clientWidth,
-      height: 250,
+      height: indicator2ContainerRef.current.clientHeight || 250,
       grid: {
         vertLines: { color: '#e0e0e0' },
         horzLines: { color: '#e0e0e0' },
@@ -393,29 +403,43 @@ export default function ChartPanel({
     // Note: We'll set up the sync after data is loaded (in the data update effect)
     // This ensures proper order: setData -> fitContent -> sync -> immediate align
 
-    // Handle resize
+    // Use ResizeObserver to watch container sizes
+    const resizeObserver = new ResizeObserver(() => {
+      updateChartHeight(candlestickChartRef.current, candlestickContainerRef.current);
+      if (enabledIndicators1.size > 0) {
+        updateChartHeight(indicator1ChartRef.current, indicator1ContainerRef.current);
+      }
+      if (enabledIndicators2.size > 0) {
+        updateChartHeight(indicator2ChartRef.current, indicator2ContainerRef.current);
+      }
+    });
+
+    // Observe all containers
+    if (candlestickContainerRef.current) {
+      resizeObserver.observe(candlestickContainerRef.current);
+    }
+    if (indicator1ContainerRef.current) {
+      resizeObserver.observe(indicator1ContainerRef.current);
+    }
+    if (indicator2ContainerRef.current) {
+      resizeObserver.observe(indicator2ContainerRef.current);
+    }
+
+    // Also handle window resize for width changes
     const handleResize = () => {
-      if (candlestickContainerRef.current && candlestickChartRef.current) {
-        candlestickChartRef.current.applyOptions({
-          width: candlestickContainerRef.current.clientWidth,
-        });
+      updateChartHeight(candlestickChartRef.current, candlestickContainerRef.current);
+      if (enabledIndicators1.size > 0) {
+        updateChartHeight(indicator1ChartRef.current, indicator1ContainerRef.current);
       }
-      if (indicator1ContainerRef.current && indicator1ChartRef.current) {
-        indicator1ChartRef.current.applyOptions({
-          width: indicator1ContainerRef.current.clientWidth,
-        });
+      if (enabledIndicators2.size > 0) {
+        updateChartHeight(indicator2ChartRef.current, indicator2ContainerRef.current);
       }
-      if (indicator2ContainerRef.current && indicator2ChartRef.current) {
-        indicator2ChartRef.current.applyOptions({
-          width: indicator2ContainerRef.current.clientWidth,
-        });
-      }
-      // Price scale widths are now fixed via minimumWidth, no need to sync
     };
 
     window.addEventListener('resize', handleResize);
 
     return () => {
+      resizeObserver.disconnect();
       window.removeEventListener('resize', handleResize);
       if (syncUnsubscribe1Ref.current) {
         syncUnsubscribe1Ref.current();
@@ -711,75 +735,88 @@ export default function ChartPanel({
     };
   }, [candles.length, enabledIndicators1.size, enabledIndicators2.size]);
 
-  // Calculate which indicator charts should be visible
-  const hasIndicators1 = enabledIndicators1.size > 0;
-  const hasIndicators2 = enabledIndicators2.size > 0;
-
-  // Calculate candlestick chart height based on visible indicator charts
-  let candlestickHeight = 350; // Base height
-  if (!hasIndicators1) candlestickHeight += 250; // Add indicator 1 space
-  if (!hasIndicators2) candlestickHeight += 250; // Add indicator 2 space
-
-  // Resize candlestick chart when indicator visibility changes
+  // Update chart heights when indicator visibility changes
   useEffect(() => {
-    const candlestickChart = candlestickChartRef.current;
-    const indicator1Chart = indicator1ChartRef.current;
-    const indicator2Chart = indicator2ChartRef.current;
-
-    if (!candlestickChart) return;
-
-    // Calculate height based on visible indicators
-    let newHeight = 350; // Base height
-    if (enabledIndicators1.size === 0) newHeight += 250;
-    if (enabledIndicators2.size === 0) newHeight += 250;
-
-    // Apply new height to the chart
-    candlestickChart.applyOptions({ height: newHeight });
-
-    // Force resize on indicator charts when they become visible
-    // This ensures they render correctly after being hidden with display: none
-    if (indicator1Chart && enabledIndicators1.size > 0 && indicator1ContainerRef.current) {
-      indicator1Chart.applyOptions({
-        width: indicator1ContainerRef.current.clientWidth,
-        height: 250,
-      });
-    }
-
-    if (indicator2Chart && enabledIndicators2.size > 0 && indicator2ContainerRef.current) {
-      indicator2Chart.applyOptions({
-        width: indicator2ContainerRef.current.clientWidth,
-        height: 250,
-      });
-    }
+    // Use requestAnimationFrame to ensure DOM has updated
+    requestAnimationFrame(() => {
+      updateChartHeight(candlestickChartRef.current, candlestickContainerRef.current);
+      if (enabledIndicators1.size > 0) {
+        updateChartHeight(indicator1ChartRef.current, indicator1ContainerRef.current);
+      }
+      if (enabledIndicators2.size > 0) {
+        updateChartHeight(indicator2ChartRef.current, indicator2ContainerRef.current);
+      }
+    });
   }, [enabledIndicators1.size, enabledIndicators2.size]);
 
+  // Calculate flex ratios based on visible charts
+  const hasIndicators1 = enabledIndicators1.size > 0;
+  const hasIndicators2 = enabledIndicators2.size > 0;
+  
+  let candlestickFlex = '1';
+  let indicator1Flex = '0';
+  let indicator2Flex = '0';
+  
+  if (hasIndicators1 && hasIndicators2) {
+    // All three charts: candlestick gets more space
+    candlestickFlex = '2';
+    indicator1Flex = '1';
+    indicator2Flex = '1';
+  } else if (hasIndicators1 || hasIndicators2) {
+    // Two charts: split evenly
+    candlestickFlex = '1';
+    if (hasIndicators1) indicator1Flex = '1';
+    if (hasIndicators2) indicator2Flex = '1';
+  } else {
+    // Only candlestick
+    candlestickFlex = '1';
+  }
+
   return (
-    <div className="chart-panel flex flex-col gap-1">
-      <div className="candlestick-chart-container">
+    <div
+      className="chart-panel flex flex-col h-full min-h-0"
+      style={{ gap: '4px', overscrollBehavior: 'contain', touchAction: 'pan-y pinch-zoom' }}
+      onWheel={(e) => {
+        // Prevent horizontal scroll from triggering browser navigation
+        if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+          e.preventDefault();
+        }
+      }}
+    >
+      <div
+        className="candlestick-chart-container min-h-0"
+        style={{ flex: candlestickFlex, display: 'flex' }}
+      >
         <div
           ref={candlestickContainerRef}
-          className="w-full"
-          style={{ height: `${candlestickHeight}px`, position: 'relative' }}
+          className="w-full h-full"
+          style={{ position: 'relative', overscrollBehavior: 'contain' }}
         />
       </div>
       <div
-        className="indicator-chart-container"
-        style={{ display: hasIndicators1 ? 'block' : 'none' }}
+        className="indicator-chart-container min-h-0"
+        style={{
+          flex: indicator1Flex,
+          display: hasIndicators1 ? 'flex' : 'none'
+        }}
       >
         <div
           ref={indicator1ContainerRef}
-          className="w-full indicator-chart-disabled"
-          style={{ height: '250px', position: 'relative' }}
+          className="w-full h-full indicator-chart-disabled"
+          style={{ position: 'relative', overscrollBehavior: 'contain' }}
         />
       </div>
       <div
-        className="indicator-chart-container"
-        style={{ display: hasIndicators2 ? 'block' : 'none' }}
+        className="indicator-chart-container min-h-0"
+        style={{
+          flex: indicator2Flex,
+          display: hasIndicators2 ? 'flex' : 'none'
+        }}
       >
         <div
           ref={indicator2ContainerRef}
-          className="w-full indicator-chart-disabled"
-          style={{ height: '250px', position: 'relative' }}
+          className="w-full h-full indicator-chart-disabled"
+          style={{ position: 'relative', overscrollBehavior: 'contain' }}
         />
       </div>
     </div>

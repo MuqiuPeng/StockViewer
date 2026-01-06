@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
-import { listCsvFiles } from '@/lib/datasets';
+import { listCsvFiles, getCsvFileStats } from '@/lib/datasets';
 import { getDatasetInfo } from '@/lib/csv';
+import { unlink } from 'fs/promises';
 
 export const runtime = 'nodejs';
 
@@ -24,6 +25,42 @@ export async function GET() {
     console.error('Error listing datasets:', error);
     return NextResponse.json(
       { error: 'Failed to list datasets', message: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/datasets - Delete a dataset
+export async function DELETE(request: Request) {
+  try {
+    const body = await request.json();
+    const { name } = body;
+
+    if (!name) {
+      return NextResponse.json(
+        { error: 'Missing required field', message: 'name is required' },
+        { status: 400 }
+      );
+    }
+
+    const fileStats = await getCsvFileStats(name);
+    if (!fileStats.exists) {
+      return NextResponse.json(
+        { error: 'Dataset not found' },
+        { status: 404 }
+      );
+    }
+
+    await unlink(fileStats.path);
+
+    return NextResponse.json({ success: true, message: `Dataset ${name} deleted successfully` });
+  } catch (error) {
+    console.error('Error deleting dataset:', error);
+    return NextResponse.json(
+      {
+        error: 'Failed to delete dataset',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
       { status: 500 }
     );
   }

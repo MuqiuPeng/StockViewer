@@ -1,516 +1,254 @@
 # Stock Viewer
 
-A comprehensive stock analysis dashboard built with Next.js that displays real-time Chinese A-share stock data with custom technical indicators and advanced charting capabilities.
+A comprehensive stock analysis platform for Chinese A-share markets with advanced technical indicators, backtesting, and portfolio management capabilities.
 
-## Features
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Next.js](https://img.shields.io/badge/Next.js-14-black)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue)
+![Python](https://img.shields.io/badge/Python-3.8+-green)
 
-### 📈 Stock Data Management
-- **Add Stocks**: Fetch Chinese A-share stock data from local API (requires 6-digit stock code)
-- **Automatic Updates**: Detects outdated data and provides one-click update functionality
-- **Historical Data**: Fetches complete historical data (from 1900-01-01 to present)
-- **Smart Detection**: Compares local data with API to detect when updates are needed
-- **Multiple Data Sources**: Support for different data APIs (stock_zh_a_hist, etc.)
+## Overview
+
+StockViewer is a powerful Next.js application that enables you to:
+
+- 📈 **Analyze** Chinese A-share stocks with professional TradingView charts
+- 🔧 **Create** custom technical indicators using Python and the MyTT library
+- 🎯 **Backtest** trading strategies with realistic execution simulation
+- 📊 **Manage** stock groups and portfolios for batch analysis
+- 🔬 **Visualize** OHLC data with synchronized triple-chart layouts
+
+## Key Features
 
 ### 📊 Advanced Charting
-- **Triple Chart Layout**:
-  - Candlestick chart for OHLC data
-  - Two separate indicator charts for custom technical analysis
-- **TradingView Integration**: Professional-grade charts using TradingView Lightweight Charts
-- **Synchronized Navigation**: All three charts sync time ranges automatically
-- **Compact Display**: Optimized layout to view all charts simultaneously
-- **Color Consistency**: Unified color scheme across all charts and selectors
+- Triple synchronized chart layout (candlestick + 2 indicator charts)
+- TradingView Lightweight Charts integration
+- Real-time crosshair tracking with data panel
+- Color-coded indicators with collapsible selectors
 
-### 🔧 Custom Python Indicators
-- **Dual Indicator Modes**:
-  - **Custom Python**: Single indicator with user-defined calculation
-  - **MyTT Library Group**: Multiple related indicators from one calculation (e.g., MACD → DIF, DEA, MACD)
-- **Indicator Manager**: Full CRUD interface for creating and managing custom indicators
-- **Python Execution**: Write Python code to calculate custom technical indicators with MyTT library support
-- **Professional Code Editor** (Monaco Editor - same as VS Code):
-  - Full Python syntax highlighting with color coding
-  - Line numbers and code folding
-  - IntelliSense autocomplete and parameter hints
-  - Real-time syntax checking with error markers
-  - Minimap for code overview
-  - Auto-indentation and bracket matching
-  - Find/replace, multi-cursor editing
-  - Format on paste/type
-  - File upload for .py files
-  - Code validation before saving
-  - Expandable syntax help with examples
-- **MyTT Library Integration**:
-  - Built-in Chinese technical analysis library
-  - 60+ indicator functions (MACD, KDJ, RSI, BOLL, etc.)
-  - Group indicators return dict of multiple outputs
-  - Stored as `groupName:indicatorName` columns (e.g., `MACD:DIF`)
-- **Dependencies**:
-  - Automatic dependency detection (indicators can use other indicators)
-  - Support for group indicator column references (`MACD:DIF`)
-  - Topological sorting ensures correct calculation order
-  - Cascade deletion warnings when removing indicators with dependents
-- **Auto-Apply**: Automatically applies all indicators when adding/updating stocks
-- **Persistent Storage**: Indicators saved in JSON format and calculated values stored in CSV
+### 🔧 Custom Indicators
+- Python-based indicator creation with Monaco editor (VS Code)
+- MyTT library integration (60+ Chinese technical analysis indicators)
+- Automatic dependency detection and topological sorting
+- Group indicators with multiple outputs (e.g., MACD → DIF, DEA, MACD)
 
-### 🎯 Indicator Selection
-- **Dual Selectors**: Independent indicator selection for each of the two indicator charts
-- **Collapsible UI**: Minimize selectors to maximize chart space
-- **Color-Coded Badges**: Visual indicator status with consistent color mapping
-- **Base Indicators**: Access to volume, turnover, amplitude, change_pct, change_amount, turnover_rate
-- **Smart Filtering**: Only shows available indicators (base + custom defined)
+### 🎯 Backtesting Engine
+- Single stock and portfolio backtesting
+- Realistic trade execution (same-day close vs next-day open)
+- Comprehensive metrics (Sharpe, Sortino, Calmar, max drawdown, etc.)
+- Slippage tracking and analysis
+- Visual equity curves and trade markers
 
-### 📋 Data Panel
-- **Real-time Values**: Shows current OHLC values at crosshair position
-- **Indicator Values**: Displays all enabled indicator values
-- **Color Coding**: Matches chart line colors for easy identification
-- **Hover Tracking**: Synchronized across all three charts
+### 📈 Data Management
+- Fetch Chinese A-share data from aktools API
+- Auto-update detection with one-click refresh
+- Group management for portfolio analysis
+- Dataset organization by data source
 
-### 🔒 Security Features
-- **Python Code Validation**: Blocks dangerous imports and functions (os, subprocess, eval, exec)
-- **Process Isolation**: Python execution in separate child processes
-- **Timeout Protection**: 5-minute timeout for indicator calculations
-- **Safe Namespace**: Only pandas, numpy, and data exposed to user code
+## Quick Start
 
-## Prerequisites
+### Prerequisites
 
-### Required Software
 - **Node.js** 18+
-- **Python 3.8+** with pip and virtualenv (pyenv recommended)
-- **aktools** - Chinese stock market data API library
+- **Python** 3.8+ with pip
+- **aktools** - Chinese stock market data API
 
-### Python Dependencies
-The project requires two separate Python environments:
+### Installation
 
-#### 1. AKTools API (for stock data fetching)
+1. **Clone and install dependencies**
 ```bash
-# Create a virtual environment for aktools
-python -m venv aktools-env
-source aktools-env/bin/activate  # On Windows: aktools-env\Scripts\activate
-
-# Install aktools
-pip install aktools
-```
-
-#### 2. Indicator Calculation (for custom indicators)
-```bash
-pip install pandas>=2.0.0 numpy>=1.24.0
-```
-
-## Setup
-
-### 1. Install Node Dependencies
-```bash
+git clone <repository-url>
+cd StockViewer
 npm install
 ```
 
-### 2. Create Data Directories
+2. **Set up Python environment**
 ```bash
-mkdir -p data/csv
-mkdir -p data/indicators
-mkdir -p data/python
+# Create virtual environment
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# Install dependencies
+pip install pandas numpy
 ```
 
-### 3. Set Up Python Environment
-Create `/data/python/requirements.txt`:
-```txt
-pandas>=2.0.0
-numpy>=1.24.0
-```
-
-Install Python dependencies:
+3. **Install and run aktools API**
 ```bash
-cd data/python
-pip install -r requirements.txt
-```
+# Create separate environment for aktools
+python -m venv aktools-env
+source aktools-env/bin/activate  # Windows: aktools-env\Scripts\activate
 
-### 4. Configure Environment (Optional)
-Copy the example environment file and customize as needed:
-```bash
-cp .env.local.example .env.local
-```
+# Install aktools
+pip install aktools
 
-Available environment variables:
-
-#### API Configuration
-- `NEXT_PUBLIC_AKTOOLS_API_URL` - AKTools API endpoint (default: `http://127.0.0.1:8080`)
-  - Change this if running aktools on a different host/port
-
-#### Python Execution
-- `PYTHON_EXECUTABLE` - Python executable path (default: `python3`)
-  - Example: `/usr/local/bin/python3` or `path/to/venv/bin/python`
-- `PYTHON_TIMEOUT_MS` - Python script timeout in milliseconds (default: `300000` = 5 minutes)
-  - Increase for large datasets or complex indicators
-
-#### Data Storage
-- `CSV_DIR` - CSV data directory (default: `{project_root}/data/csv`)
-  - Example: `/custom/path/to/csv/files`
-- `MAX_CSV_SIZE_MB` - Maximum CSV file size in MB (default: `50`)
-- `INDICATORS_FILE` - Indicators storage file (default: `{project_root}/data/indicators/indicators.json`)
-
-#### Performance & Caching (Future Features)
-- `ENABLE_DATASET_CACHE` - Enable dataset caching (default: `false`)
-- `DATASET_CACHE_TTL` - Cache TTL in seconds (default: `300` = 5 minutes)
-
-#### Security & Rate Limiting (Future Features)
-- `ENABLE_RATE_LIMITING` - Enable request rate limiting (default: `false`)
-- `RATE_LIMIT_PER_MINUTE` - Max requests per minute (default: `60`)
-
-#### Development & Debugging
-- `DEBUG` - Enable debug logging (default: `false`)
-- `LOG_LEVEL` - Log level: `error`, `warn`, `info`, `debug` (default: `info`)
-- `LOG_DIR` - Log directory (default: `{project_root}/logs`)
-
-Example `.env.local`:
-```bash
-# Custom AKTools API URL
-NEXT_PUBLIC_AKTOOLS_API_URL=http://192.168.1.100:8080
-
-# Increase timeout for complex indicators
-PYTHON_TIMEOUT_MS=600000
-
-# Custom Python executable
-PYTHON_EXECUTABLE=/usr/local/bin/python3
-
-# Enable debug logging
-DEBUG=true
-LOG_LEVEL=debug
-```
-
-### 5. Start AKTools API Server
-The application requires the aktools API server running locally:
-
-```bash
-# Activate the aktools virtual environment
-source aktools-env/bin/activate  # On Windows: aktools-env\Scripts\activate
-
-# Start the API server on 127.0.0.1:8080
+# Start API server (keep running)
 python -m aktools
+# Server runs at http://127.0.0.1:8080
 ```
 
-The server provides the following endpoint for fetching Chinese A-share stock data:
-```
-GET http://127.0.0.1:8080/api/public/stock_zh_a_hist?symbol={6-digit-code}&start_date={YYYYMMDD}&end_date={YYYYMMDD}&adjust=qfq
-```
-
-**Note:** Keep this terminal running while using the application. The API must be accessible at `http://127.0.0.1:8080`.
-
-## Running the Application
-
-### Quick Start (3 terminals needed)
-
-**Terminal 1: AKTools API Server**
+4. **Create data directories**
 ```bash
-source aktools-env/bin/activate
-python -m aktools
-# Keep running - provides stock data at http://127.0.0.1:8080
+mkdir -p data/csv data/indicators data/strategies data/groups data/python
 ```
 
-**Terminal 2: Next.js Development Server**
+5. **Start development server**
 ```bash
 npm run dev
 # Open http://localhost:3000
 ```
 
-### Development Mode
-```bash
-npm run dev
-```
-Open [http://localhost:3000](http://localhost:3000)
-
-**Prerequisites:** Ensure aktools API is running on `http://127.0.0.1:8080` before starting the Next.js server.
-
-### Production Build
-```bash
-npm run build
-npm start
-```
-
-**Prerequisites:** Ensure aktools API is running before starting production server.
-
-## Usage Guide
+## Usage
 
 ### Adding Stocks
-1. Click **"+ Add Stock"** button
-2. Enter a 6-digit Chinese stock code (e.g., 000001, 600000)
-3. Data is automatically fetched and all indicators are applied
-4. Stock appears in the dataset dropdown
+1. Navigate to **Datasets** page
+2. Click **"+ Add Stock"**
+3. Enter 6-digit stock code (e.g., `000001`, `600000`)
+4. Data fetches automatically with all indicators applied
 
-### Creating Custom Indicators
+### Creating Indicators
+1. Go to **Viewer** page
+2. Click **"Manage Indicators"**
+3. Click **"+ Create New Indicator"**
+4. Write Python code in Monaco editor
+5. Validate and save
 
-#### Example 1: Simple Moving Average (SMA)
-```python
-def calculate(data):
-    """
-    Calculate 20-day Simple Moving Average
+### Running Backtests
+1. Navigate to **Backtest** page
+2. Create or select a trading strategy
+3. Choose stock or group
+4. Configure parameters and date range
+5. Click **"Run Backtest"**
+6. Analyze results with metrics, charts, and trade history
 
-    Args:
-        data: pandas DataFrame with columns:
-            - date, open, high, low, close, volume
-            - All previously calculated indicators
+### Managing Groups
+1. Go to **Datasets** page
+2. Click **"Manage Groups"**
+3. Create groups and add stocks
+4. Use groups for batch backtesting
 
-    Returns:
-        pandas Series of same length as data
-    """
-    return data['close'].rolling(window=20).mean()
-```
+## Documentation
 
-#### Example 2: Relative Strength Index (RSI)
-```python
-def calculate(data):
-    """Calculate 14-day RSI"""
-    delta = data['close'].diff()
-    gain = delta.where(delta > 0, 0).rolling(14).mean()
-    loss = -delta.where(delta < 0, 0).rolling(14).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
-```
+Comprehensive documentation is organized by topic:
 
-#### Example 3: Using Other Indicators
-```python
-def calculate(data):
-    """Calculate SMA crossover signal (requires SMA_20 indicator)"""
-    # This indicator depends on SMA_20
-    # System automatically detects the dependency
-    sma = data['SMA_20']
-    price = data['close']
-    return (price - sma) / sma * 100  # Percentage above/below SMA
-```
+- **[Indicators](docs/INDICATORS.md)** - Custom indicators, MyTT library, dependencies
+- **[Backtesting](docs/BACKTESTING.md)** - Strategies, metrics, execution modes, slippage
+- **[Charts & Visualization](docs/CHARTS.md)** - Triple chart layout, TradingView integration
+- **[Datasets & Groups](docs/DATASETS.md)** - Data management, groups, auto-updates
+- **[API Reference](docs/API.md)** - Complete API endpoint documentation
+- **[Architecture](docs/ARCHITECTURE.md)** - Technical details, Python integration, data flow
 
-#### Example 4: MyTT Group Indicator (MACD)
-```python
-def calculate(data):
-    """
-    Calculate MACD indicator group using MyTT library
+## Technology Stack
 
-    Args:
-        data: pandas DataFrame with OHLC data
-
-    Returns:
-        dict with indicator_name: values (numpy array or pandas Series)
-    """
-    # MyTT.MACD returns three arrays: DIF, DEA, MACD
-    DIF, DEA, MACD_hist = MACD(data['close'].values, SHORT=12, LONG=26, M=9)
-
-    return {
-        'DIF': DIF,
-        'DEA': DEA,
-        'MACD': MACD_hist
-    }
-```
-
-#### Example 5: Using Group Indicator Output
-```python
-def calculate(data):
-    """Calculate buy signal from MACD crossover (requires MACD group)"""
-    # Reference group indicator columns using groupName:indicatorName
-    dif = data['MACD:DIF']
-    dea = data['MACD:DEA']
-
-    # Buy signal when DIF crosses above DEA
-    return (dif > dea).astype(int)
-```
-
-### Managing Indicators
-1. Click **"Manage Indicators"** button
-2. **Create**: Click "+ Create New Indicator"
-   - Select indicator type: Custom Python or MyTT Library Group
-   - Enter name, description, and Python code in Monaco Editor
-   - For groups: specify group name and expected outputs (e.g., DIF, DEA, MACD)
-   - Use "Insert Template" or "Insert MyTT Template" for quick start
-   - Real-time syntax checking shows errors as you type
-   - Validate code before saving
-3. **Apply**: Select stocks to apply indicator to (all selected by default)
-4. **Edit**: Modify existing indicator code (type cannot be changed after creation)
-5. **Delete**: Remove indicators (warns if other indicators depend on it)
-
-### Viewing Charts
-- **Select Dataset**: Choose stock from dropdown (grouped by data source)
-- **Enable Indicators**: Check indicators in the two collapsible panels
-- **Navigate**:
-  - Scroll to zoom in/out on time axis
-  - Drag to pan (on candlestick chart only)
-  - Hover to see values in data panel
-- **Collapse Selectors**: Click panel headers to maximize chart space
+- **Frontend**: Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS
+- **Charts**: TradingView Lightweight Charts
+- **Editor**: Monaco Editor (VS Code engine)
+- **Backend**: Next.js API Routes, Node.js
+- **Data Processing**: Python 3.8+, pandas, numpy, MyTT library
+- **Storage**: CSV files, JSON (no database)
 
 ## Project Structure
 
 ```
 /app
-  /api
-    /datasets          # List available stocks
-    /dataset/[name]    # Get specific stock data
-    /add-stock         # Add/update stock data
-    /indicators        # Manage indicator definitions
-    /indicators/[id]   # Single indicator CRUD
-    /apply-indicator   # Apply indicators to stocks
-/components
-  ChartPanel.tsx       # Three-chart display
-  IndicatorSelector.tsx # Collapsible indicator picker
+  /api                  # API routes
+    /datasets           # Dataset CRUD
+    /indicators         # Indicator management
+    /strategies         # Strategy management
+    /groups             # Group management
+    /backtest           # Backtesting engine
+  /viewer               # Stock viewer page
+  /backtest             # Backtesting page
+  /datasets             # Dataset management page
+  page.tsx              # Homepage
+
+/components             # React components
+  ChartPanel.tsx        # Triple chart display
+  BacktestResults.tsx   # Results visualization
   IndicatorManager.tsx  # Indicator CRUD UI
-  IndicatorEditorModal.tsx # Indicator code editor
-  ApplyIndicatorModal.tsx  # Apply to stocks UI
-  AddStockModal.tsx    # Add stock UI
-  DataPanel.tsx        # Current value display
-  StockDashboard.tsx   # Main dashboard
-/lib
-  csv.ts               # CSV file operations
-  csv-updater.ts       # Add columns to CSVs
-  datasets.ts          # Dataset management
-  indicator-storage.ts # Indicator persistence
-  indicator-validator.ts # Python code validation
-  indicator-dependencies.ts # Dependency tracking
-  detect-dependencies.ts # Auto dependency detection
-  python-executor.ts   # Python subprocess execution
-/data
-  /csv                 # Stock CSV files
-  /indicators
-    indicators.json    # Indicator definitions
-  /python
-    executor.py        # Python execution wrapper
-    requirements.txt   # Python dependencies
+  StrategyManager.tsx   # Strategy CRUD UI
+  GroupManager.tsx      # Group management UI
+
+/lib                    # Utilities & business logic
+  csv.ts                # CSV operations
+  python-executor.ts    # Python subprocess execution
+  backtest-executor.ts  # Backtesting orchestration
+  indicator-storage.ts  # Indicator persistence
+  strategy-storage.ts   # Strategy persistence
+  group-storage.ts      # Group persistence
+
+/data                   # Data storage
+  /csv                  # Stock CSV files
+  /indicators           # indicators.json
+  /strategies           # strategies.json
+  /groups               # groups.json
+  /python               # Python execution scripts
+    executor.py         # Indicator calculator
+    backtest-executor.py # Backtesting engine
+    MyTT.py             # Technical analysis library
 ```
 
-## API Endpoints
+## Configuration
 
-### Stock Data
-- `GET /api/datasets` - List all available stocks
-- `GET /api/dataset/[name]` - Get stock data with indicators
-- `POST /api/add-stock` - Add or update stock data
-  ```json
-  { "symbol": "000001" }
-  ```
+Configure via `.env.local`:
 
-### Indicators
-- `GET /api/indicators` - List all indicators
-- `POST /api/indicators` - Create new indicator
-  ```json
-  {
-    "name": "SMA_20",
-    "description": "20-day Simple Moving Average",
-    "pythonCode": "def calculate(data):\n    return data['close'].rolling(20).mean()",
-    "outputColumn": "SMA_20"
-  }
-  ```
-- `GET /api/indicators/[id]` - Get single indicator
-- `PUT /api/indicators/[id]` - Update indicator
-- `DELETE /api/indicators/[id]?cascade=true` - Delete indicator (cascade deletes dependents)
-- `POST /api/apply-indicator` - Apply indicator to stocks
-  ```json
-  {
-    "indicatorId": "uuid",
-    "stockSymbols": ["000001", "600000"]
-  }
-  ```
+```bash
+# AKTools API
+NEXT_PUBLIC_AKTOOLS_API_URL=http://127.0.0.1:8080
 
-## Data Formats
+# Python execution
+PYTHON_EXECUTABLE=python3
+PYTHON_TIMEOUT_MS=300000  # 5 minutes
 
-### CSV Structure
-Stock data CSVs contain OHLC data plus calculated indicators:
-```csv
-date,open,high,low,close,volume,turnover,amplitude,change_pct,change_amount,turnover_rate,SMA_20,RSI_14
-2024-01-01,10.0,10.5,9.8,10.2,1000000,10200000,7.0,2.0,0.2,0.5,10.1,65.5
+# Data directories
+CSV_DIR=./data/csv
+INDICATORS_FILE=./data/indicators/indicators.json
 ```
 
-### Indicator JSON
-Indicators are stored in `/data/indicators/indicators.json`:
-```json
-{
-  "indicators": [
-    {
-      "id": "uuid-here",
-      "name": "SMA_20",
-      "description": "20-day Simple Moving Average",
-      "pythonCode": "def calculate(data):\n    return data['close'].rolling(20).mean()",
-      "outputColumn": "SMA_20",
-      "dependencies": [],
-      "createdAt": "2024-01-01T00:00:00.000Z"
-    }
-  ]
-}
-```
+See [Architecture](docs/ARCHITECTURE.md) for complete configuration options.
 
-## Technology Stack
+## Security
 
-- **Frontend**: Next.js 14 (App Router), React, TypeScript
-- **UI Framework**: Tailwind CSS
-- **Charts**: TradingView Lightweight Charts
-- **Code Editor**: Monaco Editor (@monaco-editor/react) - VS Code editor
-- **Data Processing**:
-  - PapaParse (CSV parsing)
-  - Python (indicator calculation via child_process)
-  - pandas, numpy (Python data processing)
-  - MyTT (Chinese technical analysis library)
-- **Runtime**: Node.js (API routes, Python subprocess)
+- Python code validation blocks dangerous imports (`os`, `subprocess`, `eval`, `exec`)
+- Process isolation with configurable timeouts
+- Sandboxed execution environment
+- No file system access from user code
 
-## Security Considerations
-
-### Python Code Validation
-The system blocks dangerous patterns in user-provided Python code:
-- Import restrictions: `os`, `subprocess`, `sys`
-- Function restrictions: `eval()`, `exec()`, `open()`, `__import__`
-- Process isolation with timeouts
-
-### Recommendations
-- Run the application in a sandboxed environment
-- Review indicator code before execution
-- Keep Python dependencies updated
-- Monitor Python process resource usage
+See [Architecture](docs/ARCHITECTURE.md) for security details.
 
 ## Troubleshooting
 
 ### Python Not Found
 ```
-Error: Python 3 required. Install Python 3.8+
+Error: Python 3 required
 ```
-**Solution**: Install Python 3.8 or higher and ensure it's in PATH
+**Solution**: Install Python 3.8+ and ensure it's in PATH
 
-### Indicator Calculation Timeout
-```
-Error: Python execution timeout (5 minutes)
-```
-**Solution**:
-1. Simplify indicator logic to reduce computation time
-2. Or increase timeout via environment variable:
-   ```bash
-   # .env.local
-   PYTHON_TIMEOUT_MS=600000  # 10 minutes
-   ```
-
-### Missing Dependencies
-```
-Error: No module named 'pandas'
-```
-**Solution**: `pip install pandas numpy`
-
-### API Connection Failed
+### AKTools API Connection Failed
 ```
 Error: Failed to fetch stock data
 ```
-**Solution**:
-1. Ensure aktools API is running: `python -m aktools`
-2. Check that the API is accessible at http://127.0.0.1:8080
-3. Verify aktools is installed: `pip list | grep aktools`
-4. Test the API endpoint:
-   ```bash
-   curl "http://127.0.0.1:8080/api/public/stock_zh_a_hist?symbol=000001&start_date=20240101&end_date=20240201&adjust=qfq"
-   ```
-5. If running aktools on a different host/port, configure the API URL:
-   ```bash
-   # .env.local
-   NEXT_PUBLIC_AKTOOLS_API_URL=http://192.168.1.100:8080
-   ```
+**Solution**: Ensure aktools is running at http://127.0.0.1:8080
+```bash
+source aktools-env/bin/activate
+python -m aktools
+```
 
-### Circular Dependencies
+### Indicator Timeout
 ```
-Error: Circular dependency detected for indicator: X
+Error: Python execution timeout
 ```
-**Solution**: Remove circular references between indicators (A depends on B, B depends on A)
+**Solution**: Increase timeout in `.env.local`:
+```bash
+PYTHON_TIMEOUT_MS=600000  # 10 minutes
+```
+
+See individual documentation files for feature-specific troubleshooting.
 
 ## Performance Tips
 
-1. **Limit Enabled Indicators**: Only enable indicators you're actively viewing
-2. **Optimize Python Code**: Use vectorized pandas operations instead of loops
-3. **Batch Apply**: Apply indicators to multiple stocks at once
-4. **Close Unused Stocks**: Fewer datasets = faster load times
+1. **Limit Active Indicators**: Only enable indicators you're viewing
+2. **Optimize Python Code**: Use vectorized pandas operations
+3. **Batch Operations**: Apply indicators to multiple stocks at once
+4. **Close Unused Datasets**: Reduces memory usage
 
 ## Contributing
 
@@ -524,5 +262,6 @@ MIT License - See LICENSE file for details
 
 - [TradingView Lightweight Charts](https://www.tradingview.com/lightweight-charts/)
 - [Next.js](https://nextjs.org/)
-- [PapaParse](https://www.papaparse.com/)
+- [Monaco Editor](https://microsoft.github.io/monaco-editor/)
 - [pandas](https://pandas.pydata.org/)
+- [aktools](https://github.com/akfamily/akshare) - Chinese stock data API

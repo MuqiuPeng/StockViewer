@@ -43,6 +43,7 @@ next-env.d.ts
 
 # data
 /data/csv/*.csv
+/data/groups
 
 # logs
 /logs
