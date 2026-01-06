@@ -346,16 +346,23 @@ export default function StockViewer() {
   };
 
   const handleUpdateData = async () => {
-    if (!selectedDataset) return;
+    if (!datasetData) return;
 
     setIsUpdating(true);
     setError(null);
 
     try {
+      // Extract symbol and dataSource from filename
+      // Format: {symbol}_{dataSource}.csv
+      const filename = datasetData.meta.filename;
+      const nameParts = filename.replace(/\.csv$/i, '').split('_');
+      const symbol = nameParts[0];
+      const dataSource = nameParts.length > 1 ? nameParts.slice(1).join('_') : 'stock_zh_a_hist';
+
       const response = await fetch('/api/add-stock', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol: selectedDataset.replace('.csv', '') }),
+        body: JSON.stringify({ symbol, dataSource }),
       });
 
       const data = await response.json();

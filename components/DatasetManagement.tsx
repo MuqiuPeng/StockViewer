@@ -97,8 +97,19 @@ export default function DatasetManagement() {
   };
 
   const handleUpdate = async (datasetName: string) => {
-    const symbol = datasetName.replace(/\.csv$/, '').split('_')[0];
-    
+    // Find the dataset to get its filename
+    const dataset = datasets.find(ds => ds.name === datasetName);
+    if (!dataset) {
+      setError('Dataset not found');
+      return;
+    }
+
+    // Extract symbol and dataSource from filename
+    // Format: {symbol}_{dataSource}.csv
+    const nameParts = dataset.filename.replace(/\.csv$/i, '').split('_');
+    const symbol = nameParts[0];
+    const dataSource = nameParts.length > 1 ? nameParts.slice(1).join('_') : 'stock_zh_a_hist';
+
     setIsUpdating(prev => ({ ...prev, [datasetName]: true }));
     setError(null);
 
@@ -106,7 +117,7 @@ export default function DatasetManagement() {
       const response = await fetch('/api/add-stock', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol }),
+        body: JSON.stringify({ symbol, dataSource }),
       });
 
       const data = await response.json();
