@@ -225,6 +225,9 @@ export async function getDatasetInfo(filename: string): Promise<{
   indicators: string[];
   rowCount: number;
   dataSource?: string;
+  firstDate?: string;
+  lastDate?: string;
+  lastUpdate?: string;
 }> {
   const fileStats = await getCsvFileStats(filename);
   if (!fileStats.exists) {
@@ -232,6 +235,11 @@ export async function getDatasetInfo(filename: string): Promise<{
   }
 
   const fileContent = await readFile(fileStats.path, 'utf-8');
+
+  // Get file modification time for lastUpdate
+  const { stat } = await import('fs/promises');
+  const stats = await stat(fileStats.path);
+  const lastUpdate = stats.mtime.toISOString();
   
   return new Promise((resolve, reject) => {
     Papa.parse(fileContent, {
@@ -267,8 +275,11 @@ export async function getDatasetInfo(filename: string): Promise<{
               const lowIdx = findColumnIndex(headers, 'low');
               const closeIdx = findColumnIndex(headers, 'close');
 
-              // Count valid rows
+              // Count valid rows and track first/last dates
               let validRowCount = 0;
+              let firstDate: string | undefined;
+              let lastDate: string | undefined;
+
               for (const row of rows) {
                 const dateStr = row[headers[dateIdx]];
                 const time = parseDate(dateStr);
@@ -281,6 +292,12 @@ export async function getDatasetInfo(filename: string): Promise<{
 
                 if (open !== null && high !== null && low !== null && close !== null) {
                   validRowCount++;
+
+                  // Track first and last dates
+                  if (!firstDate) {
+                    firstDate = dateStr;
+                  }
+                  lastDate = dateStr;
                 }
               }
 
@@ -310,6 +327,9 @@ export async function getDatasetInfo(filename: string): Promise<{
                 indicators: indicatorColumns,
                 rowCount: validRowCount,
                 dataSource,
+                firstDate,
+                lastDate,
+                lastUpdate,
               });
             },
             error: (error: Error) => {

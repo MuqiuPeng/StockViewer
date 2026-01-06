@@ -12,6 +12,9 @@ interface DatasetInfo {
   indicators: string[];
   rowCount: number;
   dataSource?: string;
+  firstDate?: string;
+  lastDate?: string;
+  lastUpdate?: string;
 }
 
 interface StockGroup {
@@ -246,8 +249,10 @@ export default function DatasetManagement() {
                   <thead>
                     <tr className="bg-gray-100">
                       <th className="border p-2 text-left">Name</th>
+                      <th className="border p-2 text-left">Start Date</th>
+                      <th className="border p-2 text-left">End Date</th>
+                      <th className="border p-2 text-left">Last Update</th>
                       <th className="border p-2 text-left">Rows</th>
-                      <th className="border p-2 text-left">Columns</th>
                       <th className="border p-2 text-left">Indicators</th>
                       <th className="border p-2 text-left">Actions</th>
                     </tr>
@@ -258,12 +263,18 @@ export default function DatasetManagement() {
                       .map((dataset) => (
                         <tr key={dataset.name} className="hover:bg-gray-50">
                           <td className="border p-2 font-medium">{dataset.name}</td>
-                          <td className="border p-2">{dataset.rowCount.toLocaleString()}</td>
-                          <td className="border p-2">
-                            <span className="text-sm text-gray-600">
-                              {dataset.columns.length} columns
-                            </span>
+                          <td className="border p-2 text-sm">
+                            {dataset.firstDate || 'N/A'}
                           </td>
+                          <td className="border p-2 text-sm">
+                            {dataset.lastDate || 'N/A'}
+                          </td>
+                          <td className="border p-2 text-sm text-gray-600">
+                            {dataset.lastUpdate
+                              ? new Date(dataset.lastUpdate).toLocaleString()
+                              : 'N/A'}
+                          </td>
+                          <td className="border p-2">{dataset.rowCount.toLocaleString()}</td>
                           <td className="border p-2">
                             <span className="text-sm text-gray-600">
                               {dataset.indicators.length} indicators
