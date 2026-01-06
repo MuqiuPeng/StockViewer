@@ -1,18 +1,7 @@
 import Papa from 'papaparse';
 import { readFile } from 'fs/promises';
-import { join } from 'path';
 import { getCsvFileStats, hasRequiredColumns } from './datasets';
-
-const NAMES_FILE = join(process.cwd(), 'data', 'datasets', 'names.json');
-
-async function loadCustomNames(): Promise<Record<string, string>> {
-  try {
-    const content = await readFile(NAMES_FILE, 'utf-8');
-    return JSON.parse(content);
-  } catch {
-    return {};
-  }
-}
+import { findDataset } from './dataset-metadata';
 
 export interface CandleData {
   time: number;
@@ -96,7 +85,9 @@ export async function loadDataset(filename: string): Promise<DatasetData> {
   }
 
   const fileContent = await readFile(fileStats.path, 'utf-8');
-  const customNames = await loadCustomNames();
+
+  // Get custom name from metadata
+  const metadata = await findDataset(filename);
 
   return new Promise((resolve, reject) => {
     Papa.parse(fileContent, {
@@ -211,8 +202,8 @@ export async function loadDataset(filename: string): Promise<DatasetData> {
           const nameParts = nameWithoutExt.split('_');
           const code = nameParts[0];
 
-          // Use custom name if exists
-          const name = customNames[filename] || code; // Use custom name or code as fallback
+          // Use name from metadata if exists, otherwise use code
+          const name = metadata?.name || code;
 
           resolve({
             meta: {
@@ -264,8 +255,8 @@ export async function getDatasetInfo(filename: string): Promise<{
   const stats = await stat(fileStats.path);
   const lastUpdate = stats.mtime.toISOString();
 
-  // Load custom names
-  const customNames = await loadCustomNames();
+  // Get custom name from metadata
+  const metadata = await findDataset(filename);
 
   return new Promise((resolve, reject) => {
     Papa.parse(fileContent, {
@@ -339,8 +330,8 @@ export async function getDatasetInfo(filename: string): Promise<{
               const nameParts = nameWithoutExt.split('_');
               const code = nameParts[0];
 
-              // Use custom name if exists
-              const name = customNames[filename] || code; // Use custom name or code as fallback
+              // Use name from metadata if exists, otherwise use code
+              const name = metadata?.name || code;
 
               let dataSource: string | undefined;
               if (nameParts.length > 1) {

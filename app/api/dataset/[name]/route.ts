@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { loadDataset } from '@/lib/csv';
-import { listCsvFiles } from '@/lib/datasets';
+import { findDataset } from '@/lib/dataset-metadata';
 
 export const runtime = 'nodejs';
 
@@ -9,20 +9,19 @@ export async function GET(
   { params }: { params: { name: string } }
 ) {
   try {
-    const name = params.name;
-    
-    // Find the CSV file that matches the name
-    const csvFiles = await listCsvFiles();
-    const filename = csvFiles.find(f => f.replace(/\.csv$/i, '') === name);
+    const identifier = params.name;
 
-    if (!filename) {
+    // Find dataset by code, name, or filename using metadata
+    const metadata = await findDataset(identifier);
+
+    if (!metadata) {
       return NextResponse.json(
-        { error: 'Dataset not found', message: `No dataset found with name: ${name}` },
+        { error: 'Dataset not found', message: `No dataset found with identifier: ${identifier}` },
         { status: 404 }
       );
     }
 
-    const dataset = await loadDataset(filename);
+    const dataset = await loadDataset(metadata.filename);
     return NextResponse.json(dataset);
   } catch (error) {
     console.error('Error loading dataset:', error);

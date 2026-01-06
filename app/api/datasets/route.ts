@@ -1,25 +1,13 @@
 import { NextResponse } from 'next/server';
-import { listCsvFiles, getCsvFileStats } from '@/lib/datasets';
-import { getDatasetInfo } from '@/lib/csv';
+import { getCsvFileStats } from '@/lib/datasets';
 import { unlink } from 'fs/promises';
+import { loadMetadata } from '@/lib/dataset-metadata';
 
 export const runtime = 'nodejs';
 
 export async function GET() {
   try {
-    const csvFiles = await listCsvFiles();
-    const datasets = [];
-
-    for (const filename of csvFiles) {
-      try {
-        const info = await getDatasetInfo(filename);
-        datasets.push(info);
-      } catch (error) {
-        // Skip invalid CSV files
-        console.warn(`Skipping invalid CSV file ${filename}:`, error);
-      }
-    }
-
+    const datasets = await loadMetadata();
     return NextResponse.json(datasets);
   } catch (error) {
     console.error('Error listing datasets:', error);
@@ -51,7 +39,12 @@ export async function DELETE(request: Request) {
       );
     }
 
+    // Delete CSV file
     await unlink(fileStats.path);
+
+    // Remove from metadata
+    const { removeDataset } = await import('@/lib/dataset-metadata');
+    await removeDataset(name);
 
     return NextResponse.json({ success: true, message: `Dataset ${name} deleted successfully` });
   } catch (error) {

@@ -1,27 +1,7 @@
 import { NextResponse } from 'next/server';
-import { readFile, writeFile } from 'fs/promises';
-import { join } from 'path';
+import { updateDatasetName, findDataset } from '@/lib/dataset-metadata';
 
 export const runtime = 'nodejs';
-
-const NAMES_FILE = join(process.cwd(), 'data', 'datasets', 'names.json');
-
-interface NamesData {
-  [filename: string]: string;
-}
-
-async function loadNames(): Promise<NamesData> {
-  try {
-    const content = await readFile(NAMES_FILE, 'utf-8');
-    return JSON.parse(content);
-  } catch {
-    return {};
-  }
-}
-
-async function saveNames(names: NamesData): Promise<void> {
-  await writeFile(NAMES_FILE, JSON.stringify(names, null, 2), 'utf-8');
-}
 
 // PUT /api/datasets/name - Update dataset name
 export async function PUT(request: Request) {
@@ -43,9 +23,8 @@ export async function PUT(request: Request) {
       );
     }
 
-    const names = await loadNames();
-    names[filename] = name.trim();
-    await saveNames(names);
+    // Update name in metadata
+    await updateDatasetName(filename, name.trim());
 
     return NextResponse.json({
       success: true,
@@ -76,12 +55,12 @@ export async function GET(request: Request) {
       );
     }
 
-    const names = await loadNames();
-    const customName = names[filename];
+    // Get dataset from metadata
+    const dataset = await findDataset(filename);
 
     return NextResponse.json({
       filename,
-      customName: customName || null,
+      customName: dataset?.name || null,
     });
   } catch (error) {
     console.error('Error getting dataset name:', error);

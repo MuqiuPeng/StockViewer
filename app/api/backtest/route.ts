@@ -3,22 +3,30 @@ import { executeBacktest } from '@/lib/backtest-executor';
 import { getStrategyById } from '@/lib/strategy-storage';
 import { getCsvFileStats } from '@/lib/datasets';
 import { getGroupById } from '@/lib/group-storage';
+import { findDataset } from '@/lib/dataset-metadata';
 import { readFile } from 'fs/promises';
 import Papa from 'papaparse';
 
 // Helper function to load and parse a dataset
-async function loadDataset(datasetName: string) {
-  let filename = datasetName;
-  if (!filename.toLowerCase().endsWith('.csv')) {
-    filename = `${filename}.csv`;
+async function loadDataset(datasetIdentifier: string) {
+  // Try to find dataset using metadata (supports code, name, or filename)
+  const metadata = await findDataset(datasetIdentifier);
+
+  let filename: string;
+  if (metadata) {
+    // Found in metadata, use the filename
+    filename = metadata.filename;
+  } else {
+    // Fallback to legacy behavior for backward compatibility
+    filename = datasetIdentifier;
+    if (!filename.toLowerCase().endsWith('.csv')) {
+      filename = `${filename}.csv`;
+    }
   }
 
-  let fileStats = await getCsvFileStats(filename);
+  const fileStats = await getCsvFileStats(filename);
   if (!fileStats.exists) {
-    fileStats = await getCsvFileStats(datasetName);
-    if (!fileStats.exists) {
-      throw new Error(`Dataset "${datasetName}" not found`);
-    }
+    throw new Error(`Dataset "${datasetIdentifier}" not found`);
   }
 
   const fileContent = await readFile(fileStats.path, 'utf-8');
@@ -37,7 +45,7 @@ async function loadDataset(datasetName: string) {
   });
 
   if (!dataset || dataset.length === 0) {
-    throw new Error(`Dataset "${datasetName}" is empty`);
+    throw new Error(`Dataset "${datasetIdentifier}" is empty`);
   }
 
   return dataset;

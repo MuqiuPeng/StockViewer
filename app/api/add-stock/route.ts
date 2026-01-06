@@ -196,9 +196,45 @@ export async function POST(request: Request) {
     // Get dataset info (after indicators have been applied)
     const datasetInfo = await getDatasetInfo(filename);
 
+    // Fetch stock name from stock info API
+    let stockName = symbol; // Default to symbol if API fails
+    try {
+      const infoApiUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/stock_individual_info_em?symbol=${symbol}`;
+      const infoResponse = await fetch(infoApiUrl);
+      if (infoResponse.ok) {
+        const infoData = await infoResponse.json();
+        // Find the item with "股票简称" (Stock Short Name)
+        const nameItem = infoData.find((item: any) => item.item === '股票简称');
+        if (nameItem && nameItem.value) {
+          stockName = nameItem.value;
+          console.log(`Fetched stock name for ${symbol}: ${stockName}`);
+        }
+      }
+    } catch (err) {
+      console.warn(`Failed to fetch stock name for ${symbol}, using symbol as name:`, err);
+    }
+
+    // Register dataset in metadata
+    const { registerDataset } = await import('@/lib/dataset-metadata');
+    await registerDataset({
+      code: symbol,
+      name: stockName, // Use fetched stock name or symbol as fallback
+      filename,
+      dataSource,
+      firstDate: datasetInfo.firstDate,
+      lastDate: datasetInfo.lastDate,
+      lastUpdate: datasetInfo.lastUpdate,
+      rowCount: datasetInfo.rowCount,
+      columns: datasetInfo.columns,
+      indicators: datasetInfo.indicators,
+    });
+
     return NextResponse.json({
       success: true,
-      dataset: datasetInfo
+      dataset: {
+        ...datasetInfo,
+        name: stockName, // Return the fetched stock name
+      }
     });
 
   } catch (error) {
