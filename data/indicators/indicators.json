@@ -15,6 +15,16 @@
       ],
       "id": "0296107e-991b-41e0-af75-031ec88bd95b",
       "createdAt": "2026-01-04T21:34:40.684Z"
+    },
+    {
+      "name": "SMA_20",
+      "description": "ma20",
+      "pythonCode": "def calculate(data):\n    \"\"\"\n    Calculate indicator from stock data.\n\n    Args:\n        data: pandas DataFrame with columns:\n            - date (datetime)\n            - open, high, low, close, volume (float)\n            - All other existing indicators\n\n    Returns:\n        pandas Series or list of same length as data\n    \"\"\"\n    # Example: 20-day Simple Moving Average\n    return data['close'].rolling(20).mean()",
+      "outputColumn": "SMA_20",
+      "dependencies": [],
+      "isGroup": false,
+      "id": "b97dd734-3a3a-487d-9449-84963ed06c2c",
+      "createdAt": "2026-01-06T12:36:14.631Z"
     }
   ]
 }

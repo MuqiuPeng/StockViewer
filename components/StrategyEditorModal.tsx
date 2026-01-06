@@ -8,6 +8,12 @@ interface Strategy {
   name: string;
   description: string;
   pythonCode: string;
+  strategyType: 'single' | 'portfolio';
+  constraints?: {
+    maxPositions?: number;
+    positionSizing: 'equal' | 'custom';
+    reserveCash?: number;
+  };
   parameters?: Record<string, any>;
 }
 
@@ -83,6 +89,116 @@ const CODE_TEMPLATE = `def calculate(data, parameters):
 
     return signals`;
 
+const PORTFOLIO_CODE_TEMPLATE = `def calculate(data_map, parameters):
+    """
+    MACD Portfolio Rotation Strategy
+
+    Multi-stock portfolio with shared capital.
+    - Rebalances monthly based on MACD signals
+    - Ranks stocks by MACD momentum (DIF - DEA)
+    - Holds top 3 stocks with bullish MACD signals
+    - Rotates capital into strongest momentum stocks
+
+    Args:
+        data_map: Dict[str, pd.DataFrame] - {symbol: OHLC data}
+                  Each DataFrame has columns: date, open, high, low, close, volume
+                  And MACD indicators: MACD:DIF, MACD:DEA, MACD:MACD
+        parameters: dict of configurable parameters
+
+    Returns:
+        List of signals with 'symbol' field:
+        [
+            {
+                'date': '2024-01-01',
+                'symbol': '000001',  # REQUIRED for portfolio strategies
+                'type': 'v',         # 'v' for value-based, 'a' for amount-based
+                'amount': 10000,     # Positive = buy, negative = sell
+                'execution': 'next_open'  # Optional: 'close' or 'next_open'
+            },
+            ...
+        ]
+    """
+    signals = []
+
+    # Parameters
+    top_n = parameters.get('top_stocks', 3)
+    rebalance_days = parameters.get('rebalance_days', 21)  # Monthly rebalancing
+    position_size = parameters.get('position_size', 30000)
+
+    # Get reference dates from first symbol
+    first_symbol = list(data_map.keys())[0]
+    all_dates = data_map[first_symbol].index
+
+    # Track current holdings
+    current_holdings = set()
+
+    # Loop through dates and rebalance periodically
+    for i in range(40, len(all_dates), rebalance_days):  # Start at day 40 (MACD needs ~35 days)
+        current_date = all_dates[i]
+
+        # Calculate MACD momentum for each stock
+        macd_scores = {}
+        for symbol, df in data_map.items():
+            if i >= len(df):
+                continue
+
+            try:
+                # Get MACD values at this date and convert to float
+                dif = float(df['MACD:DIF'].iloc[i])
+                dea = float(df['MACD:DEA'].iloc[i])
+                macd_hist = float(df['MACD:MACD'].iloc[i])
+
+                # Skip if NaN
+                if pd.isna(dif) or pd.isna(dea) or pd.isna(macd_hist):
+                    continue
+
+                # MACD momentum score: use histogram and check if DIF > DEA
+                is_bullish = dif > dea
+                momentum = macd_hist if is_bullish else -abs(macd_hist)
+
+                macd_scores[symbol] = momentum
+            except (KeyError, IndexError, ValueError, TypeError):
+                continue
+
+        if not macd_scores:
+            continue
+
+        # Rank stocks by MACD momentum
+        ranked_symbols = sorted(macd_scores.items(), key=lambda x: x[1], reverse=True)
+
+        # Select top N stocks with positive momentum
+        target_holdings = set()
+        for symbol, momentum in ranked_symbols[:top_n]:
+            if momentum > 0:  # Only hold stocks with bullish MACD
+                target_holdings.add(symbol)
+
+        # Sell stocks no longer in top picks
+        to_sell = current_holdings - target_holdings
+        for symbol in to_sell:
+            signals.append({
+                'date': current_date.strftime('%Y-%m-%d'),
+                'symbol': symbol,
+                'type': 'v',
+                'amount': -position_size,
+                'execution': 'next_open'
+            })
+
+        # Buy new top picks
+        to_buy = target_holdings - current_holdings
+        for symbol in to_buy:
+            signals.append({
+                'date': current_date.strftime('%Y-%m-%d'),
+                'symbol': symbol,
+                'type': 'v',
+                'amount': position_size,
+                'execution': 'next_open'
+            })
+
+        # Update holdings
+        current_holdings = target_holdings
+
+    return signals`;
+
 export default function StrategyEditorModal({
   isOpen,
   onClose,
@@ -92,6 +208,12 @@ export default function StrategyEditorModal({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [pythonCode, setPythonCode] = useState('');
+  const [strategyType, setStrategyType] = useState<'single' | 'portfolio'>('single');
+  const [constraints, setConstraints] = useState({
+    maxPositions: 5,
+    positionSizing: 'equal' as 'equal' | 'custom',
+    reserveCash: 10,
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(false);
@@ -102,14 +224,34 @@ export default function StrategyEditorModal({
       setName(strategy.name);
       setDescription(strategy.description);
       setPythonCode(strategy.pythonCode);
+      setStrategyType(strategy.strategyType || 'single');
+      setConstraints({
+        maxPositions: strategy.constraints?.maxPositions ?? 5,
+        positionSizing: strategy.constraints?.positionSizing ?? 'equal',
+        reserveCash: strategy.constraints?.reserveCash ?? 10,
+      });
     } else {
       setName('');
       setDescription('');
+      setStrategyType('single');
       setPythonCode(CODE_TEMPLATE);
+      setConstraints({
+        maxPositions: 5,
+        positionSizing: 'equal',
+        reserveCash: 10,
+      });
     }
     setError(null);
     setValidationSuccess(null);
   }, [strategy, isOpen]);
+
+  // Update code template when strategy type changes
+  useEffect(() => {
+    // Only update template if creating new strategy (not editing)
+    if (!strategy) {
+      setPythonCode(strategyType === 'portfolio' ? PORTFOLIO_CODE_TEMPLATE : CODE_TEMPLATE);
+    }
+  }, [strategyType, strategy]);
 
   const handleValidate = async () => {
     setError(null);
@@ -172,6 +314,8 @@ export default function StrategyEditorModal({
           name,
           description,
           pythonCode,
+          strategyType,
+          constraints: strategyType === 'portfolio' ? constraints : undefined,
         }),
       });
 
@@ -224,6 +368,39 @@ export default function StrategyEditorModal({
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
+            <label className="block text-sm font-medium mb-2">Strategy Type</label>
+            <div className="flex space-x-4">
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="radio"
+                  value="single"
+                  checked={strategyType === 'single'}
+                  onChange={(e) => setStrategyType(e.target.value as 'single')}
+                  className="mr-2"
+                  disabled={!!strategy}
+                />
+                <span>Single Stock</span>
+              </label>
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="radio"
+                  value="portfolio"
+                  checked={strategyType === 'portfolio'}
+                  onChange={(e) => setStrategyType(e.target.value as 'portfolio')}
+                  className="mr-2"
+                  disabled={!!strategy}
+                />
+                <span>Portfolio (Multi-Stock)</span>
+              </label>
+            </div>
+            {!!strategy && (
+              <p className="text-xs text-gray-500 mt-1">
+                Strategy type cannot be changed after creation
+              </p>
+            )}
+          </div>
+
+          <div>
             <label className="block text-sm font-medium mb-1">Name</label>
             <input
               type="text"
@@ -244,6 +421,74 @@ export default function StrategyEditorModal({
               required
             />
           </div>
+
+          {strategyType === 'portfolio' && (
+            <div className="border rounded p-4 bg-gray-50">
+              <h3 className="font-medium mb-3">Portfolio Constraints</h3>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Max Concurrent Positions
+                  </label>
+                  <input
+                    type="number"
+                    value={constraints.maxPositions}
+                    onChange={(e) => setConstraints({
+                      ...constraints,
+                      maxPositions: parseInt(e.target.value) || 0
+                    })}
+                    className="w-full px-3 py-2 border rounded"
+                    min="1"
+                    max="50"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Maximum number of stocks to hold simultaneously
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Reserve Cash (%)
+                  </label>
+                  <input
+                    type="number"
+                    value={constraints.reserveCash}
+                    onChange={(e) => setConstraints({
+                      ...constraints,
+                      reserveCash: parseInt(e.target.value) || 0
+                    })}
+                    className="w-full px-3 py-2 border rounded"
+                    min="0"
+                    max="100"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Percentage of capital to keep as cash reserve
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Position Sizing
+                  </label>
+                  <select
+                    value={constraints.positionSizing}
+                    onChange={(e) => setConstraints({
+                      ...constraints,
+                      positionSizing: e.target.value as 'equal' | 'custom'
+                    })}
+                    className="w-full px-3 py-2 border rounded"
+                  >
+                    <option value="equal">Equal Weight</option>
+                    <option value="custom">Custom (Strategy Controlled)</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    How to distribute capital across positions
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium mb-1">Python Code</label>

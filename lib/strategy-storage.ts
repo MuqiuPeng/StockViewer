@@ -1,13 +1,16 @@
 import { readFile, writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
+import { PortfolioConstraints } from './types/portfolio';
 
 export interface Strategy {
   id: string;
   name: string;
   description: string;
   pythonCode: string;
-  parameters?: Record<string, any>; // Configurable parameters
+  strategyType: 'single' | 'portfolio';  // NEW: Strategy type
+  constraints?: PortfolioConstraints;     // NEW: Portfolio constraints (only for portfolio type)
+  parameters?: Record<string, any>;      // Configurable parameters
   createdAt: string;
   updatedAt?: string;
 }
@@ -29,7 +32,27 @@ export async function loadStrategies(): Promise<Strategy[]> {
     const filePath = getStrategiesFilePath();
     const content = await readFile(filePath, 'utf-8');
     const data: StrategiesFile = JSON.parse(content);
-    return data.strategies || [];
+    const strategies = data.strategies || [];
+
+    // Migration: Add default strategyType for existing strategies
+    let needsSave = false;
+    const migratedStrategies = strategies.map(strategy => {
+      if (!strategy.strategyType) {
+        needsSave = true;
+        return {
+          ...strategy,
+          strategyType: 'single' as const, // Default to single-stock for backward compatibility
+        };
+      }
+      return strategy;
+    });
+
+    // Save migrated strategies if needed
+    if (needsSave) {
+      await saveStrategies(migratedStrategies);
+    }
+
+    return migratedStrategies;
   } catch (error) {
     // If file doesn't exist or is invalid, return empty array
     return [];
@@ -67,7 +90,9 @@ export async function saveStrategy(
     ...strategyData,
     id: randomUUID(),
     createdAt: new Date().toISOString(),
+    strategyType: strategyData.strategyType || 'single', // Default to single-stock
     parameters: strategyData.parameters || {},
+    constraints: strategyData.constraints, // Only set if provided (portfolio strategies)
   };
 
   strategies.push(newStrategy);

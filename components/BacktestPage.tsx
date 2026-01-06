@@ -4,14 +4,11 @@ import { useState, useEffect } from 'react';
 import StrategyManager from './StrategyManager';
 import RunBacktestModal from './RunBacktestModal';
 import BacktestResults from './BacktestResults';
+import BacktestHistorySidebar from './BacktestHistorySidebar';
+import BacktestHistoryDetailModal from './BacktestHistoryDetailModal';
 import Link from 'next/link';
-
-interface Strategy {
-  id: string;
-  name: string;
-  description: string;
-  parameters?: Record<string, any>;
-}
+import { BacktestHistoryEntry } from '@/lib/backtest-history-storage';
+import { Strategy } from '@/lib/strategy-storage';
 
 interface DatasetInfo {
   name: string;
@@ -36,6 +33,8 @@ export default function BacktestPage() {
   const [isBacktestLoading, setIsBacktestLoading] = useState(false);
   const [backtestResults, setBacktestResults] = useState<any>(null);
   const [datasetData, setDatasetData] = useState<any>(null);
+  const [isHistorySidebarOpen, setIsHistorySidebarOpen] = useState(false);
+  const [selectedHistoryEntry, setSelectedHistoryEntry] = useState<BacktestHistoryEntry | null>(null);
 
   useEffect(() => {
     // Load strategies
@@ -83,9 +82,58 @@ export default function BacktestPage() {
     datasetName?: string;
   } | null>(null);
 
+  const handleRerunBacktest = async (entry: BacktestHistoryEntry) => {
+    setSelectedHistoryEntry(null);
+    setIsBacktestLoading(true);
+
+    try {
+      const response = await fetch(`/api/backtest-history/${entry.id}/rerun`, {
+        method: 'POST',
+      });
+
+      const data = await response.json();
+      if (data.error) {
+        alert(`Failed to re-run backtest: ${data.message || data.error}`);
+        return;
+      }
+
+      // Set the result
+      setBacktestResults(data.result);
+
+      // Load dataset for single stock backtests
+      if (entry.target.type === 'single' && entry.target.datasetName) {
+        const datasetApiName = entry.target.datasetName.replace(/\.csv$/i, '');
+        const datasetRes = await fetch(`/api/dataset/${encodeURIComponent(datasetApiName)}`);
+        const datasetResult = await datasetRes.json();
+        if (!datasetResult.error) {
+          setDatasetData(datasetResult);
+        }
+      } else {
+        setDatasetData(null);
+      }
+
+      // Set strategy and params for display
+      const strategy = strategies.find(s => s.id === entry.strategyId);
+      setSelectedStrategy(strategy || null);
+      setBacktestParams({
+        initialCash: entry.parameters.initialCash,
+        commission: entry.parameters.commission,
+        parameters: entry.parameters.strategyParameters || {},
+        datasetName: entry.target.type === 'single' ? entry.target.datasetName : undefined,
+      });
+    } catch (err) {
+      alert(`Failed to re-run backtest: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    } finally {
+      setIsBacktestLoading(false);
+    }
+  };
+
   const handleRunBacktest = async (
     strategyId: string,
-    target: { type: 'single'; datasetName: string } | { type: 'group'; groupId: string },
+    target:
+      | { type: 'single'; datasetName: string }
+      | { type: 'group'; groupId: string }
+      | { type: 'portfolio'; symbols: string[] },
     initialCash: number,
     commission: number,
     parameters: Record<string, any>,
@@ -122,7 +170,7 @@ export default function BacktestPage() {
           setDatasetData(datasetResult);
         }
       } else {
-        // For group backtests, clear dataset data
+        // For group and portfolio backtests, clear dataset data
         setDatasetData(null);
       }
 
@@ -194,6 +242,12 @@ export default function BacktestPage() {
           >
             Run Backtest
           </button>
+          <button
+            onClick={() => setIsHistorySidebarOpen(true)}
+            className="px-6 py-3 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium"
+          >
+            History
+          </button>
         </div>
 
         {backtestResults?.dateRange && (
@@ -258,7 +312,18 @@ export default function BacktestPage() {
 
       {backtestResults && !isBacktestLoading && (
         <div className="mt-4">
-          {backtestResults.type === 'group' ? (
+          {backtestResults.type === 'portfolio' ? (
+            <BacktestResults
+              portfolioResult={backtestResults}
+              dateRange={backtestResults.dateRange}
+              strategyInfo={{
+                name: selectedStrategy?.name,
+                parameters: backtestParams?.parameters,
+                initialCash: backtestParams?.initialCash,
+                commission: backtestParams?.commission,
+              }}
+            />
+          ) : backtestResults.type === 'group' ? (
             <BacktestResults
               groupResult={backtestResults}
               dateRange={backtestResults.dateRange}
@@ -287,6 +352,23 @@ export default function BacktestPage() {
           ) : null}
         </div>
       )}
+
+      {/* History Sidebar */}
+      <BacktestHistorySidebar
+        isOpen={isHistorySidebarOpen}
+        onClose={() => setIsHistorySidebarOpen(false)}
+        onSelectEntry={(entry) => {
+          setSelectedHistoryEntry(entry);
+          setIsHistorySidebarOpen(false);
+        }}
+      />
+
+      {/* History Detail Modal */}
+      <BacktestHistoryDetailModal
+        entry={selectedHistoryEntry}
+        onClose={() => setSelectedHistoryEntry(null)}
+        onRerun={handleRerunBacktest}
+      />
     </div>
   );
 }

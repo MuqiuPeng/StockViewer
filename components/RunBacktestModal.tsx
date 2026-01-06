@@ -6,6 +6,7 @@ interface Strategy {
   id: string;
   name: string;
   description: string;
+  strategyType: 'single' | 'portfolio';
   parameters?: Record<string, any>;
 }
 
@@ -28,7 +29,10 @@ interface RunBacktestModalProps {
   onClose: () => void;
   onRun: (
     strategyId: string,
-    target: { type: 'single'; datasetName: string } | { type: 'group'; groupId: string },
+    target:
+      | { type: 'single'; datasetName: string }
+      | { type: 'group'; groupId: string }
+      | { type: 'portfolio'; symbols: string[] },
     initialCash: number,
     commission: number,
     parameters: Record<string, any>,
@@ -52,10 +56,11 @@ export default function RunBacktestModal({
   groups = [],
   isLoading = false,
 }: RunBacktestModalProps) {
-  const [mode, setMode] = useState<'single' | 'group'>('single');
+  const [mode, setMode] = useState<'single' | 'group' | 'portfolio'>('single');
   const [selectedStrategyId, setSelectedStrategyId] = useState<string>('');
   const [selectedDataset, setSelectedDataset] = useState<string>(currentDataset);
   const [selectedGroupId, setSelectedGroupId] = useState<string>('');
+  const [selectedSymbols, setSelectedSymbols] = useState<string[]>([]);
   const [initialCash, setInitialCash] = useState<string>('100000');
   const [commission, setCommission] = useState<string>('0.001');
   const [parameters, setParameters] = useState<Record<string, string>>({});
@@ -77,6 +82,15 @@ export default function RunBacktestModal({
     if (selectedStrategyId) {
       const strategy = strategies.find(s => s.id === selectedStrategyId);
       setSelectedStrategy(strategy || null);
+
+      // Auto-set mode based on strategy type
+      if (strategy?.strategyType === 'portfolio') {
+        setMode('portfolio');
+      } else if (mode === 'portfolio') {
+        // If switching from portfolio strategy to single-stock strategy, reset to single mode
+        setMode('single');
+      }
+
       if (strategy?.parameters) {
         const paramValues: Record<string, string> = {};
         Object.keys(strategy.parameters).forEach(key => {
@@ -87,7 +101,7 @@ export default function RunBacktestModal({
         setParameters({});
       }
     }
-  }, [selectedStrategyId, strategies]);
+  }, [selectedStrategyId, strategies, mode]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -115,6 +129,11 @@ export default function RunBacktestModal({
       return;
     }
 
+    if (mode === 'portfolio' && selectedSymbols.length === 0) {
+      alert('Please select at least one stock for portfolio backtest');
+      return;
+    }
+
     // Convert parameters to proper types
     const typedParameters: Record<string, any> = {};
     Object.entries(parameters).forEach(([key, value]) => {
@@ -132,9 +151,12 @@ export default function RunBacktestModal({
       return;
     }
 
-    const target = mode === 'single'
-      ? { type: 'single' as const, datasetName: selectedDataset }
-      : { type: 'group' as const, groupId: selectedGroupId };
+    const target =
+      mode === 'single'
+        ? { type: 'single' as const, datasetName: selectedDataset }
+        : mode === 'group'
+        ? { type: 'group' as const, groupId: selectedGroupId }
+        : { type: 'portfolio' as const, symbols: selectedSymbols };
 
     onRun(
       selectedStrategyId,
@@ -178,12 +200,21 @@ export default function RunBacktestModal({
               <option value="">Select a strategy</option>
               {strategies.map((strategy) => (
                 <option key={strategy.id} value={strategy.id}>
-                  {strategy.name}
+                  {strategy.name} ({strategy.strategyType === 'portfolio' ? 'Portfolio' : 'Single Stock'})
                 </option>
               ))}
             </select>
             {selectedStrategy && (
-              <p className="text-xs text-gray-500 mt-1">{selectedStrategy.description}</p>
+              <>
+                <p className="text-xs text-gray-500 mt-1">{selectedStrategy.description}</p>
+                <p className="text-xs font-medium mt-1">
+                  {selectedStrategy.strategyType === 'portfolio' ? (
+                    <span className="text-purple-600">Portfolio Strategy - Requires multiple stocks with shared capital</span>
+                  ) : (
+                    <span className="text-blue-600">Single Stock Strategy</span>
+                  )}
+                </p>
+              </>
             )}
           </div>
 
@@ -191,27 +222,45 @@ export default function RunBacktestModal({
           <div>
             <label className="block text-sm font-medium mb-2">Backtest Target</label>
             <div className="flex gap-4 mb-3">
-              <label className="flex items-center">
+              <label className={`flex items-center ${selectedStrategy?.strategyType === 'portfolio' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                 <input
                   type="radio"
                   value="single"
                   checked={mode === 'single'}
-                  onChange={(e) => setMode(e.target.value as 'single' | 'group')}
+                  onChange={(e) => setMode(e.target.value as 'single' | 'group' | 'portfolio')}
                   className="mr-2"
+                  disabled={selectedStrategy?.strategyType === 'portfolio'}
                 />
                 <span>Single Stock</span>
               </label>
-              <label className="flex items-center">
+              <label className={`flex items-center ${selectedStrategy?.strategyType === 'portfolio' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                 <input
                   type="radio"
                   value="group"
                   checked={mode === 'group'}
-                  onChange={(e) => setMode(e.target.value as 'single' | 'group')}
+                  onChange={(e) => setMode(e.target.value as 'single' | 'group' | 'portfolio')}
                   className="mr-2"
+                  disabled={selectedStrategy?.strategyType === 'portfolio'}
                 />
                 <span>Stock Group</span>
               </label>
+              <label className={`flex items-center ${selectedStrategy?.strategyType === 'single' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+                <input
+                  type="radio"
+                  value="portfolio"
+                  checked={mode === 'portfolio'}
+                  onChange={(e) => setMode(e.target.value as 'single' | 'group' | 'portfolio')}
+                  className="mr-2"
+                  disabled={selectedStrategy?.strategyType === 'single'}
+                />
+                <span>Portfolio (Multi-Stock)</span>
+              </label>
             </div>
+            {selectedStrategy?.strategyType === 'portfolio' && (
+              <p className="text-xs text-purple-600 mb-2">
+                Portfolio strategies require multiple stocks with shared capital
+              </p>
+            )}
           </div>
 
           {/* Single Stock Selection */}
@@ -268,8 +317,66 @@ export default function RunBacktestModal({
                 </div>
               )}
               <p className="text-xs text-gray-500 mt-1">
-                Run backtest on all stocks in the group
+                Run backtest on all stocks in the group (separate capital per stock)
               </p>
+            </div>
+          )}
+
+          {/* Portfolio Multi-Stock Selection */}
+          {mode === 'portfolio' && (
+            <div>
+              <label className="block text-sm font-medium mb-2">Select Stocks for Portfolio</label>
+              {datasets.length > 0 ? (
+                <div className="border rounded p-3 bg-gray-50 max-h-60 overflow-y-auto">
+                  <div className="space-y-2">
+                    {datasets.map((ds) => (
+                      <label key={ds.name} className="flex items-center cursor-pointer hover:bg-gray-100 p-2 rounded">
+                        <input
+                          type="checkbox"
+                          checked={selectedSymbols.includes(ds.filename || ds.name)}
+                          onChange={(e) => {
+                            const symbol = ds.filename || ds.name;
+                            if (e.target.checked) {
+                              setSelectedSymbols([...selectedSymbols, symbol]);
+                            } else {
+                              setSelectedSymbols(selectedSymbols.filter(s => s !== symbol));
+                            }
+                          }}
+                          className="mr-3"
+                        />
+                        <span className="flex-1">
+                          {ds.name} <span className="text-gray-500 text-xs">({ds.rowCount.toLocaleString()} rows)</span>
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-sm text-gray-500 py-2 px-3 border rounded bg-gray-50">
+                  No datasets available. Add stocks first.
+                </div>
+              )}
+              <p className="text-xs text-purple-600 mt-2 font-medium">
+                Selected: {selectedSymbols.length} stock{selectedSymbols.length !== 1 ? 's' : ''} | Shared capital across all positions
+              </p>
+              {selectedSymbols.length > 0 && (
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSymbols(datasets.map(ds => ds.filename || ds.name))}
+                    className="text-xs px-2 py-1 border rounded hover:bg-gray-100"
+                  >
+                    Select All
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSymbols([])}
+                    className="text-xs px-2 py-1 border rounded hover:bg-gray-100"
+                  >
+                    Clear All
+                  </button>
+                </div>
+              )}
             </div>
           )}
 

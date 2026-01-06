@@ -2,13 +2,17 @@ import { spawn } from 'child_process';
 import path from 'path';
 import { existsSync } from 'fs';
 import { PYTHON_CONFIG } from './env';
+import { PortfolioConstraints } from './types/portfolio';
 
 export interface BacktestInput {
   strategyCode: string;
-  data: Record<string, any>[];
+  data?: Record<string, any>[];                // Single-stock data
+  dataMap?: Record<string, Record<string, any>[]>;  // Portfolio data (symbol -> data)
+  strategyType: 'single' | 'portfolio';        // NEW: Strategy type
   initialCash?: number;
   commission?: number;
   parameters?: Record<string, any>;
+  constraints?: PortfolioConstraints;          // NEW: Portfolio constraints
 }
 
 export interface BacktestResult {
@@ -37,11 +41,12 @@ export interface BacktestResult {
     sameDayTrades?: number;
     nextOpenTrades?: number;
   };
-  equityCurve?: Array<{ date: string; value: number }>;
+  equityCurve?: Array<{ date: string; value: number; cash?: number; shares?: number; stock_value?: number }>;
   tradeMarkers?: Array<{
     signal_date?: string;
     execution_date?: string;
     date: string;
+    symbol?: string;                 // NEW: Required for portfolio trades
     type: 'buy' | 'sell';
     amount?: number;
     price?: number;
@@ -51,6 +56,26 @@ export interface BacktestResult {
     commission?: number;
     execution_mode?: 'close' | 'next_open';
   }>;
+  // Portfolio-specific fields
+  positionSnapshots?: Array<{
+    date: string;
+    positions: Record<string, { shares: number; value: number; percentOfPortfolio: number }>;
+    cash: number;
+    totalValue: number;
+  }>;
+  perSymbolMetrics?: Array<{
+    symbol: string;
+    totalReturn: number;
+    totalReturnPct: number;
+    sharpeRatio: number;
+    maxDrawdownPct: number;
+    tradeCount: number;
+    contributionToPortfolio: number;
+    winRate: number;
+  }>;
+  perSymbolEquityCurves?: Record<string, Array<{ date: string; value: number; shares: number }>>;
+  symbols?: string[];
+  constraints?: PortfolioConstraints;
   error?: string;
   type?: string;
 }
@@ -60,6 +85,22 @@ export async function executeBacktest(
 ): Promise<BacktestResult> {
   return new Promise((resolve, reject) => {
     const pythonScript = path.join(process.cwd(), 'data', 'python', 'backtest-executor.py');
+
+    // Validate input
+    if (!input.strategyType) {
+      reject(new Error('strategyType is required'));
+      return;
+    }
+
+    if (input.strategyType === 'single' && !input.data) {
+      reject(new Error('data is required for single-stock backtest'));
+      return;
+    }
+
+    if (input.strategyType === 'portfolio' && !input.dataMap) {
+      reject(new Error('dataMap is required for portfolio backtest'));
+      return;
+    }
 
     // Get Python executable - prioritize env config, then local venv
     let pythonExecutable: string;
@@ -100,6 +141,11 @@ export async function executeBacktest(
     });
 
     pythonProcess.on('close', (code) => {
+      // Log stderr for debugging
+      if (stderr) {
+        console.error('[Python Debug Output]:', stderr);
+      }
+
       // Check if we have any output to parse
       if (!stdout.trim()) {
         reject(new Error(`Python process produced no output. Exit code: ${code}. Error: ${stderr || 'No error message'}`));
@@ -108,12 +154,12 @@ export async function executeBacktest(
 
       try {
         const result: BacktestResult = JSON.parse(stdout);
-        
+
         // If result indicates failure, include stderr if available
         if (!result.success && !result.error && stderr) {
           result.error = stderr;
         }
-        
+
         resolve(result);
       } catch (error) {
         // If JSON parsing fails, include both stdout and stderr in error

@@ -40,7 +40,7 @@ export async function PUT(
 ) {
   try {
     const body = await request.json();
-    const { name, description, pythonCode, parameters } = body;
+    const { name, description, pythonCode, parameters, constraints } = body;
 
     // Validate that strategy exists
     const existing = await getStrategyById(params.id);
@@ -63,9 +63,23 @@ export async function PUT(
           { status: 400 }
         );
       }
+
+      // Validate portfolio strategy code format
+      if (existing.strategyType === 'portfolio' && !pythonCode.includes('data_map')) {
+        return NextResponse.json(
+          { error: 'Invalid portfolio strategy', message: 'Portfolio strategies must accept data_map parameter (not data)' },
+          { status: 400 }
+        );
+      }
+
       updates.pythonCode = pythonCode;
     }
     if (parameters !== undefined) updates.parameters = parameters;
+
+    // Allow updating constraints for portfolio strategies
+    if (constraints !== undefined && existing.strategyType === 'portfolio') {
+      updates.constraints = constraints;
+    }
 
     const updated = await updateStrategy(params.id, updates);
     return NextResponse.json({ strategy: updated });

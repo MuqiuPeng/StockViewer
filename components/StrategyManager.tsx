@@ -2,16 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import StrategyEditorModal from './StrategyEditorModal';
-
-interface Strategy {
-  id: string;
-  name: string;
-  description: string;
-  pythonCode: string;
-  parameters?: Record<string, any>;
-  createdAt: string;
-  updatedAt?: string;
-}
+import { Strategy } from '@/lib/strategy-storage';
 
 interface StrategyManagerProps {
   isOpen: boolean;

@@ -31,6 +31,10 @@ interface BacktestMetrics {
 interface EquityPoint {
   date: string;
   value: number;
+  cash?: number;
+  shares?: number;
+  stock_value?: number;
+  positions?: Record<string, number>;
 }
 
 interface TradeMarker {
@@ -87,6 +91,36 @@ interface GroupBacktestResult {
   errors?: Array<{ datasetName: string; error: string }>;
 }
 
+interface PortfolioBacktestResult {
+  type: 'portfolio';
+  symbols: string[];
+  metrics: BacktestMetrics;
+  equityCurve: Array<{ date: string; value: number; cash?: number; shares?: number; positions?: Record<string, number> }>;
+  tradeMarkers: TradeMarker[];
+  dateRange?: {
+    startDate: string;
+    endDate: string;
+  };
+  positionSnapshots?: Array<{
+    date: string;
+    positions: Record<string, { shares: number; value: number; percentOfPortfolio: number }>;
+    cash: number;
+    totalValue: number;
+  }>;
+  perSymbolMetrics?: Array<{
+    symbol: string;
+    totalReturn: number;
+    totalReturnPct: number;
+    sharpeRatio: number;
+    maxDrawdownPct: number;
+    tradeCount: number;
+    contributionToPortfolio: number;
+    winRate: number;
+  }>;
+  perSymbolEquityCurves?: Record<string, Array<{ date: string; value: number; shares: number }>>;
+  constraints?: any;
+}
+
 interface BacktestResultsProps {
   metrics?: BacktestMetrics;
   equityCurve?: EquityPoint[];
@@ -95,6 +129,1280 @@ interface BacktestResultsProps {
   dateRange?: DateRange;
   strategyInfo?: StrategyInfo;
   groupResult?: GroupBacktestResult;
+  portfolioResult?: PortfolioBacktestResult;
+}
+
+// Portfolio Backtest Results Component
+function PortfolioBacktestResults({
+  portfolioResult,
+  strategyInfo,
+}: {
+  portfolioResult: PortfolioBacktestResult;
+  strategyInfo?: StrategyInfo;
+}) {
+  const equityChartRef = useRef<HTMLDivElement>(null);
+  const equityChartApiRef = useRef<IChartApi | null>(null);
+  const equitySeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const drawdownChartRef = useRef<HTMLDivElement>(null);
+  const drawdownChartApiRef = useRef<IChartApi | null>(null);
+  const priceChartRef = useRef<HTMLDivElement>(null);
+  const priceChartApiRef = useRef<IChartApi | null>(null);
+  const priceChartContainerRef = useRef<HTMLDivElement>(null);
+  const chartInitializedRef = useRef(false);
+  const drawdownChartInitializedRef = useRef(false);
+  const priceChartInitializedRef = useRef(false);
+
+  // Stacked area chart refs for portfolio composition
+  const stackedChartRef = useRef<HTMLDivElement>(null);
+  const stackedChartApiRef = useRef<IChartApi | null>(null);
+  const stackedChartInitializedRef = useRef(false);
+
+  const [selectedTab, setSelectedTab] = useState<'metrics' | 'trades' | 'charts' | 'stocks'>('metrics');
+  const [tradeSortField, setTradeSortField] = useState<'date' | 'size' | 'value'>('date');
+  const [tradeSortDirection, setTradeSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [tradeFilter, setTradeFilter] = useState<'all' | 'buy' | 'sell'>('all');
+  const [symbolFilter, setSymbolFilter] = useState<string>('');
+  const [selectedStockSymbol, setSelectedStockSymbol] = useState<string>(portfolioResult.symbols[0] || '');
+  const [stockCandles, setStockCandles] = useState<Array<{ time: number; open: number; high: number; low: number; close: number }>>([]);
+  const [isLoadingCandles, setIsLoadingCandles] = useState(false);
+  const [tradesPerPage, setTradesPerPage] = useState(25);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Calculate drawdown data
+  const drawdownData = useMemo(() => {
+    const data: Array<{ date: string; drawdown: number; drawdownPct: number }> = [];
+    let peak = portfolioResult.equityCurve[0]?.value || 0;
+
+    portfolioResult.equityCurve.forEach(point => {
+      if (point.value > peak) peak = point.value;
+      const drawdown = peak - point.value;
+      const drawdownPct = peak > 0 ? (drawdown / peak) * 100 : 0;
+      data.push({
+        date: point.date,
+        drawdown,
+        drawdownPct: -drawdownPct,
+      });
+    });
+    return data;
+  }, [portfolioResult.equityCurve]);
+
+  // Filter trade markers for selected stock
+  const stockTradeMarkers = useMemo(() => {
+    return portfolioResult.tradeMarkers.filter(trade => (trade as any).symbol === selectedStockSymbol);
+  }, [portfolioResult.tradeMarkers, selectedStockSymbol]);
+
+  // Filter candles by backtest date range
+  const filteredStockCandles = useMemo(() => {
+    if (!stockCandles.length || !portfolioResult.dateRange) return stockCandles;
+
+    const startTime = new Date(portfolioResult.dateRange.startDate).getTime() / 1000;
+    const endTime = new Date(portfolioResult.dateRange.endDate).getTime() / 1000;
+
+    const filtered = stockCandles.filter(candle => candle.time >= startTime && candle.time <= endTime);
+
+    console.log('Filtering candles:', {
+      total: stockCandles.length,
+      filtered: filtered.length,
+      dateRange: portfolioResult.dateRange,
+      startTime: new Date(startTime * 1000).toISOString(),
+      endTime: new Date(endTime * 1000).toISOString(),
+    });
+
+    return filtered;
+  }, [stockCandles, portfolioResult.dateRange]);
+
+  // Load candlestick data for selected stock
+  useEffect(() => {
+    if (!selectedStockSymbol || selectedTab !== 'charts') {
+      setIsLoadingCandles(false);
+      return;
+    }
+
+    const loadStockData = async () => {
+      setIsLoadingCandles(true);
+      setStockCandles([]); // Clear previous data
+
+      try {
+        console.log('Loading data for symbol:', selectedStockSymbol);
+
+        // Find dataset metadata
+        const metadataRes = await fetch('/api/datasets');
+        if (!metadataRes.ok) {
+          console.error('Failed to fetch datasets metadata:', metadataRes.statusText);
+          setIsLoadingCandles(false);
+          return;
+        }
+
+        const allDatasets = await metadataRes.json();
+        console.log('All datasets:', allDatasets.map((d: any) => d.filename));
+        console.log('Looking for symbol:', selectedStockSymbol);
+
+        // Try to find dataset by stock code
+        // The symbol is now just the stock code (e.g., "000001"), not the full filename
+        let dataset = allDatasets.find((d: any) => {
+          // Extract stock code from filename for comparison
+          const filenameWithoutExt = d.filename.replace(/\.csv$/i, '');
+          const stockCodeFromFilename = filenameWithoutExt.split('_')[0];
+
+          // Match by stock code
+          const stockCodeMatch = stockCodeFromFilename === selectedStockSymbol;
+
+          // Also check if it's the full filename (backward compatibility)
+          const exactFilenameMatch = d.filename === selectedStockSymbol;
+          const symbolMatch = d.symbol === selectedStockSymbol;
+
+          return stockCodeMatch || exactFilenameMatch || symbolMatch;
+        });
+
+        if (!dataset) {
+          console.error('Dataset not found for symbol:', selectedStockSymbol);
+          console.error('Available datasets:', allDatasets.map((d: any) => ({ filename: d.filename, symbol: d.symbol })));
+          setIsLoadingCandles(false);
+          return;
+        }
+
+        console.log('Found dataset:', dataset.filename);
+
+        // Load the dataset using the correct API endpoint
+        const dataRes = await fetch(`/api/dataset/${encodeURIComponent(dataset.filename)}`);
+        if (!dataRes.ok) {
+          console.error('Failed to load dataset:', dataRes.statusText);
+          setIsLoadingCandles(false);
+          return;
+        }
+
+        const data = await dataRes.json();
+        console.log('API response type:', typeof data);
+        console.log('API response keys:', Object.keys(data));
+
+        // The API returns a DatasetData object with { meta, candles, indicators }
+        // Extract the candles array
+        let candles;
+
+        if (data.candles && Array.isArray(data.candles)) {
+          // Data is already in candle format with time (seconds)
+          console.log('Using pre-formatted candles:', data.candles.length);
+          candles = data.candles;
+        } else if (Array.isArray(data)) {
+          // Fallback: if data is already an array
+          console.log('Converting raw data array:', data.length);
+          candles = data.map((row: any) => ({
+            time: new Date(row.date).getTime() / 1000,
+            open: parseFloat(row.open),
+            high: parseFloat(row.high),
+            low: parseFloat(row.low),
+            close: parseFloat(row.close),
+          })).sort((a: any, b: any) => a.time - b.time);
+        } else {
+          console.error('Unexpected data format:', data);
+          setIsLoadingCandles(false);
+          return;
+        }
+
+        console.log('Final candles count:', candles.length);
+        setStockCandles(candles);
+        setIsLoadingCandles(false);
+      } catch (error) {
+        console.error('Failed to load stock data:', error);
+        setIsLoadingCandles(false);
+      }
+    };
+
+    loadStockData();
+  }, [selectedStockSymbol, selectedTab]);
+
+  // Initialize equity curve chart
+  useEffect(() => {
+    if (!equityChartRef.current || selectedTab !== 'metrics') {
+      // Reset initialization flag when tab is not active
+      if (selectedTab !== 'metrics') {
+        chartInitializedRef.current = false;
+      }
+      return;
+    }
+
+    // Clean up old chart if it exists
+    if (equityChartApiRef.current) {
+      try {
+        if (!(equityChartApiRef.current as any)._disposed) {
+          equityChartApiRef.current.remove();
+        }
+      } catch (error) {
+        console.warn('Chart cleanup warning:', error);
+      }
+      equityChartApiRef.current = null;
+      equitySeriesRef.current = null;
+      chartInitializedRef.current = false;
+    }
+
+    // Create new chart
+    const chart = createChart(equityChartRef.current, {
+      layout: {
+        background: { type: ColorType.Solid, color: 'white' },
+        textColor: 'black',
+      },
+      width: equityChartRef.current.clientWidth,
+      height: 400,
+      grid: {
+        vertLines: { color: '#e0e0e0' },
+        horzLines: { color: '#e0e0e0' },
+      },
+      timeScale: {
+        timeVisible: true,
+        secondsVisible: false,
+      },
+      rightPriceScale: {
+        borderColor: '#d1d4dc',
+        scaleMargins: {
+          top: 0.1,
+          bottom: 0.1,
+        },
+      },
+    });
+
+    const series = chart.addLineSeries({
+      color: '#2196F3',
+      lineWidth: 2,
+      title: 'Portfolio Value',
+    });
+
+    const chartData = portfolioResult.equityCurve.map((point) => ({
+      time: new Date(point.date).getTime() / 1000 as any,
+      value: point.value,
+    }));
+
+    series.setData(chartData);
+    chart.timeScale().fitContent();
+
+    equityChartApiRef.current = chart;
+    equitySeriesRef.current = series;
+    chartInitializedRef.current = true;
+
+    const handleResize = () => {
+      if (equityChartRef.current && chart && !(chart as any)._disposed) {
+        try {
+          chart.applyOptions({ width: equityChartRef.current.clientWidth });
+        } catch (error) {
+          // Ignore
+        }
+      }
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      // Don't remove chart here - let it persist for tab switching
+    };
+  }, [portfolioResult.equityCurve, selectedTab]);
+
+  // Initialize drawdown chart
+  useEffect(() => {
+    if (!drawdownChartRef.current || selectedTab !== 'charts') {
+      // Reset initialization flag when tab is not active
+      if (selectedTab !== 'charts') {
+        drawdownChartInitializedRef.current = false;
+      }
+      return;
+    }
+
+    // Clean up old chart if it exists
+    if (drawdownChartApiRef.current) {
+      try {
+        if (!(drawdownChartApiRef.current as any)._disposed) {
+          drawdownChartApiRef.current.remove();
+        }
+      } catch (error) {
+        console.warn('Drawdown chart cleanup warning:', error);
+      }
+      drawdownChartApiRef.current = null;
+      drawdownChartInitializedRef.current = false;
+    }
+
+    // Create new chart
+    const chart = createChart(drawdownChartRef.current, {
+      layout: {
+        background: { type: ColorType.Solid, color: 'white' },
+        textColor: 'black',
+      },
+      width: drawdownChartRef.current.clientWidth,
+      height: 300,
+      grid: {
+        vertLines: { color: '#e0e0e0' },
+        horzLines: { color: '#e0e0e0' },
+      },
+      timeScale: {
+        timeVisible: true,
+        secondsVisible: false,
+      },
+      rightPriceScale: {
+        borderColor: '#d1d4dc',
+      },
+    });
+
+    const areaSeries = chart.addAreaSeries({
+      lineColor: '#ef5350',
+      topColor: 'rgba(239, 83, 80, 0.4)',
+      bottomColor: 'rgba(239, 83, 80, 0.0)',
+      lineWidth: 2,
+      priceFormat: {
+        type: 'percent',
+      },
+    });
+
+    const drawdownChartData = drawdownData.map(point => ({
+      time: new Date(point.date).getTime() / 1000 as any,
+      value: point.drawdownPct,
+    }));
+    areaSeries.setData(drawdownChartData);
+
+    chart.timeScale().fitContent();
+    drawdownChartApiRef.current = chart;
+    drawdownChartInitializedRef.current = true;
+
+    const handleResize = () => {
+      if (drawdownChartRef.current && chart && !(chart as any)._disposed) {
+        try {
+          chart.applyOptions({ width: drawdownChartRef.current.clientWidth });
+        } catch (error) {
+          // Ignore
+        }
+      }
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      // Don't remove chart here - let it persist for tab switching
+    };
+  }, [drawdownData, selectedTab]);
+
+  // Initialize price chart with buy/sell markers
+  useEffect(() => {
+    if (!priceChartContainerRef.current || !priceChartRef.current || selectedTab !== 'charts' || filteredStockCandles.length === 0) {
+      // Reset initialization flag when tab is not active
+      if (selectedTab !== 'charts') {
+        priceChartInitializedRef.current = false;
+      }
+      return;
+    }
+
+    // Clean up old chart if it exists
+    if (priceChartApiRef.current) {
+      try {
+        if (!(priceChartApiRef.current as any)._disposed) {
+          priceChartApiRef.current.remove();
+        }
+      } catch (error) {
+        console.warn('Price chart cleanup warning:', error);
+      }
+      priceChartApiRef.current = null;
+      priceChartInitializedRef.current = false;
+    }
+
+    // Create new chart
+    const chart = createChart(priceChartRef.current, {
+      layout: {
+        background: { type: ColorType.Solid, color: 'white' },
+        textColor: 'black',
+      },
+      width: priceChartRef.current.clientWidth,
+      height: 400,
+      grid: {
+        vertLines: { color: '#e0e0e0' },
+        horzLines: { color: '#e0e0e0' },
+      },
+      timeScale: {
+        timeVisible: true,
+        secondsVisible: false,
+      },
+      rightPriceScale: {
+        borderColor: '#d1d4dc',
+      },
+    });
+
+    const candlestickSeries = chart.addCandlestickSeries({
+      upColor: '#26a69a',
+      downColor: '#ef5350',
+      borderVisible: false,
+      wickUpColor: '#26a69a',
+      wickDownColor: '#ef5350',
+    });
+
+    candlestickSeries.setData(filteredStockCandles as any);
+
+    // Add buy/sell markers - show only B/S on chart
+    const markers = stockTradeMarkers.map(trade => {
+      const tradeTime = new Date(trade.execution_date || trade.date).getTime() / 1000;
+      return {
+        time: tradeTime,
+        position: trade.type === 'buy' ? 'belowBar' : 'aboveBar',
+        color: trade.type === 'buy' ? '#26a69a' : '#ef5350',
+        shape: trade.type === 'buy' ? 'arrowUp' : 'arrowDown',
+        text: trade.type === 'buy' ? 'B' : 'S',
+      } as any;
+    });
+
+    candlestickSeries.setMarkers(markers);
+
+    // Add custom tooltip for detailed trade information
+    const container = priceChartContainerRef.current;
+    const toolTipWidth = 200;
+    const toolTipHeight = 100;
+    const toolTipMargin = 15;
+
+    // Create tooltip element
+    const toolTip = document.createElement('div');
+    toolTip.className = 'price-chart-tooltip';
+    toolTip.style.width = toolTipWidth + 'px';
+    toolTip.style.minHeight = toolTipHeight + 'px';
+    toolTip.style.position = 'absolute';
+    toolTip.style.display = 'none';
+    toolTip.style.padding = '8px';
+    toolTip.style.boxSizing = 'border-box';
+    toolTip.style.fontSize = '12px';
+    toolTip.style.textAlign = 'left';
+    toolTip.style.zIndex = '1000';
+    toolTip.style.pointerEvents = 'none';
+    toolTip.style.border = '1px solid #2962FF';
+    toolTip.style.borderRadius = '4px';
+    toolTip.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    toolTip.style.background = 'rgba(255, 255, 255, 0.95)';
+    toolTip.style.color = 'black';
+    toolTip.style.boxShadow = '0 2px 5px rgba(0,0,0,0.1)';
+    container.appendChild(toolTip);
+
+    // Update tooltip position and content
+    chart.subscribeCrosshairMove((param) => {
+      if (
+        param.point === undefined ||
+        !param.time ||
+        param.point.x < 0 ||
+        param.point.y < 0
+      ) {
+        toolTip.style.display = 'none';
+        return;
+      }
+
+      // Find if there's a trade at this time
+      const trade = stockTradeMarkers.find(t => {
+        const tradeTime = new Date(t.execution_date || t.date).getTime() / 1000;
+        return tradeTime === param.time;
+      });
+
+      if (trade) {
+        toolTip.style.display = 'block';
+
+        // Position tooltip
+        const y = param.point.y;
+        const left = param.point.x + toolTipMargin;
+
+        if (left + toolTipWidth > container.clientWidth) {
+          toolTip.style.left = (param.point.x - toolTipWidth - toolTipMargin) + 'px';
+        } else {
+          toolTip.style.left = left + 'px';
+        }
+
+        if (y - toolTipHeight - toolTipMargin < 0) {
+          toolTip.style.top = (y + toolTipMargin) + 'px';
+        } else {
+          toolTip.style.top = (y - toolTipHeight - toolTipMargin) + 'px';
+        }
+
+        const typeText = trade.type === 'buy' ? 'BUY' : 'SELL';
+        const typeColor = trade.type === 'buy' ? '#26a69a' : '#ef5350';
+
+        toolTip.innerHTML = `
+          <div style="color: ${typeColor}; font-weight: bold; font-size: 14px; margin-bottom: 6px;">${typeText}</div>
+          <div style="margin-bottom: 2px;"><strong>Date:</strong> ${trade.execution_date || trade.date}</div>
+          <div style="margin-bottom: 2px;"><strong>Price:</strong> ¥${trade.price?.toFixed(2)}</div>
+          <div style="margin-bottom: 2px;"><strong>Size:</strong> ${trade.size}</div>
+          <div><strong>Value:</strong> ¥${trade.value?.toFixed(2)}</div>
+        `;
+      } else {
+        toolTip.style.display = 'none';
+      }
+    });
+
+    chart.timeScale().fitContent();
+
+    priceChartApiRef.current = chart;
+    priceChartInitializedRef.current = true;
+
+    const handleResize = () => {
+      if (priceChartRef.current && chart && !(chart as any)._disposed) {
+        try {
+          chart.applyOptions({ width: priceChartRef.current.clientWidth });
+        } catch (error) {
+          // Ignore
+        }
+      }
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      // Clean up tooltip
+      if (toolTip && toolTip.parentNode) {
+        toolTip.parentNode.removeChild(toolTip);
+      }
+    };
+  }, [filteredStockCandles, stockTradeMarkers, selectedTab]);
+
+  // Colors for stacked areas - bright solid colors
+  const areaColors = [
+    { line: '#a78bfa', top: '#a78bfa', bottom: '#a78bfa' }, // Bright Purple
+    { line: '#60a5fa', top: '#60a5fa', bottom: '#60a5fa' }, // Bright Blue
+    { line: '#34d399', top: '#34d399', bottom: '#34d399' }, // Bright Green
+    { line: '#fbbf24', top: '#fbbf24', bottom: '#fbbf24' }, // Bright Yellow/Orange
+    { line: '#f87171', top: '#f87171', bottom: '#f87171' }, // Bright Red
+    { line: '#22d3ee', top: '#22d3ee', bottom: '#22d3ee' }, // Bright Cyan
+    { line: '#f472b6', top: '#f472b6', bottom: '#f472b6' }, // Bright Pink
+    { line: '#2dd4bf', top: '#2dd4bf', bottom: '#2dd4bf' }, // Bright Teal
+  ];
+  const cashColor = { line: '#d1d5db', top: '#d1d5db', bottom: '#d1d5db' }; // Light Gray for cash
+
+  // Initialize stacked area chart for portfolio composition
+  useEffect(() => {
+    if (!stackedChartRef.current || !portfolioResult.perSymbolEquityCurves || !portfolioResult.equityCurve || selectedTab !== 'metrics') {
+      // Reset initialization flag when tab is not active
+      if (selectedTab !== 'metrics') {
+        stackedChartInitializedRef.current = false;
+      }
+      return;
+    }
+
+    if (stackedChartInitializedRef.current) {
+      return;
+    }
+
+    // Clean up old chart if it exists
+    if (stackedChartApiRef.current) {
+      try {
+        if (!(stackedChartApiRef.current as any)._disposed) {
+          stackedChartApiRef.current.remove();
+        }
+      } catch (error) {
+        console.warn('Stacked chart cleanup warning:', error);
+      }
+      stackedChartApiRef.current = null;
+      stackedChartInitializedRef.current = false;
+    }
+
+    // Create new chart
+    const chart = createChart(stackedChartRef.current, {
+      layout: {
+        background: { type: ColorType.Solid, color: 'white' },
+        textColor: 'black',
+      },
+      width: stackedChartRef.current.clientWidth,
+      height: 400,
+      grid: {
+        vertLines: { color: '#e0e0e0' },
+        horzLines: { color: '#e0e0e0' },
+      },
+      timeScale: {
+        timeVisible: true,
+        secondsVisible: false,
+      },
+      rightPriceScale: {
+        borderColor: '#d1d4dc',
+        scaleMargins: {
+          top: 0.1,
+          bottom: 0,
+        },
+        autoScale: true,
+        mode: 0, // Normal price scale mode
+      },
+      localization: {
+        priceFormatter: (price: number) => {
+          if (price === 0) return '0';
+          return price.toExponential(2);
+        },
+      },
+    });
+
+    // Prepare stacked data
+    // We need to create cumulative layers: cash, cash+stock1, cash+stock1+stock2, etc.
+    const symbols = portfolioResult.symbols || [];
+    const dates = portfolioResult.equityCurve.map(p => p.date);
+
+    // Build a map of date -> { cash, stockValues }
+    const dateMap = new Map<string, { cash: number; stockValues: Record<string, number>; total: number }>();
+
+    portfolioResult.equityCurve.forEach((point, idx) => {
+      const stockValues: Record<string, number> = {};
+      symbols.forEach(symbol => {
+        const symbolCurve = portfolioResult.perSymbolEquityCurves![symbol];
+        if (symbolCurve && symbolCurve[idx]) {
+          stockValues[symbol] = symbolCurve[idx].value;
+        } else {
+          stockValues[symbol] = 0;
+        }
+      });
+
+      dateMap.set(point.date, {
+        cash: point.cash || 0,
+        stockValues,
+        total: point.value,
+      });
+    });
+
+    // Create layers from top to bottom: total, total-stock1, total-stock1-stock2, ..., cash
+    const layers: Array<{ label: string; color: typeof areaColors[0]; data: Array<{ time: any; value: number }> }> = [];
+
+    // Layer 0: Total portfolio value (top line) - colored with first stock's color
+    layers.push({
+      label: symbols[0] || 'Stock 1',
+      color: areaColors[0],
+      data: dates.map(date => {
+        const point = dateMap.get(date)!;
+        return {
+          time: new Date(date).getTime() / 1000 as any,
+          value: point.total,
+        };
+      }),
+    });
+
+    // Layer 1...N-1: Subtract stocks one by one from total
+    for (let i = 1; i < symbols.length; i++) {
+      const layerData = dates.map(date => {
+        const point = dateMap.get(date)!;
+        // Start from total and subtract all stocks from 0 to i-1
+        let value = point.total;
+        for (let j = 0; j < i; j++) {
+          value -= point.stockValues[symbols[j]] || 0;
+        }
+        return {
+          time: new Date(date).getTime() / 1000 as any,
+          value: value,
+        };
+      });
+
+      layers.push({
+        label: symbols[i],
+        color: areaColors[i % areaColors.length],
+        data: layerData,
+      });
+    }
+
+    // Last layer: Cash only (bottom line)
+    layers.push({
+      label: 'Cash',
+      color: cashColor,
+      data: dates.map(date => {
+        const point = dateMap.get(date)!;
+        return {
+          time: new Date(date).getTime() / 1000 as any,
+          value: point.cash,
+        };
+      }),
+    });
+
+    // Add area series in FORWARD order (total first, cash last)
+    // Since all areas extend down to 0, lower values need to render on top to be visible
+    // This creates the stacked effect where gaps between lines show each component
+    for (let i = 0; i < layers.length; i++) {
+      const layer = layers[i];
+      const areaSeries = chart.addAreaSeries({
+        lineColor: layer.color.line,
+        topColor: layer.color.top,
+        bottomColor: layer.color.bottom,
+        lineWidth: 2,
+        priceFormat: {
+          type: 'price',
+          precision: 2,
+          minMove: 0.01,
+        },
+      });
+      areaSeries.setData(layer.data);
+    }
+
+    chart.timeScale().fitContent();
+
+    // Ensure the chart always shows 0 at the bottom
+    // Add a hidden baseline series at 0 to force the chart to include 0
+    const baselineSeries = chart.addLineSeries({
+      color: 'transparent',
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+    baselineSeries.setData(dates.map(date => ({
+      time: new Date(date).getTime() / 1000 as any,
+      value: 0,
+    })));
+
+    stackedChartApiRef.current = chart;
+    stackedChartInitializedRef.current = true;
+
+    const handleResize = () => {
+      if (stackedChartRef.current && chart && !(chart as any)._disposed) {
+        try {
+          chart.applyOptions({ width: stackedChartRef.current.clientWidth });
+        } catch (error) {
+          // Ignore
+        }
+      }
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [portfolioResult.perSymbolEquityCurves, portfolioResult.equityCurve, portfolioResult.symbols, selectedTab]);
+
+  const formatNumber = (value: number, decimals: number = 2): string => {
+    if (value >= 1000000) {
+      return (value / 1000000).toFixed(decimals) + 'M';
+    } else if (value >= 1000) {
+      return (value / 1000).toFixed(decimals) + 'K';
+    }
+    return value.toFixed(decimals);
+  };
+
+  const formatPercent = (value: number): string => {
+    return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
+  };
+
+  // Filtered and sorted trades
+  const processedTrades = useMemo(() => {
+    let filtered = portfolioResult.tradeMarkers.filter(trade => {
+      if (tradeFilter !== 'all' && trade.type !== tradeFilter) return false;
+      if (symbolFilter && !(trade as any).symbol?.includes(symbolFilter)) return false;
+      return true;
+    });
+
+    filtered.sort((a, b) => {
+      let aVal: any, bVal: any;
+
+      switch (tradeSortField) {
+        case 'date':
+          aVal = new Date(a.date).getTime();
+          bVal = new Date(b.date).getTime();
+          break;
+        case 'size':
+          aVal = a.size || 0;
+          bVal = b.size || 0;
+          break;
+        case 'value':
+          aVal = a.value || 0;
+          bVal = b.value || 0;
+          break;
+        default:
+          return 0;
+      }
+
+      if (tradeSortDirection === 'asc') {
+        return aVal > bVal ? 1 : -1;
+      } else {
+        return aVal < bVal ? 1 : -1;
+      }
+    });
+
+    return filtered;
+  }, [portfolioResult.tradeMarkers, tradeFilter, symbolFilter, tradeSortField, tradeSortDirection]);
+
+  // Paginated trades
+  const paginatedTrades = useMemo(() => {
+    const start = (currentPage - 1) * tradesPerPage;
+    const end = start + tradesPerPage;
+    return processedTrades.slice(start, end);
+  }, [processedTrades, currentPage, tradesPerPage]);
+
+  const totalPages = Math.ceil(processedTrades.length / tradesPerPage);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [tradeFilter, symbolFilter, tradeSortField, tradeSortDirection]);
+
+  return (
+    <div>
+      {/* Header Section */}
+      {strategyInfo && (
+        <div className="mb-6 bg-gradient-to-r from-blue-50 to-purple-50 p-6 rounded-lg border border-blue-200">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-gray-600 font-medium">Strategy:</span>{' '}
+              <span className="font-semibold">{strategyInfo.name || 'N/A'}</span>
+            </div>
+            <div>
+              <span className="text-gray-600 font-medium">Portfolio:</span>{' '}
+              <span className="font-semibold text-gray-800">
+                {portfolioResult.symbols.length} stocks with shared capital
+              </span>
+            </div>
+            {strategyInfo.parameters && Object.keys(strategyInfo.parameters).length > 0 && (
+              <div>
+                <span className="text-gray-600 font-medium">Parameters:</span>{' '}
+                <span className="text-gray-800">
+                  {Object.entries(strategyInfo.parameters).map(([key, val]) => `${key}=${val}`).join(', ')}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Summary Cards */}
+      <div className="mb-6 grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="relative group bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200 cursor-help">
+          <div className="text-xs text-gray-600 mb-1">Initial Capital</div>
+          <div className="text-2xl font-bold text-blue-900">
+            RMB {formatNumber(portfolioResult.metrics.initialValue)}
+          </div>
+        </div>
+        <div className="relative group bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200 cursor-help">
+          <div className="text-xs text-gray-600 mb-1">Final Value</div>
+          <div className="text-2xl font-bold text-purple-900">
+            RMB {formatNumber(portfolioResult.metrics.finalValue)}
+          </div>
+        </div>
+        <div className={`relative group p-4 rounded-lg border cursor-help bg-gradient-to-br ${
+          portfolioResult.metrics.totalReturnPct >= 0
+            ? 'from-green-50 to-green-100 border-green-200'
+            : 'from-red-50 to-red-100 border-red-200'
+        }`}>
+          <div className="text-xs text-gray-600 mb-1">Total Return</div>
+          <div className={`text-2xl font-bold ${
+            portfolioResult.metrics.totalReturnPct >= 0 ? 'text-green-700' : 'text-red-700'
+          }`}>
+            {formatPercent(portfolioResult.metrics.totalReturnPct)}
+          </div>
+          <div className="text-xs text-gray-600 mt-1">
+            RMB {formatNumber(Math.abs(portfolioResult.metrics.totalReturn))}
+          </div>
+        </div>
+        <div className="relative group bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-lg border border-orange-200 cursor-help">
+          <div className="text-xs text-gray-600 mb-1">Total Trades</div>
+          <div className="text-2xl font-bold text-orange-900">
+            {portfolioResult.metrics.tradeCount}
+          </div>
+          <div className="text-xs text-gray-600 mt-1">
+            {portfolioResult.metrics.wonTrades || 0}W / {portfolioResult.metrics.lostTrades || 0}L
+          </div>
+        </div>
+        <div className="relative group bg-gradient-to-br from-teal-50 to-teal-100 p-4 rounded-lg border border-teal-200 cursor-help">
+          <div className="text-xs text-gray-600 mb-1">Stocks</div>
+          <div className="text-2xl font-bold text-teal-900">
+            {portfolioResult.symbols.length}
+          </div>
+          <div className="text-xs text-gray-600 mt-1">
+            Portfolio
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex justify-between items-center mb-4 border-b">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setSelectedTab('metrics')}
+            className={`px-6 py-3 font-medium transition-colors ${
+              selectedTab === 'metrics'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            Performance Metrics
+          </button>
+          <button
+            onClick={() => setSelectedTab('trades')}
+            className={`px-6 py-3 font-medium transition-colors ${
+              selectedTab === 'trades'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            Trade List ({portfolioResult.tradeMarkers.length})
+          </button>
+          <button
+            onClick={() => setSelectedTab('charts')}
+            className={`px-6 py-3 font-medium transition-colors ${
+              selectedTab === 'charts'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            Charts
+          </button>
+          <button
+            onClick={() => setSelectedTab('stocks')}
+            className={`px-6 py-3 font-medium transition-colors ${
+              selectedTab === 'stocks'
+                ? 'border-b-2 border-blue-600 text-blue-600'
+                : 'text-gray-600 hover:text-gray-800'
+            }`}
+          >
+            Per-Stock Analysis
+          </button>
+        </div>
+      </div>
+
+      {/* Performance Metrics Tab */}
+      {selectedTab === 'metrics' && (
+        <div>
+          {/* Total Equity Curve */}
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              <span className="text-green-600">📈</span> Total Portfolio Equity Curve
+            </h3>
+            <div className="bg-white p-4 rounded-lg border shadow-sm">
+              <div ref={equityChartRef} />
+            </div>
+          </div>
+
+          {/* Stacked Area Chart - Portfolio Composition */}
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              <span className="text-blue-600">📊</span> Portfolio Composition Over Time
+            </h3>
+            <div className="bg-white p-4 rounded-lg border shadow-sm">
+              <div ref={stackedChartRef} />
+
+              {/* Legend Panel - Below Chart */}
+              <div className="mt-4 pt-4 border-t">
+                <div className="text-sm font-semibold mb-3 text-gray-700">Legend (Top to Bottom)</div>
+                <div className="flex flex-wrap gap-4">
+                  {/* Stocks (from top to bottom) */}
+                  {(portfolioResult.symbols || []).map((symbol, idx) => (
+                    <div key={symbol} className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded" style={{ backgroundColor: areaColors[idx % areaColors.length].line }}></div>
+                      <span className="text-sm text-gray-700">{symbol}</span>
+                    </div>
+                  ))}
+                  {/* Cash (bottom) */}
+                  <div className="flex items-center gap-2">
+                    <div className="w-4 h-4 rounded" style={{ backgroundColor: cashColor.line }}></div>
+                    <span className="text-sm text-gray-700">Cash</span>
+                  </div>
+                </div>
+                <div className="mt-3 text-xs text-gray-500">
+                  Each colored area shows the value of that component. The gap between two lines represents one component's value.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Risk Metrics */}
+          <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-white p-4 rounded-lg border">
+              <div className="text-sm text-gray-600 mb-1">Max Drawdown</div>
+              <div className="text-2xl font-bold text-red-600">
+                {formatPercent(portfolioResult.metrics.maxDrawdownPct)}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                RMB {formatNumber(portfolioResult.metrics.maxDrawdown)}
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-lg border">
+              <div className="text-sm text-gray-600 mb-1">Sharpe Ratio</div>
+              <div className="text-2xl font-bold text-gray-800">
+                {portfolioResult.metrics.sharpeRatio.toFixed(2)}
+              </div>
+            </div>
+            <div className="bg-white p-4 rounded-lg border">
+              <div className="text-sm text-gray-600 mb-1">Sortino Ratio</div>
+              <div className="text-2xl font-bold text-gray-800">
+                {portfolioResult.metrics.sortinoRatio.toFixed(2)}
+              </div>
+            </div>
+          </div>
+
+          {/* Trading Performance */}
+          <div className="mb-6">
+            <h3 className="text-lg font-semibold mb-3">Trading Performance</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-gray-50 p-4 rounded border">
+                <div className="text-xs text-gray-500 mb-1">Win Rate</div>
+                <div className="text-xl font-semibold">{(portfolioResult.metrics.winRate * 100).toFixed(1)}%</div>
+              </div>
+              <div className="bg-gray-50 p-4 rounded border">
+                <div className="text-xs text-gray-500 mb-1">Profit Factor</div>
+                <div className="text-xl font-semibold">{portfolioResult.metrics.profitFactor.toFixed(2)}</div>
+              </div>
+              <div className="bg-gray-50 p-4 rounded border">
+                <div className="text-xs text-gray-500 mb-1">Avg Win</div>
+                <div className="text-xl font-semibold text-green-600">¥{portfolioResult.metrics.avgWin.toFixed(2)}</div>
+              </div>
+              <div className="bg-gray-50 p-4 rounded border">
+                <div className="text-xs text-gray-500 mb-1">Avg Loss</div>
+                <div className="text-xl font-semibold text-red-600">¥{portfolioResult.metrics.avgLoss.toFixed(2)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Trade List Tab */}
+      {selectedTab === 'trades' && (
+        <div>
+          {/* Filters */}
+          <div className="mb-4 flex gap-4">
+            <div>
+              <label className="text-sm text-gray-600 mr-2">Type:</label>
+              <select
+                value={tradeFilter}
+                onChange={(e) => setTradeFilter(e.target.value as any)}
+                className="border rounded px-3 py-1"
+              >
+                <option value="all">All</option>
+                <option value="buy">Buy Only</option>
+                <option value="sell">Sell Only</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-sm text-gray-600 mr-2">Symbol:</label>
+              <input
+                type="text"
+                placeholder="Filter by symbol..."
+                value={symbolFilter}
+                onChange={(e) => setSymbolFilter(e.target.value)}
+                className="border rounded px-3 py-1"
+              />
+            </div>
+          </div>
+
+          {/* Trade Table */}
+          <div className="bg-white rounded-lg border overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-gray-50 border-b">
+                  <tr>
+                    <th
+                      className="text-left py-3 px-4 font-semibold text-sm cursor-pointer hover:bg-gray-100"
+                      onClick={() => {
+                        if (tradeSortField === 'date') {
+                          setTradeSortDirection(tradeSortDirection === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setTradeSortField('date');
+                          setTradeSortDirection('asc');
+                        }
+                      }}
+                    >
+                      Date {tradeSortField === 'date' && (tradeSortDirection === 'asc' ? '↑' : '↓')}
+                    </th>
+                    <th className="text-left py-3 px-4 font-semibold text-sm">Symbol</th>
+                    <th className="text-left py-3 px-4 font-semibold text-sm">Type</th>
+                    <th className="text-right py-3 px-4 font-semibold text-sm">Price</th>
+                    <th
+                      className="text-right py-3 px-4 font-semibold text-sm cursor-pointer hover:bg-gray-100"
+                      onClick={() => {
+                        if (tradeSortField === 'size') {
+                          setTradeSortDirection(tradeSortDirection === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setTradeSortField('size');
+                          setTradeSortDirection('desc');
+                        }
+                      }}
+                    >
+                      Size {tradeSortField === 'size' && (tradeSortDirection === 'asc' ? '↑' : '↓')}
+                    </th>
+                    <th
+                      className="text-right py-3 px-4 font-semibold text-sm cursor-pointer hover:bg-gray-100"
+                      onClick={() => {
+                        if (tradeSortField === 'value') {
+                          setTradeSortDirection(tradeSortDirection === 'asc' ? 'desc' : 'asc');
+                        } else {
+                          setTradeSortField('value');
+                          setTradeSortDirection('desc');
+                        }
+                      }}
+                    >
+                      Value {tradeSortField === 'value' && (tradeSortDirection === 'asc' ? '↑' : '↓')}
+                    </th>
+                    <th className="text-right py-3 px-4 font-semibold text-sm">Commission</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedTrades.map((trade, idx) => (
+                    <tr key={idx} className="border-b hover:bg-gray-50">
+                      <td className="py-3 px-4 text-sm font-mono">{trade.execution_date || trade.date}</td>
+                      <td className="py-3 px-4 font-medium">{(trade as any).symbol || 'N/A'}</td>
+                      <td className="py-3 px-4">
+                        <span className={`inline-block px-2 py-1 text-xs font-semibold rounded ${
+                          trade.type === 'buy' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {trade.type.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-right font-mono">¥{trade.price?.toFixed(2)}</td>
+                      <td className="py-3 px-4 text-right font-mono">{trade.size?.toFixed(0)}</td>
+                      <td className="py-3 px-4 text-right font-mono">¥{trade.value?.toFixed(2)}</td>
+                      <td className="py-3 px-4 text-right font-mono text-gray-500">¥{trade.commission?.toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Pagination Controls */}
+          <div className="mt-4 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-600">
+                Showing {processedTrades.length === 0 ? 0 : (currentPage - 1) * tradesPerPage + 1} to{' '}
+                {Math.min(currentPage * tradesPerPage, processedTrades.length)} of {processedTrades.length} trades
+              </span>
+              <select
+                value={tradesPerPage}
+                onChange={(e) => {
+                  setTradesPerPage(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="border rounded px-2 py-1 text-sm"
+              >
+                <option value={10}>10 per page</option>
+                <option value={25}>25 per page</option>
+                <option value={50}>50 per page</option>
+                <option value={100}>100 per page</option>
+              </select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+              >
+                First
+              </button>
+              <button
+                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+              >
+                Previous
+              </button>
+              <span className="px-3 py-1 text-sm">
+                Page {currentPage} of {totalPages || 1}
+              </span>
+              <button
+                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages || totalPages === 0}
+                className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+              >
+                Next
+              </button>
+              <button
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages || totalPages === 0}
+                className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+              >
+                Last
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Charts Tab */}
+      {selectedTab === 'charts' && (
+        <div className="space-y-6">
+          {/* Stock Selector */}
+          <div className="bg-white p-4 rounded-lg border">
+            <label className="text-sm font-medium text-gray-700 mr-3">Select Stock:</label>
+            <select
+              value={selectedStockSymbol}
+              onChange={(e) => setSelectedStockSymbol(e.target.value)}
+              className="border rounded px-3 py-2 text-sm"
+            >
+              {portfolioResult.symbols.map((symbol) => (
+                <option key={symbol} value={symbol}>
+                  {symbol}
+                </option>
+              ))}
+            </select>
+            <span className="ml-3 text-sm text-gray-500">
+              {stockTradeMarkers.length} trades for this stock
+            </span>
+          </div>
+
+          {/* Price Chart with Buy/Sell Markers */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              <span className="text-blue-600">📊</span> {selectedStockSymbol} - Price Chart with Buy/Sell Signals
+            </h3>
+            <div className="bg-white p-4 rounded-lg border shadow-sm">
+              {isLoadingCandles ? (
+                <div className="text-center py-12 text-gray-500">
+                  <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-3"></div>
+                  <p className="text-sm">Loading chart data for {selectedStockSymbol}...</p>
+                  <p className="text-xs mt-2 text-gray-400">Check browser console for details if this takes too long</p>
+                </div>
+              ) : filteredStockCandles.length > 0 ? (
+                <div ref={priceChartContainerRef} style={{ position: 'relative' }}>
+                  <div ref={priceChartRef} />
+                </div>
+              ) : stockCandles.length > 0 && filteredStockCandles.length === 0 ? (
+                <div className="text-center py-12 text-yellow-50 border border-yellow-200 rounded">
+                  <p className="text-sm text-yellow-800 font-medium">No data available in the selected date range</p>
+                  <p className="text-xs mt-2 text-yellow-600">The backtest date range may not overlap with available stock data</p>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-red-50 border border-red-200 rounded">
+                  <p className="text-sm text-red-800 font-medium">Unable to load chart data for {selectedStockSymbol}</p>
+                  <p className="text-xs mt-2 text-red-600">Please check the browser console for error details</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Portfolio Drawdown */}
+          <div>
+            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+              <span className="text-red-600">📉</span> Portfolio Drawdown
+            </h3>
+            <div className="bg-white p-4 rounded-lg border shadow-sm">
+              <div ref={drawdownChartRef} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Per-Stock Analysis Tab */}
+      {selectedTab === 'stocks' && portfolioResult.perSymbolMetrics && portfolioResult.perSymbolMetrics.length > 0 && (
+        <div className="bg-white rounded-lg border overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b">
+                <tr>
+                  <th className="text-left py-3 px-4 font-semibold">Symbol</th>
+                  <th className="text-right py-3 px-4 font-semibold">Return</th>
+                  <th className="text-right py-3 px-4 font-semibold">Return %</th>
+                  <th className="text-right py-3 px-4 font-semibold">Sharpe</th>
+                  <th className="text-right py-3 px-4 font-semibold">Max DD %</th>
+                  <th className="text-right py-3 px-4 font-semibold">Trades</th>
+                  <th className="text-right py-3 px-4 font-semibold">Win Rate</th>
+                  <th className="text-right py-3 px-4 font-semibold">Contribution</th>
+                </tr>
+              </thead>
+              <tbody>
+                {portfolioResult.perSymbolMetrics.map((stock) => (
+                  <tr key={stock.symbol} className="border-b hover:bg-gray-50">
+                    <td className="py-3 px-4 font-medium">{stock.symbol}</td>
+                    <td className={`text-right py-3 px-4 font-mono ${stock.totalReturn >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      ¥{stock.totalReturn.toFixed(2)}
+                    </td>
+                    <td className={`text-right py-3 px-4 font-mono ${stock.totalReturnPct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {formatPercent(stock.totalReturnPct)}
+                    </td>
+                    <td className="text-right py-3 px-4 font-mono">{stock.sharpeRatio.toFixed(2)}</td>
+                    <td className="text-right py-3 px-4 font-mono text-red-600">{formatPercent(stock.maxDrawdownPct)}</td>
+                    <td className="text-right py-3 px-4">{stock.tradeCount}</td>
+                    <td className="text-right py-3 px-4 font-mono">{(stock.winRate * 100).toFixed(1)}%</td>
+                    <td className={`text-right py-3 px-4 font-mono ${stock.contributionToPortfolio >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      ¥{stock.contributionToPortfolio.toFixed(2)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // Group Backtest Results Component
@@ -389,7 +1697,13 @@ export default function BacktestResults({
   dateRange,
   strategyInfo,
   groupResult,
+  portfolioResult,
 }: BacktestResultsProps) {
+  // If portfolioResult is provided, render portfolio backtest UI
+  if (portfolioResult) {
+    return <PortfolioBacktestResults portfolioResult={portfolioResult} strategyInfo={strategyInfo} />;
+  }
+
   // If groupResult is provided, render group backtest UI
   if (groupResult) {
     return <GroupBacktestResults groupResult={groupResult} dateRange={dateRange} strategyInfo={strategyInfo} />;
@@ -402,6 +1716,8 @@ export default function BacktestResults({
   const equityChartRef = useRef<HTMLDivElement>(null);
   const equityChartApiRef = useRef<IChartApi | null>(null);
   const equitySeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const stackedChartRef = useRef<HTMLDivElement>(null);
+  const stackedChartApiRef = useRef<IChartApi | null>(null);
   const priceChartRef = useRef<HTMLDivElement>(null);
   const priceChartApiRef = useRef<IChartApi | null>(null);
   const drawdownChartRef = useRef<HTMLDivElement>(null);
@@ -414,8 +1730,12 @@ export default function BacktestResults({
   const [tradesPerPage, setTradesPerPage] = useState(25);
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedYear, setSelectedYear] = useState<string>('');
+  const [hoveredTime, setHoveredTime] = useState<number | null>(null);
+  const [nearestLeftTrade, setNearestLeftTrade] = useState<any>(null);
+  const [nearestRightTrade, setNearestRightTrade] = useState<any>(null);
 
   const chartInitializedRef = useRef(false);
+  const stackedChartInitializedRef = useRef(false);
   const priceChartInitializedRef = useRef(false);
   const drawdownChartInitializedRef = useRef(false);
 
@@ -784,6 +2104,144 @@ export default function BacktestResults({
     }
   }, [equityCurve]);
 
+  // Initialize stacked area chart for portfolio composition
+  useEffect(() => {
+    if (!stackedChartRef.current || !equityCurve || equityCurve.length === 0 || selectedTab !== 'metrics') {
+      if (selectedTab !== 'metrics') {
+        stackedChartInitializedRef.current = false;
+      }
+      return;
+    }
+
+    if (stackedChartInitializedRef.current) {
+      return;
+    }
+
+    // Clean up old chart if it exists
+    if (stackedChartApiRef.current) {
+      try {
+        if (!(stackedChartApiRef.current as any)._disposed) {
+          stackedChartApiRef.current.remove();
+        }
+      } catch (error) {
+        console.warn('Stacked chart cleanup warning:', error);
+      }
+      stackedChartApiRef.current = null;
+      stackedChartInitializedRef.current = false;
+    }
+
+    // Create new chart
+    const chart = createChart(stackedChartRef.current, {
+      layout: {
+        background: { type: ColorType.Solid, color: 'white' },
+        textColor: 'black',
+      },
+      width: stackedChartRef.current.clientWidth,
+      height: 400,
+      grid: {
+        vertLines: { color: '#e0e0e0' },
+        horzLines: { color: '#e0e0e0' },
+      },
+      timeScale: {
+        timeVisible: true,
+        secondsVisible: false,
+      },
+      rightPriceScale: {
+        borderColor: '#d1d4dc',
+        scaleMargins: {
+          top: 0.1,
+          bottom: 0,
+        },
+        autoScale: true,
+        mode: 0,
+      },
+      localization: {
+        priceFormatter: (price: number) => {
+          if (price === 0) return '0';
+          return price.toExponential(2);
+        },
+      },
+    });
+
+    const dates = equityCurve.map(p => p.date);
+
+    // Colors for stacked areas
+    const stockColor = { line: '#60a5fa', top: '#60a5fa', bottom: '#60a5fa' }; // Bright Blue for stock
+    const cashColor = { line: '#d1d5db', top: '#d1d5db', bottom: '#d1d5db' }; // Light Gray for cash
+
+    // Create layers: total (top), cash (bottom)
+    const layers = [];
+
+    // Layer 0: Total equity value (top line)
+    layers.push({
+      label: 'Stock',
+      color: stockColor,
+      data: equityCurve.map(point => ({
+        time: new Date(point.date).getTime() / 1000 as any,
+        value: point.value,
+      })),
+    });
+
+    // Layer 1: Cash only (bottom line)
+    layers.push({
+      label: 'Cash',
+      color: cashColor,
+      data: equityCurve.map(point => ({
+        time: new Date(point.date).getTime() / 1000 as any,
+        value: point.cash || 0,
+      })),
+    });
+
+    // Add area series in forward order (total first, cash last)
+    for (let i = 0; i < layers.length; i++) {
+      const layer = layers[i];
+      const areaSeries = chart.addAreaSeries({
+        lineColor: layer.color.line,
+        topColor: layer.color.top,
+        bottomColor: layer.color.bottom,
+        lineWidth: 2,
+        priceFormat: {
+          type: 'price',
+          precision: 2,
+          minMove: 0.01,
+        },
+      });
+      areaSeries.setData(layer.data);
+    }
+
+    chart.timeScale().fitContent();
+
+    // Ensure the chart always shows 0 at the bottom
+    const baselineSeries = chart.addLineSeries({
+      color: 'transparent',
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+    baselineSeries.setData(dates.map(date => ({
+      time: new Date(date).getTime() / 1000 as any,
+      value: 0,
+    })));
+
+    stackedChartApiRef.current = chart;
+    stackedChartInitializedRef.current = true;
+
+    const handleResize = () => {
+      if (stackedChartRef.current && chart && !(chart as any)._disposed) {
+        try {
+          chart.applyOptions({ width: stackedChartRef.current.clientWidth });
+        } catch (error) {
+          // Ignore
+        }
+      }
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  }, [equityCurve, selectedTab]);
+
   // Update chart when tab changes to metrics (to ensure it's visible and properly sized)
   useEffect(() => {
     if (selectedTab === 'metrics' && equityChartApiRef.current && equityChartRef.current) {
@@ -889,6 +2347,47 @@ export default function BacktestResults({
     chart.timeScale().fitContent();
     priceChartApiRef.current = chart;
     priceChartInitializedRef.current = true;
+
+    // Add crosshair move listener to track hover and find nearest trades
+    chart.subscribeCrosshairMove((param) => {
+      if (param.time) {
+        const hoveredTimestamp = param.time as number;
+        setHoveredTime(hoveredTimestamp);
+
+        // Find nearest left and right trades
+        const sortedTrades = [...tradeMarkers].sort((a, b) => {
+          const timeA = new Date(a.date).getTime() / 1000;
+          const timeB = new Date(b.date).getTime() / 1000;
+          return timeA - timeB;
+        });
+
+        // Find nearest left trade (trade before or at hover time)
+        let leftTrade = null;
+        for (let i = sortedTrades.length - 1; i >= 0; i--) {
+          const tradeTime = new Date(sortedTrades[i].date).getTime() / 1000;
+          if (tradeTime <= hoveredTimestamp) {
+            leftTrade = sortedTrades[i];
+            break;
+          }
+        }
+
+        // Find nearest right trade (trade after hover time)
+        let rightTrade = null;
+        for (let i = 0; i < sortedTrades.length; i++) {
+          const tradeTime = new Date(sortedTrades[i].date).getTime() / 1000;
+          if (tradeTime > hoveredTimestamp) {
+            rightTrade = sortedTrades[i];
+            break;
+          }
+        }
+
+        setNearestLeftTrade(leftTrade);
+        setNearestRightTrade(rightTrade);
+      } else {
+        // Mouse left the chart
+        setHoveredTime(null);
+      }
+    });
 
     const handleResize = () => {
       if (priceChartRef.current && chart && !(chart as any)._disposed) {
@@ -1436,17 +2935,52 @@ export default function BacktestResults({
 
       {/* Always render chart container to keep it alive, but conditionally show content */}
       <div className={selectedTab === 'metrics' ? 'space-y-4' : 'hidden'}>
-        {/* Equity Curve Chart - always mounted */}
-        <div
-          className="w-full"
-          style={{ overscrollBehavior: 'contain', touchAction: 'pan-y pinch-zoom' }}
-          onWheel={(e) => {
-            if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
-              e.preventDefault();
-            }
-          }}
-        >
-          <div ref={equityChartRef} className="border rounded bg-white w-full" style={{ height: '400px', minHeight: '400px', overscrollBehavior: 'contain' }} />
+        {/* Total Equity Curve Chart */}
+        <div>
+          <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+            <span className="text-green-600">📈</span> Total Equity Curve
+          </h3>
+          <div
+            className="w-full"
+            style={{ overscrollBehavior: 'contain', touchAction: 'pan-y pinch-zoom' }}
+            onWheel={(e) => {
+              if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+                e.preventDefault();
+              }
+            }}
+          >
+            <div ref={equityChartRef} className="border rounded bg-white w-full" style={{ height: '400px', minHeight: '400px', overscrollBehavior: 'contain' }} />
+          </div>
+        </div>
+
+        {/* Portfolio Composition Stacked Area Chart */}
+        <div>
+          <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+            <span className="text-blue-600">📊</span> Portfolio Composition Over Time
+          </h3>
+          <div className="bg-white p-4 rounded-lg border shadow-sm">
+            <div ref={stackedChartRef} />
+
+            {/* Legend Panel - Below Chart */}
+            <div className="mt-4 pt-4 border-t">
+              <div className="text-sm font-semibold mb-3 text-gray-700">Legend (Top to Bottom)</div>
+              <div className="flex flex-wrap gap-4">
+                {/* Stock */}
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#60a5fa' }}></div>
+                  <span className="text-sm text-gray-700">Stock Value</span>
+                </div>
+                {/* Cash */}
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#d1d5db' }}></div>
+                  <span className="text-sm text-gray-700">Cash</span>
+                </div>
+              </div>
+              <div className="mt-3 text-xs text-gray-500">
+                Each colored area shows the value of that component. The gap between the top line and cash line represents the stock value.
+              </div>
+            </div>
+          </div>
         </div>
 
         {selectedTab === 'metrics' && (
@@ -2031,6 +3565,127 @@ export default function BacktestResults({
             <div className="flex items-center gap-1">
               <span className="inline-block w-3 h-3 bg-red-500"></span>
               <span>Sell (S)</span>
+            </div>
+          </div>
+
+          {/* Trade Detail Panels */}
+          <div className="mt-4 grid grid-cols-2 gap-4">
+            {/* Left Trade Panel */}
+            <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+              <h4 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">
+                Previous Trade
+              </h4>
+              {nearestLeftTrade ? (
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Type:</span>
+                    <span className={`font-medium ${nearestLeftTrade.type === 'buy' ? 'text-blue-600 dark:text-blue-400' : 'text-red-600 dark:text-red-400'}`}>
+                      {nearestLeftTrade.type === 'buy' ? 'Buy' : 'Sell'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Date:</span>
+                    <span className="font-medium text-gray-900 dark:text-white">
+                      {new Date(nearestLeftTrade.date).toLocaleDateString()}
+                    </span>
+                  </div>
+                  {nearestLeftTrade.price && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Price:</span>
+                      <span className="font-medium text-gray-900 dark:text-white">
+                        ¥{nearestLeftTrade.price.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  {nearestLeftTrade.size && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Size:</span>
+                      <span className="font-medium text-gray-900 dark:text-white">
+                        {nearestLeftTrade.size}
+                      </span>
+                    </div>
+                  )}
+                  {nearestLeftTrade.value && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Value:</span>
+                      <span className="font-medium text-gray-900 dark:text-white">
+                        ¥{nearestLeftTrade.value.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  {nearestLeftTrade.execution_mode && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Execution:</span>
+                      <span className="font-medium text-gray-900 dark:text-white text-xs">
+                        {nearestLeftTrade.execution_mode === 'close' ? 'Same Day Close' : 'Next Open'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm text-gray-400 dark:text-gray-500 italic">
+                  No previous trade
+                </div>
+              )}
+            </div>
+
+            {/* Right Trade Panel */}
+            <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+              <h4 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">
+                Next Trade
+              </h4>
+              {nearestRightTrade ? (
+                <div className="space-y-1 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Type:</span>
+                    <span className={`font-medium ${nearestRightTrade.type === 'buy' ? 'text-blue-600 dark:text-blue-400' : 'text-red-600 dark:text-red-400'}`}>
+                      {nearestRightTrade.type === 'buy' ? 'Buy' : 'Sell'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600 dark:text-gray-400">Date:</span>
+                    <span className="font-medium text-gray-900 dark:text-white">
+                      {new Date(nearestRightTrade.date).toLocaleDateString()}
+                    </span>
+                  </div>
+                  {nearestRightTrade.price && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Price:</span>
+                      <span className="font-medium text-gray-900 dark:text-white">
+                        ¥{nearestRightTrade.price.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  {nearestRightTrade.size && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Size:</span>
+                      <span className="font-medium text-gray-900 dark:text-white">
+                        {nearestRightTrade.size}
+                      </span>
+                    </div>
+                  )}
+                  {nearestRightTrade.value && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Value:</span>
+                      <span className="font-medium text-gray-900 dark:text-white">
+                        ¥{nearestRightTrade.value.toFixed(2)}
+                      </span>
+                    </div>
+                  )}
+                  {nearestRightTrade.execution_mode && (
+                    <div className="flex justify-between">
+                      <span className="text-gray-600 dark:text-gray-400">Execution:</span>
+                      <span className="font-medium text-gray-900 dark:text-white text-xs">
+                        {nearestRightTrade.execution_mode === 'close' ? 'Same Day Close' : 'Next Open'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm text-gray-400 dark:text-gray-500 italic">
+                  No next trade
+                </div>
+              )}
             </div>
           </div>
         </div>

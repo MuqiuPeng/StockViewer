@@ -25,7 +25,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, description, pythonCode, parameters } = body;
+    const { name, description, pythonCode, parameters, strategyType, constraints } = body;
 
     // Validate required fields
     if (!name || !description || !pythonCode) {
@@ -43,12 +43,25 @@ export async function POST(request: Request) {
       );
     }
 
+    // Validate strategy type
+    const validStrategyType = strategyType === 'portfolio' ? 'portfolio' : 'single';
+
+    // For portfolio strategies, validate signal format requirement
+    if (validStrategyType === 'portfolio' && !pythonCode.includes('data_map')) {
+      return NextResponse.json(
+        { error: 'Invalid portfolio strategy', message: 'Portfolio strategies must accept data_map parameter (not data)' },
+        { status: 400 }
+      );
+    }
+
     // Create strategy
     const strategy = await saveStrategy({
       name,
       description,
       pythonCode,
+      strategyType: validStrategyType,
       parameters: parameters || {},
+      constraints: validStrategyType === 'portfolio' ? constraints : undefined,
     });
 
     return NextResponse.json({ strategy }, { status: 201 });

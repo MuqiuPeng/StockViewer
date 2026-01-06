@@ -7,7 +7,7 @@
       "dataSource": "stock_zh_a_hist",
       "firstDate": "1991-04-03T00:00:00.000",
       "lastDate": "2026-01-06T00:00:00.000",
-      "lastUpdate": "2026-01-06T10:31:43.033Z",
+      "lastUpdate": "2026-01-06T13:54:26.761Z",
       "rowCount": 8311,
       "columns": [
         "date",
@@ -23,7 +23,8 @@
         "turnover_rate",
         "MACD:DIF",
         "MACD:DEA",
-        "MACD:MACD"
+        "MACD:MACD",
+        "SMA_20"
       ],
       "indicators": [
         "volume",
@@ -34,7 +35,8 @@
         "turnover_rate",
         "MACD:DIF",
         "MACD:DEA",
-        "MACD:MACD"
+        "MACD:MACD",
+        "SMA_20"
       ]
     },
     {
