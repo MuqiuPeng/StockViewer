@@ -70,6 +70,7 @@ export default function StockViewer() {
   const [definedIndicators, setDefinedIndicators] = useState<string[]>([]);
   const [indicatorGroups, setIndicatorGroups] = useState<Set<string>>(new Set());
   const [crosshairTime, setCrosshairTime] = useState<number | null>(null);
+  const [showAddToGroupModal, setShowAddToGroupModal] = useState(false);
 
   // Base indicators from API (not custom calculated)
   const BASE_INDICATORS = ['volume', 'turnover', 'amplitude', 'change_pct', 'change_amount', 'turnover_rate'];
@@ -408,6 +409,55 @@ export default function StockViewer() {
     }
   };
 
+  const handleAddToGroup = async (groupId: string) => {
+    if (!datasetData) return;
+
+    try {
+      const group = groups.find(g => g.id === groupId);
+      if (!group) {
+        alert('Group not found');
+        return;
+      }
+
+      // Check if dataset is already in the group
+      if (group.datasetNames.includes(datasetData.meta.filename)) {
+        alert('This dataset is already in the selected group');
+        return;
+      }
+
+      // Add dataset to group
+      const updatedDatasetNames = [...group.datasetNames, datasetData.meta.filename];
+
+      const response = await fetch('/api/groups', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: groupId,
+          name: group.name,
+          description: group.description,
+          datasetNames: updatedDatasetNames,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to add to group');
+      }
+
+      // Reload groups
+      const groupsRes = await fetch('/api/groups');
+      const groupsData = await groupsRes.json();
+      if (!groupsData.error && groupsData.groups) {
+        setGroups(groupsData.groups || []);
+      }
+
+      setShowAddToGroupModal(false);
+      alert(`Successfully added "${datasetData.meta.name}" to group "${group.name}"`);
+    } catch (err: any) {
+      alert(err instanceof Error ? err.message : 'Failed to add to group');
+    }
+  };
+
   return (
     <div className="stock-dashboard p-4 h-screen flex flex-col overflow-hidden">
       {/* Navigation */}
@@ -533,6 +583,13 @@ export default function StockViewer() {
           >
             Manage Indicators
           </button>
+          <button
+            onClick={() => setShowAddToGroupModal(true)}
+            disabled={!datasetData}
+            className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            + Add to Group
+          </button>
         </div>
       </div>
 
@@ -601,6 +658,63 @@ export default function StockViewer() {
         onClose={() => setIsIndicatorManagerOpen(false)}
         onRefreshDataset={reloadCurrentDataset}
       />
+
+      {/* Add to Group Modal */}
+      {showAddToGroupModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black bg-opacity-50"
+            onClick={() => setShowAddToGroupModal(false)}
+          />
+          <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4">Add to Group</h2>
+            {groups.length === 0 ? (
+              <div className="text-gray-600 mb-4">
+                <p className="mb-2">No groups available.</p>
+                <p className="text-sm text-gray-500">
+                  Create a group first from the{' '}
+                  <Link href="/datasets" className="text-blue-600 hover:underline">
+                    Dataset Management
+                  </Link>{' '}
+                  page.
+                </p>
+              </div>
+            ) : (
+              <div className="mb-4">
+                <p className="text-sm text-gray-600 mb-3">
+                  Select a group to add{' '}
+                  <span className="font-semibold">{datasetData?.meta.name}</span>:
+                </p>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {groups.map((group) => (
+                    <button
+                      key={group.id}
+                      onClick={() => handleAddToGroup(group.id)}
+                      className="w-full text-left p-3 border border-gray-300 rounded hover:bg-gray-50 hover:border-indigo-400 transition-colors"
+                    >
+                      <div className="font-semibold text-gray-800">{group.name}</div>
+                      {group.description && (
+                        <div className="text-sm text-gray-600 mt-1">{group.description}</div>
+                      )}
+                      <div className="text-xs text-gray-500 mt-1">
+                        {group.datasetNames.length} dataset(s)
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div className="flex justify-end">
+              <button
+                onClick={() => setShowAddToGroupModal(false)}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
