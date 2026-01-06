@@ -5,6 +5,7 @@ const REQUIRED_COLUMNS = ['date', 'open', 'high', 'low', 'close'];
 
 export interface DatasetInfo {
   name: string;
+  code: string;
   filename: string;
   columns: string[];
   indicators: string[];

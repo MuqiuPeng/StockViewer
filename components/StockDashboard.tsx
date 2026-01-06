@@ -13,6 +13,7 @@ import { API_CONFIG } from '@/lib/env';
 
 interface DatasetInfo {
   name: string;
+  code: string;
   filename: string;
   columns: string[];
   indicators: string[];

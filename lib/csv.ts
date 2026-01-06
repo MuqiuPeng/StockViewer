@@ -18,6 +18,7 @@ export interface IndicatorData {
 export interface DatasetData {
   meta: {
     name: string;
+    code: string;
     filename: string;
     columns: string[];
     indicators: string[];
@@ -191,11 +192,17 @@ export async function loadDataset(filename: string): Promise<DatasetData> {
             indicatorData[col] = filledData;
           });
 
-          const name = filename.replace(/\.csv$/i, '');
+          const nameWithoutExt = filename.replace(/\.csv$/i, '');
+
+          // Extract code from filename: {code}_{dataSource}.csv
+          const nameParts = nameWithoutExt.split('_');
+          const code = nameParts[0];
+          const name = code; // Use code as name for now; can be customized later
 
           resolve({
             meta: {
               name,
+              code,
               filename,
               columns: headers,
               indicators: indicatorColumns,
@@ -220,6 +227,7 @@ export async function loadDataset(filename: string): Promise<DatasetData> {
  */
 export async function getDatasetInfo(filename: string): Promise<{
   name: string;
+  code: string;
   filename: string;
   columns: string[];
   indicators: string[];
@@ -307,21 +315,25 @@ export async function getDatasetInfo(filename: string): Promise<{
                 return !['date', 'open', 'high', 'low', 'close'].includes(normalized);
               });
 
-              const name = filename.replace(/\.csv$/i, '');
-              
-              // Extract data source from filename: {symbol}_{dataSource}.csv or {symbol}.csv (defaults to stock_zh_a_hist)
+              const nameWithoutExt = filename.replace(/\.csv$/i, '');
+
+              // Extract code and data source from filename: {code}_{dataSource}.csv or {code}.csv
+              const nameParts = nameWithoutExt.split('_');
+              const code = nameParts[0];
+              const name = code; // Use code as name for now; can be customized later
+
               let dataSource: string | undefined;
-              const nameParts = name.split('_');
               if (nameParts.length > 1) {
-                // Has data source: {symbol}_{dataSource}
+                // Has data source: {code}_{dataSource}
                 dataSource = nameParts.slice(1).join('_');
               } else {
-                // Legacy format: {symbol} - default to stock_zh_a_hist
+                // Legacy format: {code} - default to stock_zh_a_hist
                 dataSource = 'stock_zh_a_hist';
               }
 
               resolve({
                 name,
+                code,
                 filename,
                 columns: headers,
                 indicators: indicatorColumns,

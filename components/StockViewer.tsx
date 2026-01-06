@@ -11,6 +11,7 @@ import Link from 'next/link';
 
 interface DatasetInfo {
   name: string;
+  code: string;
   filename: string;
   columns: string[];
   indicators: string[];

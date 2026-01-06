@@ -11,6 +11,7 @@ interface Strategy {
 
 interface DatasetInfo {
   name: string;
+  code: string;
   filename: string;
   rowCount: number;
 }

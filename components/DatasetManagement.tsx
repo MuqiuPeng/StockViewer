@@ -7,6 +7,7 @@ import Link from 'next/link';
 
 interface DatasetInfo {
   name: string;
+  code: string;
   filename: string;
   columns: string[];
   indicators: string[];
@@ -421,6 +422,7 @@ export default function DatasetManagement() {
                           className="cursor-pointer"
                         />
                       </th>
+                      <th className="border p-2 text-left">Code</th>
                       <th className="border p-2 text-left">Name</th>
                       <th className="border p-2 text-left">Start Date</th>
                       <th className="border p-2 text-left">End Date</th>
@@ -443,7 +445,8 @@ export default function DatasetManagement() {
                               className="cursor-pointer"
                             />
                           </td>
-                          <td className="border p-2 font-medium">{dataset.name}</td>
+                          <td className="border p-2 font-mono font-medium">{dataset.code}</td>
+                          <td className="border p-2">{dataset.name}</td>
                           <td className="border p-2 text-sm">
                             {dataset.firstDate ? dataset.firstDate.split('T')[0] : 'N/A'}
                           </td>
