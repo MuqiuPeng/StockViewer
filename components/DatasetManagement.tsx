@@ -38,6 +38,9 @@ export default function DatasetManagement() {
   const [selectedDatasets, setSelectedDatasets] = useState<Set<string>>(new Set());
   const [showAddToGroupModal, setShowAddToGroupModal] = useState(false);
   const [targetDatasetForGroup, setTargetDatasetForGroup] = useState<string | null>(null);
+  const [showEditNameModal, setShowEditNameModal] = useState(false);
+  const [editingDataset, setEditingDataset] = useState<DatasetInfo | null>(null);
+  const [newName, setNewName] = useState('');
 
   useEffect(() => {
     loadDatasets();
@@ -270,6 +273,51 @@ export default function DatasetManagement() {
     }
   };
 
+  const handleEditName = (dataset: DatasetInfo) => {
+    setEditingDataset(dataset);
+    setNewName(dataset.name);
+    setShowEditNameModal(true);
+  };
+
+  const handleSaveName = async () => {
+    if (!editingDataset) return;
+
+    const trimmedName = newName.trim();
+    if (!trimmedName) {
+      alert('Name cannot be empty');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/datasets/name', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: editingDataset.filename,
+          name: trimmedName,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to update name');
+      }
+
+      await loadDatasets();
+      setShowEditNameModal(false);
+      setEditingDataset(null);
+      setNewName('');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to update name');
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setShowEditNameModal(false);
+    setEditingDataset(null);
+    setNewName('');
+  };
+
   // Group datasets: first by custom groups, then by data source
   // Datasets can appear in both custom groups AND their data source groups
   const groupedDatasets: Record<string, { type: 'group' | 'datasource'; datasets: DatasetInfo[] }> = {};
@@ -474,6 +522,12 @@ export default function DatasetManagement() {
                                 {isUpdating[dataset.name] ? 'Updating...' : 'Update'}
                               </button>
                               <button
+                                onClick={() => handleEditName(dataset)}
+                                className="px-2 py-1 bg-purple-600 text-white rounded text-xs hover:bg-purple-700"
+                              >
+                                Edit Name
+                              </button>
+                              <button
                                 onClick={() => handleAddToGroup(dataset.filename)}
                                 className="px-2 py-1 bg-indigo-600 text-white rounded text-xs hover:bg-indigo-700"
                               >
@@ -569,6 +623,61 @@ export default function DatasetManagement() {
                 className="px-4 py-2 border rounded hover:bg-gray-100"
               >
                 Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Name Modal */}
+      {showEditNameModal && editingDataset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black bg-opacity-50"
+            onClick={handleCancelEdit}
+          />
+          <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4">Edit Dataset Name</h2>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2">
+                Code: <span className="font-mono">{editingDataset.code}</span>
+              </label>
+              <label className="block text-sm font-medium mb-2">
+                Custom Name
+              </label>
+              <input
+                type="text"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    handleSaveName();
+                  } else if (e.key === 'Escape') {
+                    handleCancelEdit();
+                  }
+                }}
+                placeholder="Enter custom name"
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
+                autoFocus
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Leave as code or enter a custom name (e.g., "Ping An Bank")
+              </p>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={handleCancelEdit}
+                className="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveName}
+                className="px-4 py-2 text-white bg-purple-600 rounded hover:bg-purple-700"
+              >
+                Save
               </button>
             </div>
           </div>

@@ -1,6 +1,18 @@
 import Papa from 'papaparse';
 import { readFile } from 'fs/promises';
+import { join } from 'path';
 import { getCsvFileStats, hasRequiredColumns } from './datasets';
+
+const NAMES_FILE = join(process.cwd(), 'data', 'datasets', 'names.json');
+
+async function loadCustomNames(): Promise<Record<string, string>> {
+  try {
+    const content = await readFile(NAMES_FILE, 'utf-8');
+    return JSON.parse(content);
+  } catch {
+    return {};
+  }
+}
 
 export interface CandleData {
   time: number;
@@ -84,7 +96,8 @@ export async function loadDataset(filename: string): Promise<DatasetData> {
   }
 
   const fileContent = await readFile(fileStats.path, 'utf-8');
-  
+  const customNames = await loadCustomNames();
+
   return new Promise((resolve, reject) => {
     Papa.parse(fileContent, {
       header: true,
@@ -197,7 +210,9 @@ export async function loadDataset(filename: string): Promise<DatasetData> {
           // Extract code from filename: {code}_{dataSource}.csv
           const nameParts = nameWithoutExt.split('_');
           const code = nameParts[0];
-          const name = code; // Use code as name for now; can be customized later
+
+          // Use custom name if exists
+          const name = customNames[filename] || code; // Use custom name or code as fallback
 
           resolve({
             meta: {
@@ -248,7 +263,10 @@ export async function getDatasetInfo(filename: string): Promise<{
   const { stat } = await import('fs/promises');
   const stats = await stat(fileStats.path);
   const lastUpdate = stats.mtime.toISOString();
-  
+
+  // Load custom names
+  const customNames = await loadCustomNames();
+
   return new Promise((resolve, reject) => {
     Papa.parse(fileContent, {
       header: true,
@@ -320,7 +338,9 @@ export async function getDatasetInfo(filename: string): Promise<{
               // Extract code and data source from filename: {code}_{dataSource}.csv or {code}.csv
               const nameParts = nameWithoutExt.split('_');
               const code = nameParts[0];
-              const name = code; // Use code as name for now; can be customized later
+
+              // Use custom name if exists
+              const name = customNames[filename] || code; // Use custom name or code as fallback
 
               let dataSource: string | undefined;
               if (nameParts.length > 1) {
