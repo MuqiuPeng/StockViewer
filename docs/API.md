@@ -10,6 +10,7 @@ Complete API endpoint documentation for StockViewer.
 - [Strategy Endpoints](#strategy-endpoints)
 - [Group Endpoints](#group-endpoints)
 - [Backtest Endpoints](#backtest-endpoints)
+- [Backtest History Endpoints](#backtest-history-endpoints)
 - [Validation Endpoints](#validation-endpoints)
 - [Error Handling](#error-handling)
 - [Rate Limiting](#rate-limiting)
@@ -898,6 +899,211 @@ Content-Type: application/json
 - Group mode returns aggregated metrics + individual results
 - Trade markers only in single stock mode
 - Equity curve only in single stock mode
+
+---
+
+## Backtest History Endpoints
+
+### GET /api/backtest-history
+
+Retrieve all backtest history entries with optional filtering.
+
+**Request:**
+```http
+GET /api/backtest-history
+GET /api/backtest-history?starred=true
+GET /api/backtest-history?strategyId=abc123
+GET /api/backtest-history?tags=optimized,final
+```
+
+**Query Parameters:**
+- `starred` (optional): Filter by starred status (`true` or `false`)
+- `strategyId` (optional): Filter by strategy ID
+- `tags` (optional): Comma-separated list of tags
+
+**Response:**
+```json
+{
+  "entries": [
+    {
+      "id": "hist-uuid-1",
+      "createdAt": "2024-01-15T10:30:00.000Z",
+      "strategyId": "strat-123",
+      "strategyName": "MA Crossover",
+      "strategyType": "single",
+      "target": {
+        "type": "single",
+        "datasetName": "平安银行"
+      },
+      "parameters": {
+        "initialCash": 100000,
+        "commission": 0.001,
+        "startDate": "2023-01-01",
+        "endDate": "2023-12-31",
+        "strategyParameters": {}
+      },
+      "result": {
+        "success": true,
+        "metrics": { ... },
+        "equityCurve": [ ... ],
+        "tradeMarkers": [ ... ]
+      },
+      "starred": false,
+      "notes": "Best performance so far",
+      "tags": ["optimized", "final"],
+      "summary": {
+        "totalReturn": 15000,
+        "totalReturnPct": 15.0,
+        "sharpeRatio": 1.8,
+        "tradeCount": 42,
+        "duration": 1234
+      }
+    }
+  ]
+}
+```
+
+**Status Codes:**
+- `200 OK`: Success
+- `500 Internal Server Error`: Database error
+
+---
+
+### GET /api/backtest-history/[id]
+
+Get details of a specific backtest history entry.
+
+**Request:**
+```http
+GET /api/backtest-history/hist-uuid-1
+```
+
+**Response:**
+```json
+{
+  "entry": {
+    "id": "hist-uuid-1",
+    "createdAt": "2024-01-15T10:30:00.000Z",
+    "strategyId": "strat-123",
+    "strategyName": "MA Crossover",
+    "target": { ... },
+    "parameters": { ... },
+    "result": { ... },
+    "starred": false,
+    "notes": "...",
+    "tags": ["tag1"],
+    "summary": { ... }
+  }
+}
+```
+
+**Status Codes:**
+- `200 OK`: Success
+- `404 Not Found`: Entry not found
+- `500 Internal Server Error`: Database error
+
+---
+
+### PATCH /api/backtest-history/[id]
+
+Update backtest history entry metadata (notes, tags, starred status).
+
+**Request:**
+```http
+PATCH /api/backtest-history/hist-uuid-1
+Content-Type: application/json
+
+{
+  "starred": true,
+  "notes": "Updated notes about this backtest",
+  "tags": ["optimized", "final", "production"]
+}
+```
+
+**Request Body:**
+- `starred` (optional): Boolean to star/unstar
+- `notes` (optional): String with user notes
+- `tags` (optional): Array of tag strings
+
+**Response:**
+```json
+{
+  "entry": {
+    "id": "hist-uuid-1",
+    "starred": true,
+    "notes": "Updated notes about this backtest",
+    "tags": ["optimized", "final", "production"],
+    ...
+  }
+}
+```
+
+**Status Codes:**
+- `200 OK`: Success
+- `404 Not Found`: Entry not found
+- `500 Internal Server Error`: Update error
+
+---
+
+### DELETE /api/backtest-history/[id]
+
+Delete a backtest history entry.
+
+**Request:**
+```http
+DELETE /api/backtest-history/hist-uuid-1
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Backtest history entry deleted"
+}
+```
+
+**Status Codes:**
+- `200 OK`: Successfully deleted
+- `404 Not Found`: Entry not found
+- `500 Internal Server Error`: Deletion error
+
+---
+
+### POST /api/backtest-history/[id]/rerun
+
+Re-execute a backtest with the same parameters as a previous run.
+
+**Request:**
+```http
+POST /api/backtest-history/hist-uuid-1/rerun
+```
+
+**Response:**
+```json
+{
+  "result": {
+    "success": true,
+    "metrics": { ... },
+    "equityCurve": [ ... ],
+    "tradeMarkers": [ ... ],
+    "type": "single",
+    "datasetName": "平安银行",
+    "dateRange": { ... }
+  }
+}
+```
+
+**Status Codes:**
+- `200 OK`: Backtest completed successfully
+- `404 Not Found`: Original entry not found
+- `400 Bad Request`: Invalid parameters or strategy deleted
+- `500 Internal Server Error`: Execution error
+
+**Notes:**
+- Creates a new history entry for the re-run
+- Uses original strategy, target, and parameters
+- Fails if original strategy has been deleted
+- Returns same format as `/api/backtest` endpoint
 
 ---
 

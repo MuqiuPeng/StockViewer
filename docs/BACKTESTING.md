@@ -12,6 +12,7 @@ Comprehensive guide to backtesting trading strategies in StockViewer.
 - [Performance Metrics](#performance-metrics)
 - [Results Analysis](#results-analysis)
 - [Group Backtesting](#group-backtesting)
+- [Backtest History](#backtest-history)
 - [Best Practices](#best-practices)
 - [Examples](#examples)
 - [Troubleshooting](#troubleshooting)
@@ -738,6 +739,214 @@ def calculate(data, parameters):
 
     return signals
 ```
+
+## Backtest History
+
+StockViewer automatically saves all backtest runs to a persistent history, allowing you to review, organize, and compare past results.
+
+### Auto-Save
+
+Every successful backtest is automatically saved with:
+- Complete backtest configuration (strategy, parameters, date range)
+- Full results (metrics, equity curve, trades)
+- Target information (stock name, portfolio symbols, or group)
+- Execution metadata (timestamp, duration)
+
+**Storage Location:** `data/backtest-history/history.json`
+
+### History Sidebar
+
+Access backtest history through the sidebar:
+
+**Opening the Sidebar:**
+1. Click the **"History"** button (top-right of backtest page)
+2. Sidebar slides in from the right
+
+**Features:**
+- Chronological list of all backtest runs (newest first)
+- Quick metrics preview (total return %, Sharpe ratio, trade count)
+- Search and filter capabilities
+- Star/favorite important backtests
+- Delete unwanted entries
+
+**Display Format:**
+```
+Strategy Name
+📊 Stock Name (Code)  or  📈 Portfolio (X stocks)  or  📁 Group: Name
+Date & Time
+Return: +15.23% (color-coded green/red)
+Tags: [tag1] [tag2]
+```
+
+### Search and Filtering
+
+**Text Search:**
+- Searches strategy names and user notes
+- Real-time filtering as you type
+- Case-insensitive matching
+
+**Filters:**
+- **Starred Only:** Show only favorited backtests
+- Combine with text search for refined results
+
+**Usage:**
+```
+1. Enter search term in search box
+2. Check "Starred only" to show favorites
+3. Results update instantly
+4. Clear search to see all entries
+```
+
+### Organizing Backtests
+
+**Starring/Favoriting:**
+- Click the star icon (☆/★) on any entry
+- Starred backtests can be filtered separately
+- Use to mark important results or successful strategies
+
+**Notes:**
+- Add custom notes to any backtest
+- Searchable text for documentation
+- Example: "Best performance on bull market", "Optimized parameters"
+
+**Tags:**
+- Add multiple tags to categorize backtests
+- Examples: `ma-crossover`, `trending`, `optimization`, `final`
+- Searchable and filterable
+- Helps organize related backtests
+
+### Viewing Details
+
+Click any history entry to open the detail modal:
+
+**Detail View Shows:**
+- Full strategy name and target information
+- Complete performance metrics
+- Backtest parameters (initial cash, commission, date range)
+- User notes (editable)
+- Tags (add/remove)
+
+**Actions Available:**
+- **Re-run:** Execute the same backtest with original parameters
+- **Edit Notes:** Add or update documentation
+- **Manage Tags:** Add/remove tags for organization
+- **Save Changes:** Persist notes and tags updates
+
+### Re-running Backtests
+
+Quickly re-execute previous backtests:
+
+**Steps:**
+1. Open backtest detail modal
+2. Click **"Re-run Backtest"** button
+3. System executes with same:
+   - Strategy
+   - Target (stock/portfolio/group)
+   - Parameters (cash, commission)
+   - Date range (if specified)
+4. New results appear
+5. New entry auto-saved to history
+
+**Use Cases:**
+- Verify previous results
+- Test after code changes
+- Compare with updated data
+
+### Trade Hover Details
+
+When viewing backtest results, hover over the price chart to see detailed trade information:
+
+**Features:**
+- **Previous Trade Panel (Left):** Shows the most recent trade before the hover position
+- **Next Trade Panel (Right):** Shows the upcoming trade after the hover position
+- **Always Visible:** Panels remain visible with placeholders when no trades exist
+
+**Information Displayed:**
+- Trade type (Buy/Sell) with color coding
+- Execution date
+- Price (¥)
+- Share size
+- Total value (¥)
+- Execution mode (Same Day Close / Next Open)
+
+**Usage:**
+- Hover anywhere on the price chart
+- Both panels update automatically
+- Move cursor to explore different time periods
+- Works for both single stock and portfolio backtests
+
+### API Endpoints
+
+**List History:**
+```bash
+GET /api/backtest-history
+GET /api/backtest-history?starred=true
+GET /api/backtest-history?strategyId=xxx
+GET /api/backtest-history?tags=tag1,tag2
+```
+
+**Update Entry:**
+```bash
+PATCH /api/backtest-history/{id}
+{
+  "starred": true,
+  "notes": "Best result so far",
+  "tags": ["optimized", "final"]
+}
+```
+
+**Delete Entry:**
+```bash
+DELETE /api/backtest-history/{id}
+```
+
+**Re-run Backtest:**
+```bash
+POST /api/backtest-history/{id}/rerun
+```
+
+### Best Practices
+
+**Organization:**
+- Star successful strategies for quick reference
+- Use consistent tagging scheme (e.g., `strategy-type`, `market-condition`)
+- Add notes immediately after running important backtests
+- Delete failed or irrelevant backtests to keep history clean
+
+**Naming Strategies:**
+- Use descriptive strategy names for easier identification
+- Include key parameters in name (e.g., "MA Cross 5/20")
+- Maintain consistency across related strategies
+
+**Documentation:**
+- Document parameter changes in notes
+- Record market conditions or data ranges tested
+- Note why certain results were significant
+- Track optimization iterations
+
+**Comparison:**
+- Use tags to group related backtests
+- Run same strategy across different stocks/groups
+- Compare starred entries for best performers
+- Track performance metrics over time
+
+### Storage Considerations
+
+**File Size:**
+- Each backtest stores complete results (equity curve, all trades)
+- Large backtests (long date ranges, many trades) increase file size
+- Monitor `data/backtest-history/history.json` size
+
+**Cleanup:**
+- Regularly delete unwanted entries
+- Archive old results if needed
+- Consider exporting important backtests separately
+
+**Backup:**
+- History file is plain JSON
+- Easy to backup manually
+- Can be version controlled
+- Portable across installations
 
 ## Troubleshooting
 

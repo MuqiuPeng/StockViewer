@@ -37,6 +37,9 @@ StockViewer is a powerful Next.js application that enables you to:
 - Comprehensive metrics (Sharpe, Sortino, Calmar, max drawdown, etc.)
 - Slippage tracking and analysis
 - Visual equity curves and trade markers
+- **Backtest history management** with auto-save
+- **Trade hover details** showing nearest left/right trades on charts
+- Notes, tags, and favorites for organizing backtest runs
 
 ### 📈 Data Management
 - Fetch Chinese A-share data from aktools API
@@ -87,7 +90,7 @@ python -m aktools
 
 4. **Create data directories**
 ```bash
-mkdir -p data/csv data/indicators data/strategies data/groups data/python
+mkdir -p data/csv data/indicators data/strategies data/groups data/backtest-history data/python
 ```
 
 5. **Start development server**
@@ -155,6 +158,7 @@ Comprehensive documentation is organized by topic:
     /strategies         # Strategy management
     /groups             # Group management
     /backtest           # Backtesting engine
+    /backtest-history   # Backtest history CRUD & rerun
   /viewer               # Stock viewer page
   /backtest             # Backtesting page
   /datasets             # Dataset management page
@@ -166,6 +170,8 @@ Comprehensive documentation is organized by topic:
   IndicatorManager.tsx  # Indicator CRUD UI
   StrategyManager.tsx   # Strategy CRUD UI
   GroupManager.tsx      # Group management UI
+  BacktestHistorySidebar.tsx      # History sidebar UI
+  BacktestHistoryDetailModal.tsx  # History detail/edit modal
 
 /lib                    # Utilities & business logic
   csv.ts                # CSV operations
@@ -174,12 +180,15 @@ Comprehensive documentation is organized by topic:
   indicator-storage.ts  # Indicator persistence
   strategy-storage.ts   # Strategy persistence
   group-storage.ts      # Group persistence
+  backtest-history-storage.ts  # Backtest history persistence
+  dataset-metadata.ts   # Dataset metadata management
 
 /data                   # Data storage
   /csv                  # Stock CSV files
   /indicators           # indicators.json
   /strategies           # strategies.json
   /groups               # groups.json
+  /backtest-history     # history.json
   /python               # Python execution scripts
     executor.py         # Indicator calculator
     backtest-executor.py # Backtesting engine
