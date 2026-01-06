@@ -73,19 +73,16 @@ export default function DatasetManagement() {
     }
   };
 
-  const handleDelete = async (datasetName: string) => {
-    if (!confirm(`Are you sure you want to delete "${datasetName}"? This action cannot be undone.`)) {
+  const handleDelete = async (filename: string) => {
+    if (!confirm(`Are you sure you want to delete "${filename}"? This action cannot be undone.`)) {
       return;
     }
 
     try {
-      // Extract symbol from dataset name (remove .csv and data source suffix)
-      const symbol = datasetName.replace(/\.csv$/, '').split('_')[0];
-      
       const response = await fetch('/api/datasets', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: datasetName }),
+        body: JSON.stringify({ name: filename }),
       });
 
       if (!response.ok) {
@@ -190,7 +187,7 @@ export default function DatasetManagement() {
           const response = await fetch('/api/datasets', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: dataset.name }),
+            body: JSON.stringify({ name: dataset.filename }),
           });
 
           if (!response.ok) {
@@ -469,7 +466,7 @@ export default function DatasetManagement() {
                                 + Group
                               </button>
                               <button
-                                onClick={() => handleDelete(dataset.name)}
+                                onClick={() => handleDelete(dataset.filename)}
                                 className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
                               >
                                 Delete
