@@ -117,10 +117,8 @@ export async function POST(request: Request) {
     await mkdir(csvDir, { recursive: true });
 
     // Write file with data source in filename: {symbol}_{dataSource}.csv
-    // For backward compatibility, if dataSource is stock_zh_a_hist, use {symbol}.csv
-    const filename = dataSource === 'stock_zh_a_hist' 
-      ? `${symbol}.csv`
-      : `${symbol}_${dataSource}.csv`;
+    // Always include data source to prevent duplicates
+    const filename = `${symbol}_${dataSource}.csv`;
     const filePath = join(csvDir, filename);
     await writeFile(filePath, csv, 'utf-8');
 

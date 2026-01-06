@@ -192,7 +192,7 @@ export default function StockDashboard() {
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
                     indicatorId: indicator.id,
-                    stockSymbols: [selectedDataset],
+                    datasetNames: [selectedDataset],
                   }),
                 });
                 console.log(`Applied ${indicator.name} to ${selectedDataset}`);

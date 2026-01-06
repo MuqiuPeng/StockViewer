@@ -57,10 +57,10 @@ export default function ApplyIndicatorModal({
         setError(data.message || 'Failed to load datasets');
       } else {
         setDatasets(data || []);
-        // Auto-select all stocks
-        const allStockNames = (data || []).map((ds: DatasetInfo) => ds.name);
+        // Auto-select all stocks (use filename, not name)
+        const allDatasetFiles = (data || []).map((ds: DatasetInfo) => ds.filename);
         setApplyToAll(true);
-        setSelectedStocks(new Set(allStockNames));
+        setSelectedStocks(new Set(allDatasetFiles));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load datasets');
@@ -69,12 +69,12 @@ export default function ApplyIndicatorModal({
     }
   };
 
-  const handleToggleStock = (stockName: string) => {
+  const handleToggleStock = (datasetFilename: string) => {
     const newSelected = new Set(selectedStocks);
-    if (newSelected.has(stockName)) {
-      newSelected.delete(stockName);
+    if (newSelected.has(datasetFilename)) {
+      newSelected.delete(datasetFilename);
     } else {
-      newSelected.add(stockName);
+      newSelected.add(datasetFilename);
     }
     setSelectedStocks(newSelected);
   };
@@ -82,7 +82,7 @@ export default function ApplyIndicatorModal({
   const handleApplyToAllChange = (checked: boolean) => {
     setApplyToAll(checked);
     if (checked) {
-      setSelectedStocks(new Set(datasets.map(ds => ds.name)));
+      setSelectedStocks(new Set(datasets.map(ds => ds.filename)));
     } else {
       setSelectedStocks(new Set());
     }
@@ -106,7 +106,7 @@ export default function ApplyIndicatorModal({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           indicatorId,
-          stockSymbols: stocksToApply,
+          datasetNames: stocksToApply,
         }),
       });
 
@@ -184,13 +184,13 @@ export default function ApplyIndicatorModal({
                 <div className="space-y-1">
                   {datasets.map((dataset) => (
                     <label
-                      key={dataset.name}
+                      key={dataset.filename}
                       className="flex items-center gap-2 text-sm hover:bg-gray-50 p-1 rounded"
                     >
                       <input
                         type="checkbox"
-                        checked={selectedStocks.has(dataset.name)}
-                        onChange={() => handleToggleStock(dataset.name)}
+                        checked={selectedStocks.has(dataset.filename)}
+                        onChange={() => handleToggleStock(dataset.filename)}
                         disabled={isApplying}
                       />
                       <span>{dataset.name}</span>

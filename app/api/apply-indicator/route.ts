@@ -12,15 +12,15 @@ interface ApplyResult {
   error?: string;
 }
 
-// POST /api/apply-indicator - Apply indicator to stock(s)
+// POST /api/apply-indicator - Apply indicator to dataset(s)
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { indicatorId, stockSymbols } = body;
+    const { indicatorId, datasetNames } = body;
 
-    if (!indicatorId || !stockSymbols || !Array.isArray(stockSymbols)) {
+    if (!indicatorId || !datasetNames || !Array.isArray(datasetNames)) {
       return NextResponse.json(
-        { error: 'Invalid request', message: 'indicatorId and stockSymbols (array) are required' },
+        { error: 'Invalid request', message: 'indicatorId and datasetNames (array) are required' },
         { status: 400 }
       );
     }
@@ -34,21 +34,20 @@ export async function POST(request: Request) {
       );
     }
 
-    // Apply indicator to each stock
+    // Apply indicator to each dataset
     const results: Record<string, ApplyResult> = {};
 
-    for (const symbol of stockSymbols) {
+    for (const filename of datasetNames) {
       try {
-        // Load stock data
-        const filename = `${symbol}.csv`;
+        // Load dataset data
         let datasetData;
 
         try {
           datasetData = await loadDataset(filename);
         } catch (error) {
-          results[symbol] = {
+          results[filename] = {
             success: false,
-            error: 'Stock data not found',
+            error: 'Dataset not found',
           };
           continue;
         }
@@ -81,7 +80,7 @@ export async function POST(request: Request) {
         });
 
         if (!executionResult.success) {
-          results[symbol] = {
+          results[filename] = {
             success: false,
             error: executionResult.error || 'Python execution failed',
           };
@@ -95,7 +94,7 @@ export async function POST(request: Request) {
 
           // Validate returned keys match expected outputs
           if (!valuesDict || typeof valuesDict !== 'object') {
-            results[symbol] = {
+            results[filename] = {
               success: false,
               error: 'Group indicator must return a dictionary of values',
             };
@@ -107,7 +106,7 @@ export async function POST(request: Request) {
           const missingKeys = expectedKeys.filter(k => !returnedKeys.includes(k));
 
           if (missingKeys.length > 0) {
-            results[symbol] = {
+            results[filename] = {
               success: false,
               error: `Missing expected outputs: ${missingKeys.join(', ')}`,
             };
@@ -121,7 +120,7 @@ export async function POST(request: Request) {
             valuesDict
           );
 
-          results[symbol] = {
+          results[filename] = {
             success: true,
             rowsProcessed: dataRecords.length,
           };
@@ -133,13 +132,13 @@ export async function POST(request: Request) {
             executionResult.values as (number | null)[]
           );
 
-          results[symbol] = {
+          results[filename] = {
             success: true,
             rowsProcessed: dataRecords.length,
           };
         }
       } catch (error) {
-        results[symbol] = {
+        results[filename] = {
           success: false,
           error: error instanceof Error ? error.message : 'Unknown error',
         };
