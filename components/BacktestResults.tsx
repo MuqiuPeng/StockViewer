@@ -969,7 +969,6 @@ function PortfolioBacktestResults({
         autoScale: false,  // Disable auto scale to enforce minimum at 0
         mode: 0, // Normal price scale mode
         entireTextOnly: false,
-        minimumVisibleRange: 0,
       },
       localization: {
         priceFormatter: (price: number) => {
@@ -1103,13 +1102,9 @@ function PortfolioBacktestResults({
           },
           autoScale: false,
         });
-        // Set visible range from 0 to max
-        chart.priceScale('right').setVisibleRange({
-          from: 0,
-          to: maxPortfolioValue * 1.1,
-        });
+        chart.timeScale().fitContent();
       } catch (e) {
-        console.warn('Could not set visible range for portfolio chart:', e);
+        console.warn('Could not set price scale for portfolio chart:', e);
       }
     }, 0);
 
@@ -2224,6 +2219,9 @@ export default function BacktestResults({
   const [nearestLeftTrade, setNearestLeftTrade] = useState<any>(null);
   const [nearestRightTrade, setNearestRightTrade] = useState<any>(null);
 
+  // Composition pie chart state - for single stock
+  const [singleCompositionData, setSingleCompositionData] = useState<Array<{ name: string; value: number; color: string }>>([]);
+
   const chartInitializedRef = useRef(false);
   const stackedChartInitializedRef = useRef(false);
   const priceChartInitializedRef = useRef(false);
@@ -2673,7 +2671,6 @@ export default function BacktestResults({
         autoScale: false,  // Disable auto scale to enforce minimum at 0
         mode: 0,
         entireTextOnly: false,
-        minimumVisibleRange: 0,
       },
       localization: {
         priceFormatter: (price: number) => {
@@ -2756,13 +2753,9 @@ export default function BacktestResults({
           },
           autoScale: false,
         });
-        // Set visible range from 0 to max
-        chart.priceScale('right').setVisibleRange({
-          from: 0,
-          to: maxSingleValue * 1.1,
-        });
+        chart.timeScale().fitContent();
       } catch (e) {
-        console.warn('Could not set visible range for single stock chart:', e);
+        console.warn('Could not set price scale for single stock chart:', e);
       }
     }, 0);
 
