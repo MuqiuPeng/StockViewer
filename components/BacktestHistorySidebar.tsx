@@ -17,6 +17,8 @@ export default function BacktestHistorySidebar({
   const [entries, setEntries] = useState<BacktestHistoryEntry[]>([]);
   const [filter, setFilter] = useState({ starred: false, search: '' });
   const [loading, setLoading] = useState(true);
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (isOpen) {
@@ -67,6 +69,61 @@ export default function BacktestHistorySidebar({
     }
   }
 
+  function toggleSelection(id: string) {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  }
+
+  function toggleSelectAll() {
+    if (selectedIds.size === filteredEntries.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredEntries.map(e => e.id)));
+    }
+  }
+
+  async function handleBatchDelete() {
+    if (selectedIds.size === 0) return;
+    if (!confirm(`Delete ${selectedIds.size} backtest(s) from history?`)) return;
+
+    try {
+      await Promise.all(
+        Array.from(selectedIds).map(id =>
+          fetch(`/api/backtest-history/${id}`, { method: 'DELETE' })
+        )
+      );
+      setSelectedIds(new Set());
+      loadHistory();
+    } catch (error) {
+      console.error('Failed to batch delete:', error);
+    }
+  }
+
+  async function handleBatchStar(starred: boolean) {
+    if (selectedIds.size === 0) return;
+
+    try {
+      await Promise.all(
+        Array.from(selectedIds).map(id =>
+          fetch(`/api/backtest-history/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ starred }),
+          })
+        )
+      );
+      setSelectedIds(new Set());
+      loadHistory();
+    } catch (error) {
+      console.error('Failed to batch star:', error);
+    }
+  }
+
   const filteredEntries = entries.filter(
     (e) =>
       !filter.search ||
@@ -94,6 +151,55 @@ export default function BacktestHistorySidebar({
           </button>
         </div>
 
+        {/* Batch Mode Toggle */}
+        <div className="mb-3">
+          <button
+            onClick={() => {
+              setBatchMode(!batchMode);
+              setSelectedIds(new Set());
+            }}
+            className={`px-3 py-1.5 text-sm rounded ${
+              batchMode
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            {batchMode ? '✓ Batch Mode' : 'Batch Select'}
+          </button>
+        </div>
+
+        {/* Batch Actions */}
+        {batchMode && selectedIds.size > 0 && (
+          <div className="mb-3 p-2 bg-blue-900 rounded">
+            <div className="text-xs text-blue-200 mb-2">
+              {selectedIds.size} selected
+            </div>
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={() => handleBatchStar(true)}
+                className="px-2 py-1 text-xs bg-yellow-600 text-white rounded hover:bg-yellow-700"
+                title="Star selected"
+              >
+                ★ Star
+              </button>
+              <button
+                onClick={() => handleBatchStar(false)}
+                className="px-2 py-1 text-xs bg-gray-600 text-white rounded hover:bg-gray-700"
+                title="Unstar selected"
+              >
+                ☆ Unstar
+              </button>
+              <button
+                onClick={handleBatchDelete}
+                className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700"
+                title="Delete selected"
+              >
+                🗑 Delete
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Filters */}
         <div className="space-y-2">
           <input
@@ -103,15 +209,25 @@ export default function BacktestHistorySidebar({
             onChange={(e) => setFilter({ ...filter, search: e.target.value })}
             className="w-full px-3 py-2 border border-gray-600 rounded bg-gray-700 text-white placeholder-gray-400"
           />
-          <label className="flex items-center text-sm text-gray-300">
-            <input
-              type="checkbox"
-              checked={filter.starred}
-              onChange={(e) => setFilter({ ...filter, starred: e.target.checked })}
-              className="mr-2"
-            />
-            <span>Starred only</span>
-          </label>
+          <div className="flex items-center justify-between">
+            <label className="flex items-center text-sm text-gray-300">
+              <input
+                type="checkbox"
+                checked={filter.starred}
+                onChange={(e) => setFilter({ ...filter, starred: e.target.checked })}
+                className="mr-2"
+              />
+              <span>Starred only</span>
+            </label>
+            {batchMode && filteredEntries.length > 0 && (
+              <button
+                onClick={toggleSelectAll}
+                className="text-xs text-blue-400 hover:text-blue-300"
+              >
+                {selectedIds.size === filteredEntries.length ? 'Deselect All' : 'Select All'}
+              </button>
+            )}
+          </div>
         </div>
       </div>
 
@@ -127,10 +243,30 @@ export default function BacktestHistorySidebar({
           filteredEntries.map((entry) => (
             <div
               key={entry.id}
-              className="p-4 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
-              onClick={() => onSelectEntry(entry)}
+              className={`p-4 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer ${
+                selectedIds.has(entry.id) ? 'bg-blue-900' : ''
+              }`}
+              onClick={() => {
+                if (batchMode) {
+                  toggleSelection(entry.id);
+                } else {
+                  onSelectEntry(entry);
+                }
+              }}
             >
               <div className="flex items-start justify-between">
+                {/* Checkbox in batch mode */}
+                {batchMode && (
+                  <div className="mr-3 pt-1">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(entry.id)}
+                      onChange={() => toggleSelection(entry.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4"
+                    />
+                  </div>
+                )}
                 <div className="flex-1">
                   <div className="font-medium text-white">
                     {entry.strategyName}
@@ -175,23 +311,25 @@ export default function BacktestHistorySidebar({
                   )}
                 </div>
 
-                {/* Actions */}
-                <div className="flex gap-2 ml-2">
-                  <button
-                    onClick={(e) => handleStar(entry.id, !entry.starred, e)}
-                    className="text-yellow-500 hover:text-yellow-600"
-                    title={entry.starred ? 'Unstar' : 'Star'}
-                  >
-                    {entry.starred ? '★' : '☆'}
-                  </button>
-                  <button
-                    onClick={(e) => handleDelete(entry.id, e)}
-                    className="text-red-500 hover:text-red-600"
-                    title="Delete"
-                  >
-                    🗑
-                  </button>
-                </div>
+                {/* Actions - Hide in batch mode */}
+                {!batchMode && (
+                  <div className="flex gap-2 ml-2">
+                    <button
+                      onClick={(e) => handleStar(entry.id, !entry.starred, e)}
+                      className="text-yellow-500 hover:text-yellow-600"
+                      title={entry.starred ? 'Unstar' : 'Star'}
+                    >
+                      {entry.starred ? '★' : '☆'}
+                    </button>
+                    <button
+                      onClick={(e) => handleDelete(entry.id, e)}
+                      className="text-red-500 hover:text-red-600"
+                      title="Delete"
+                    >
+                      🗑
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))
