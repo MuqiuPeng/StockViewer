@@ -15,6 +15,10 @@ interface DatasetInfo {
   code: string;
   filename: string;
   rowCount: number;
+  firstDate?: string;
+  lastDate?: string;
+  dataSource?: string;
+  indicators?: string[];
 }
 
 interface StockGroup {
@@ -177,7 +181,7 @@ export default function RunBacktestModal({
         className="absolute inset-0 bg-black bg-opacity-50"
         onClick={onClose}
       />
-      <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl">
+      <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-7xl">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold">Run Backtest</h2>
           <button
@@ -326,29 +330,106 @@ export default function RunBacktestModal({
           {mode === 'portfolio' && (
             <div>
               <label className="block text-sm font-medium mb-2">Select Stocks for Portfolio</label>
-              {datasets.length > 0 ? (
-                <div className="border rounded p-3 bg-gray-50 max-h-60 overflow-y-auto">
-                  <div className="space-y-2">
-                    {datasets.map((ds) => (
-                      <label key={ds.name} className="flex items-center cursor-pointer hover:bg-gray-100 p-2 rounded">
-                        <input
-                          type="checkbox"
-                          checked={selectedSymbols.includes(ds.filename || ds.name)}
-                          onChange={(e) => {
-                            const symbol = ds.filename || ds.name;
-                            if (e.target.checked) {
-                              setSelectedSymbols([...selectedSymbols, symbol]);
-                            } else {
-                              setSelectedSymbols(selectedSymbols.filter(s => s !== symbol));
-                            }
-                          }}
-                          className="mr-3"
-                        />
-                        <span className="flex-1">
-                          {ds.name} <span className="text-gray-500 text-xs">({ds.rowCount.toLocaleString()} rows)</span>
-                        </span>
-                      </label>
+
+              {/* Quick Group Selection */}
+              {groups.length > 0 && (
+                <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded">
+                  <label className="block text-xs font-medium text-blue-900 mb-2">Quick Select from Group:</label>
+                  <div className="flex gap-2 flex-wrap">
+                    {groups.map((group) => (
+                      <button
+                        key={group.id}
+                        type="button"
+                        onClick={() => {
+                          const groupStocks = group.datasetNames.map(name => {
+                            const ds = datasets.find(d => d.name === name || d.filename === name);
+                            return ds?.filename || name;
+                          });
+                          setSelectedSymbols(groupStocks);
+                        }}
+                        className="text-xs px-3 py-1.5 bg-white border border-blue-300 rounded hover:bg-blue-100 transition-colors"
+                      >
+                        📁 {group.name} ({group.datasetNames.length})
+                      </button>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {datasets.length > 0 ? (
+                <div className="border rounded bg-white overflow-hidden">
+                  {/* Table Header */}
+                  <div className="bg-gray-100 border-b px-3 py-2 grid grid-cols-12 gap-2 text-xs font-semibold text-gray-700">
+                    <div className="col-span-1"></div>
+                    <div className="col-span-2">Stock Name</div>
+                    <div className="col-span-1">Code</div>
+                    <div className="col-span-1 text-right">Rows</div>
+                    <div className="col-span-2">Date Range</div>
+                    <div className="col-span-5">Indicators</div>
+                  </div>
+
+                  {/* Stock List */}
+                  <div className="max-h-48 overflow-y-auto">
+                    {datasets.map((ds) => {
+                      const stockCode = ds.code || ds.filename?.split('_')[0] || '';
+                      const isChecked = selectedSymbols.includes(ds.filename || ds.name);
+                      return (
+                        <label
+                          key={ds.name}
+                          className={`grid grid-cols-12 gap-2 items-center px-3 py-2.5 cursor-pointer border-b border-gray-100 hover:bg-blue-50 transition-colors ${
+                            isChecked ? 'bg-blue-50' : ''
+                          }`}
+                        >
+                          <div className="col-span-1 flex items-center">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                const symbol = ds.filename || ds.name;
+                                if (e.target.checked) {
+                                  setSelectedSymbols([...selectedSymbols, symbol]);
+                                } else {
+                                  setSelectedSymbols(selectedSymbols.filter(s => s !== symbol));
+                                }
+                              }}
+                              className="w-4 h-4"
+                            />
+                          </div>
+                          <div className="col-span-2 font-medium text-gray-900 truncate">
+                            {ds.name}
+                          </div>
+                          <div className="col-span-1">
+                            {stockCode && (
+                              <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-mono">
+                                {stockCode}
+                              </span>
+                            )}
+                          </div>
+                          <div className="col-span-1 text-right text-sm font-mono text-gray-700">
+                            {ds.rowCount?.toLocaleString() || 0}
+                          </div>
+                          <div className="col-span-2 text-xs font-mono text-gray-600">
+                            {ds.firstDate && ds.lastDate ? (
+                              <span>
+                                {new Date(ds.firstDate).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit' })} ~ {new Date(ds.lastDate).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit' })}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">-</span>
+                            )}
+                          </div>
+                          <div className="col-span-5 text-xs text-gray-600 truncate">
+                            {ds.indicators && ds.indicators.length > 0 ? (
+                              <span>
+                                {ds.indicators.slice(0, 5).join(', ')}
+                                {ds.indicators.length > 5 ? ` +${ds.indicators.length - 5}` : ''}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">No indicators</span>
+                            )}
+                          </div>
+                        </label>
+                      );
+                    })}
                   </div>
                 </div>
               ) : (

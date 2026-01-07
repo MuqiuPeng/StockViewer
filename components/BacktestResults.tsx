@@ -132,6 +132,137 @@ interface BacktestResultsProps {
   portfolioResult?: PortfolioBacktestResult;
 }
 
+// Simple SVG Pie Chart Component
+function PieChart({ data, size = 200 }: { data: Array<{ name: string; value: number; color: string }>; size?: number }) {
+  if (!data || data.length === 0) return null;
+
+  const total = data.reduce((sum, item) => sum + item.value, 0);
+
+  // If total is 0, show a gray circle with message
+  if (total === 0) {
+    return (
+      <div className="flex flex-col items-center">
+        <div className="bg-gray-50 rounded-lg p-2">
+          <svg width={size} height={size} className="mb-3">
+            <circle
+              cx={size / 2}
+              cy={size / 2}
+              r={size / 2 - 10}
+              fill="#e5e7eb"
+              stroke="#374151"
+              strokeWidth="2"
+            />
+            <text
+              x={size / 2}
+              y={size / 2}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              className="text-xs fill-gray-500"
+            >
+              No Value
+            </text>
+          </svg>
+        </div>
+        <div className="flex flex-col gap-1 text-xs mt-2">
+          {data.map((item, index) => (
+            <div key={index} className="flex items-center gap-2">
+              <div
+                className="w-3 h-3 rounded border-2"
+                style={{
+                  backgroundColor: item.color,
+                  borderColor: '#374151'
+                }}
+              ></div>
+              <span className="text-gray-700 dark:text-gray-300">
+                {item.name}: 0.0%
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  let currentAngle = -90; // Start from top
+  const radius = size / 2 - 10;
+  const centerX = size / 2;
+  const centerY = size / 2;
+
+  const slices = data.filter(item => item.value > 0).map((item, index) => {
+    const percentage = (item.value / total) * 100;
+    const sliceAngle = (item.value / total) * 360;
+    const startAngle = currentAngle;
+    const endAngle = currentAngle + sliceAngle;
+
+    // Calculate arc path
+    const startRad = (startAngle * Math.PI) / 180;
+    const endRad = (endAngle * Math.PI) / 180;
+
+    const x1 = centerX + radius * Math.cos(startRad);
+    const y1 = centerY + radius * Math.sin(startRad);
+    const x2 = centerX + radius * Math.cos(endRad);
+    const y2 = centerY + radius * Math.sin(endRad);
+
+    const largeArcFlag = sliceAngle > 180 ? 1 : 0;
+
+    const pathData = [
+      `M ${centerX} ${centerY}`,
+      `L ${x1} ${y1}`,
+      `A ${radius} ${radius} 0 ${largeArcFlag} 1 ${x2} ${y2}`,
+      'Z',
+    ].join(' ');
+
+    currentAngle = endAngle;
+
+    return {
+      path: pathData,
+      color: item.color,
+      name: item.name,
+      value: item.value,
+      percentage: percentage,
+    };
+  });
+
+  return (
+    <div className="flex flex-col items-center">
+      <div className="bg-gray-50 rounded-lg p-2">
+        <svg width={size} height={size} className="mb-3">
+          {slices.map((slice, index) => (
+            <g key={index}>
+              <path
+                d={slice.path}
+                fill={slice.color}
+                stroke="#374151"
+                strokeWidth="2"
+                className="transition-opacity hover:opacity-90"
+              />
+            </g>
+          ))}
+        </svg>
+      </div>
+      <div className="flex flex-col gap-1 text-xs mt-2">
+        {data.map((item, index) => {
+          const percentage = (item.value / total) * 100;
+          return (
+            <div key={index} className="flex items-center gap-2">
+              <div
+                className="w-3 h-3 rounded border-2"
+                style={{
+                  backgroundColor: item.color,
+                  borderColor: '#374151'
+                }}
+              ></div>
+              <span className="text-gray-700 dark:text-gray-300">
+                {item.name}: {percentage.toFixed(1)}%
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // Portfolio Backtest Results Component
 function PortfolioBacktestResults({
   portfolioResult,
@@ -175,6 +306,12 @@ function PortfolioBacktestResults({
 
   // Stock names mapping: code -> name
   const [stockNames, setStockNames] = useState<Record<string, string>>({});
+
+  // Composition pie chart state - for portfolio
+  const [portfolioCompositionData, setPortfolioCompositionData] = useState<Array<{ name: string; value: number; color: string }>>([]);
+
+  // Composition pie chart state - for single stock
+  const [singleCompositionData, setSingleCompositionData] = useState<Array<{ name: string; value: number; color: string }>>([]);
 
   // Calculate drawdown data
   const drawdownData = useMemo(() => {
@@ -398,6 +535,11 @@ function PortfolioBacktestResults({
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
+      },
+      localization: {
+        priceFormatter: (price: number) => {
+          return price.toExponential(2);
+        },
       },
       rightPriceScale: {
         borderColor: '#d1d4dc',
@@ -725,18 +867,55 @@ function PortfolioBacktestResults({
     };
   }, [filteredStockCandles, stockTradeMarkers, selectedTab]);
 
-  // Colors for stacked areas - bright solid colors
+  // Colors for stacked areas - vibrant bright colors
   const areaColors = [
-    { line: '#a78bfa', top: '#a78bfa', bottom: '#a78bfa' }, // Bright Purple
-    { line: '#60a5fa', top: '#60a5fa', bottom: '#60a5fa' }, // Bright Blue
-    { line: '#34d399', top: '#34d399', bottom: '#34d399' }, // Bright Green
-    { line: '#fbbf24', top: '#fbbf24', bottom: '#fbbf24' }, // Bright Yellow/Orange
-    { line: '#f87171', top: '#f87171', bottom: '#f87171' }, // Bright Red
-    { line: '#22d3ee', top: '#22d3ee', bottom: '#22d3ee' }, // Bright Cyan
-    { line: '#f472b6', top: '#f472b6', bottom: '#f472b6' }, // Bright Pink
-    { line: '#2dd4bf', top: '#2dd4bf', bottom: '#2dd4bf' }, // Bright Teal
+    { line: '#c084fc', top: '#c084fc', bottom: '#c084fc' }, // Vibrant Purple (purple-400)
+    { line: '#60a5fa', top: '#60a5fa', bottom: '#60a5fa' }, // Vibrant Blue (blue-400)
+    { line: '#4ade80', top: '#4ade80', bottom: '#4ade80' }, // Vibrant Green (green-400)
+    { line: '#fbbf24', top: '#fbbf24', bottom: '#fbbf24' }, // Vibrant Amber (amber-400)
+    { line: '#fb7185', top: '#fb7185', bottom: '#fb7185' }, // Vibrant Rose (rose-400)
+    { line: '#2dd4bf', top: '#2dd4bf', bottom: '#2dd4bf' }, // Vibrant Teal (teal-400)
+    { line: '#f472b6', top: '#f472b6', bottom: '#f472b6' }, // Vibrant Pink (pink-400)
+    { line: '#38bdf8', top: '#38bdf8', bottom: '#38bdf8' }, // Vibrant Sky (sky-400)
   ];
-  const cashColor = { line: '#d1d5db', top: '#d1d5db', bottom: '#d1d5db' }; // Light Gray for cash
+  const cashColor = { line: '#e5e7eb', top: '#e5e7eb', bottom: '#e5e7eb' }; // Light Gray for cash (gray-200)
+
+  // Initialize pie chart data separately to ensure it's always available
+  useEffect(() => {
+    if (!portfolioResult.equityCurve || portfolioResult.equityCurve.length === 0) {
+      return;
+    }
+
+    const symbols = portfolioResult.symbols || [];
+    const lastPoint = portfolioResult.equityCurve[portfolioResult.equityCurve.length - 1];
+    const stockValues = (lastPoint as any).stock_values || {};
+    const cash = lastPoint.cash || 0;
+
+    const initialCompositionData: Array<{ name: string; value: number; color: string }> = [];
+
+    symbols.forEach((symbol, idx) => {
+      const value = stockValues[symbol] || 0;
+      const displayName = stockNames[symbol] ? `${stockNames[symbol]} (${symbol})` : symbol;
+      initialCompositionData.push({
+        name: displayName,
+        value: value,
+        color: areaColors[idx % areaColors.length].line,
+      });
+    });
+
+    initialCompositionData.push({
+      name: 'Cash',
+      value: cash,
+      color: cashColor.line,
+    });
+
+    const total = initialCompositionData.reduce((sum, item) => sum + item.value, 0);
+    console.log('[Portfolio Pie Chart] Backend data:', initialCompositionData);
+    console.log('[Portfolio Pie Chart] Total:', total, 'Expected:', lastPoint.value);
+    console.log('[Portfolio Pie Chart] Match:', Math.abs(total - lastPoint.value) < 0.01 ? 'YES ✓' : 'NO ✗');
+
+    setPortfolioCompositionData(initialCompositionData);
+  }, [portfolioResult.equityCurve, portfolioResult.symbols, stockNames]);
 
   // Initialize stacked area chart for portfolio composition
   useEffect(() => {
@@ -787,8 +966,10 @@ function PortfolioBacktestResults({
           top: 0.1,
           bottom: 0,
         },
-        autoScale: true,
+        autoScale: false,  // Disable auto scale to enforce minimum at 0
         mode: 0, // Normal price scale mode
+        entireTextOnly: false,
+        minimumVisibleRange: 0,
       },
       localization: {
         priceFormatter: (price: number) => {
@@ -909,8 +1090,70 @@ function PortfolioBacktestResults({
       value: 0,
     })));
 
+    // Calculate max value for the portfolio chart
+    const maxPortfolioValue = Math.max(...portfolioResult.equityCurve.map(p => p.value || 0));
+
+    // Force the price scale to always show from 0 to max value
+    setTimeout(() => {
+      try {
+        chart.priceScale('right').applyOptions({
+          scaleMargins: {
+            top: 0.1,
+            bottom: 0,
+          },
+          autoScale: false,
+        });
+        // Set visible range from 0 to max
+        chart.priceScale('right').setVisibleRange({
+          from: 0,
+          to: maxPortfolioValue * 1.1,
+        });
+      } catch (e) {
+        console.warn('Could not set visible range for portfolio chart:', e);
+      }
+    }, 0);
+
     stackedChartApiRef.current = chart;
     stackedChartInitializedRef.current = true;
+
+    // Subscribe to crosshair move to update pie chart
+    chart.subscribeCrosshairMove((param) => {
+      if (!param || !param.time) {
+        // When not hovering, data will remain at latest (set in separate useEffect)
+        return;
+      }
+
+      // Find the closest data point
+      const timestamp = param.time as number;
+      const dateStr = new Date(timestamp * 1000).toISOString().split('T')[0];
+
+      // Find equity point for this date
+      const equityPoint = portfolioResult.equityCurve.find(p => p.date === dateStr);
+      if (!equityPoint) return;
+
+      const stockValues = (equityPoint as any).stock_values || {};
+      const cash = equityPoint.cash || 0;
+
+      const compositionData: Array<{ name: string; value: number; color: string }> = [];
+
+      symbols.forEach((symbol, idx) => {
+        const value = stockValues[symbol] || 0;
+        const displayName = stockNames[symbol] ? `${stockNames[symbol]} (${symbol})` : symbol;
+        compositionData.push({
+          name: displayName,
+          value: value,
+          color: areaColors[idx % areaColors.length].line,
+        });
+      });
+
+      compositionData.push({
+        name: 'Cash',
+        value: cash,
+        color: cashColor.line,
+      });
+
+      setPortfolioCompositionData(compositionData);
+    });
 
     const handleResize = () => {
       if (stackedChartRef.current && chart && !(chart as any)._disposed) {
@@ -926,7 +1169,7 @@ function PortfolioBacktestResults({
     return () => {
       window.removeEventListener('resize', handleResize);
     };
-  }, [portfolioResult.perSymbolEquityCurves, portfolioResult.equityCurve, portfolioResult.symbols, selectedTab]);
+  }, [portfolioResult.perSymbolEquityCurves, portfolioResult.equityCurve, portfolioResult.symbols, selectedTab, stockNames]);
 
   const formatNumber = (value: number, decimals: number = 2): string => {
     if (value >= 1000000) {
@@ -1028,11 +1271,29 @@ function PortfolioBacktestResults({
           <div className="text-2xl font-bold text-blue-900">
             RMB {formatNumber(portfolioResult.metrics.initialValue)}
           </div>
+          {/* Tooltip */}
+          <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-64">
+            <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
+              <div className="font-semibold mb-1">Initial Capital</div>
+              <div>Starting cash available for trading at the beginning of the backtest period.</div>
+              {/* Arrow */}
+              <div className="absolute top-full left-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+            </div>
+          </div>
         </div>
         <div className="relative group bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200 cursor-help">
           <div className="text-xs text-gray-600 mb-1">Final Value</div>
           <div className="text-2xl font-bold text-purple-900">
             RMB {formatNumber(portfolioResult.metrics.finalValue)}
+          </div>
+          {/* Tooltip */}
+          <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-64">
+            <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
+              <div className="font-semibold mb-1">Final Value</div>
+              <div>Total portfolio value (cash + stock holdings) at the end of the backtest period.</div>
+              {/* Arrow */}
+              <div className="absolute top-full left-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+            </div>
           </div>
         </div>
         <div className={`relative group p-4 rounded-lg border cursor-help bg-gradient-to-br ${
@@ -1049,6 +1310,16 @@ function PortfolioBacktestResults({
           <div className="text-xs text-gray-600 mt-1">
             RMB {formatNumber(Math.abs(portfolioResult.metrics.totalReturn))}
           </div>
+          {/* Tooltip */}
+          <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-64">
+            <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
+              <div className="font-semibold mb-1">Total Return</div>
+              <div className="mb-1">Calculation: (Final Value - Initial Capital) / Initial Capital × 100%</div>
+              <div>Measures the overall profit or loss as a percentage of your starting capital.</div>
+              {/* Arrow */}
+              <div className="absolute top-full left-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+            </div>
+          </div>
         </div>
         <div className="relative group bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-lg border border-orange-200 cursor-help">
           <div className="text-xs text-gray-600 mb-1">Total Trades</div>
@@ -1058,6 +1329,15 @@ function PortfolioBacktestResults({
           <div className="text-xs text-gray-600 mt-1">
             {portfolioResult.metrics.wonTrades || 0}W / {portfolioResult.metrics.lostTrades || 0}L
           </div>
+          {/* Tooltip */}
+          <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-64">
+            <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
+              <div className="font-semibold mb-1">Total Trades</div>
+              <div>Number of completed buy-sell pairs (round trips). A winning trade has sell price {'>'} buy price, losing trade has sell price ≤ buy price.</div>
+              {/* Arrow */}
+              <div className="absolute top-full left-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+            </div>
+          </div>
         </div>
         <div className="relative group bg-gradient-to-br from-teal-50 to-teal-100 p-4 rounded-lg border border-teal-200 cursor-help">
           <div className="text-xs text-gray-600 mb-1">Stocks</div>
@@ -1066,6 +1346,15 @@ function PortfolioBacktestResults({
           </div>
           <div className="text-xs text-gray-600 mt-1">
             Portfolio
+          </div>
+          {/* Tooltip */}
+          <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-64">
+            <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
+              <div className="font-semibold mb-1">Stocks</div>
+              <div>Number of different stocks in the portfolio backtest.</div>
+              {/* Arrow */}
+              <div className="absolute top-full left-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-gray-900"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -1135,27 +1424,44 @@ function PortfolioBacktestResults({
               <span className="text-blue-600">📊</span> Portfolio Composition Over Time
             </h3>
             <div className="bg-white p-4 rounded-lg border shadow-sm">
-              <div ref={stackedChartRef} />
+              <div className="flex gap-4">
+                {/* Chart Section */}
+                <div className="flex-1">
+                  <div ref={stackedChartRef} />
 
-              {/* Legend Panel - Below Chart */}
-              <div className="mt-4 pt-4 border-t">
-                <div className="text-sm font-semibold mb-3 text-gray-700">Legend (Top to Bottom)</div>
-                <div className="flex flex-wrap gap-4">
-                  {/* Stocks (from top to bottom) */}
-                  {(portfolioResult.symbols || []).map((symbol, idx) => (
-                    <div key={symbol} className="flex items-center gap-2">
-                      <div className="w-4 h-4 rounded" style={{ backgroundColor: areaColors[idx % areaColors.length].line }}></div>
-                      <span className="text-sm text-gray-700">{symbol}</span>
+                  {/* Legend Panel - Below Chart */}
+                  <div className="mt-4 pt-4 border-t">
+                    <div className="text-sm font-semibold mb-3 text-gray-700">Legend (Top to Bottom)</div>
+                    <div className="flex flex-wrap gap-4">
+                      {/* Stocks (from top to bottom) */}
+                      {(portfolioResult.symbols || []).map((symbol, idx) => (
+                        <div key={symbol} className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded" style={{ backgroundColor: areaColors[idx % areaColors.length].line }}></div>
+                          <span className="text-sm text-gray-700">{symbol}</span>
+                        </div>
+                      ))}
+                      {/* Cash (bottom) */}
+                      <div className="flex items-center gap-2">
+                        <div className="w-4 h-4 rounded" style={{ backgroundColor: cashColor.line }}></div>
+                        <span className="text-sm text-gray-700">Cash</span>
+                      </div>
                     </div>
-                  ))}
-                  {/* Cash (bottom) */}
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 rounded" style={{ backgroundColor: cashColor.line }}></div>
-                    <span className="text-sm text-gray-700">Cash</span>
+                    <div className="mt-3 text-xs text-gray-500">
+                      Each colored area shows the value of that component. The gap between two lines represents one component's value.
+                    </div>
                   </div>
                 </div>
-                <div className="mt-3 text-xs text-gray-500">
-                  Each colored area shows the value of that component. The gap between two lines represents one component's value.
+
+                {/* Composition Pie Chart - Beside Chart */}
+                <div className="flex-shrink-0 w-64 flex flex-col justify-center border-l pl-4">
+                  <div className="text-sm font-semibold mb-3 text-gray-700 text-center">
+                    Portfolio Composition {hoveredTime ? '(Hover Point)' : '(Latest)'}
+                  </div>
+                  {portfolioCompositionData.length > 0 ? (
+                    <PieChart data={portfolioCompositionData} size={240} />
+                  ) : (
+                    <div className="text-xs text-gray-500 text-center">Loading composition data...</div>
+                  )}
                 </div>
               </div>
             </div>
@@ -2288,6 +2594,34 @@ export default function BacktestResults({
     }
   }, [equityCurve]);
 
+  // Initialize pie chart data separately to ensure it's always available
+  useEffect(() => {
+    if (!equityCurve || equityCurve.length === 0) {
+      return;
+    }
+
+    const lastPoint = equityCurve[equityCurve.length - 1];
+    const initialCompositionData: Array<{ name: string; value: number; color: string }> = [];
+
+    const stockValue = (lastPoint.stock_value || 0);
+    const cashValue = (lastPoint.cash || 0);
+
+    initialCompositionData.push({
+      name: 'Stock Value',
+      value: stockValue,
+      color: '#60a5fa', // Blue for stock
+    });
+
+    initialCompositionData.push({
+      name: 'Cash',
+      value: cashValue,
+      color: '#e5e7eb', // Light gray for cash
+    });
+
+    console.log('[Single Stock Pie Chart] Initializing with data:', initialCompositionData);
+    setSingleCompositionData(initialCompositionData);
+  }, [equityCurve]);
+
   // Initialize stacked area chart for portfolio composition
   useEffect(() => {
     if (!stackedChartRef.current || !equityCurve || equityCurve.length === 0 || selectedTab !== 'metrics') {
@@ -2336,8 +2670,10 @@ export default function BacktestResults({
           top: 0.1,
           bottom: 0,
         },
-        autoScale: true,
+        autoScale: false,  // Disable auto scale to enforce minimum at 0
         mode: 0,
+        entireTextOnly: false,
+        minimumVisibleRange: 0,
       },
       localization: {
         priceFormatter: (price: number) => {
@@ -2351,7 +2687,7 @@ export default function BacktestResults({
 
     // Colors for stacked areas
     const stockColor = { line: '#60a5fa', top: '#60a5fa', bottom: '#60a5fa' }; // Bright Blue for stock
-    const cashColor = { line: '#d1d5db', top: '#d1d5db', bottom: '#d1d5db' }; // Light Gray for cash
+    const cashColor = { line: '#e5e7eb', top: '#e5e7eb', bottom: '#e5e7eb' }; // Light Gray for cash (brighter gray-200)
 
     // Create layers: total (top), cash (bottom)
     const layers = [];
@@ -2407,8 +2743,65 @@ export default function BacktestResults({
       value: 0,
     })));
 
+    // Calculate max value for the single stock chart
+    const maxSingleValue = Math.max(...equityCurve.map(p => p.value || 0));
+
+    // Force the price scale to always show from 0 to max value
+    setTimeout(() => {
+      try {
+        chart.priceScale('right').applyOptions({
+          scaleMargins: {
+            top: 0.1,
+            bottom: 0,
+          },
+          autoScale: false,
+        });
+        // Set visible range from 0 to max
+        chart.priceScale('right').setVisibleRange({
+          from: 0,
+          to: maxSingleValue * 1.1,
+        });
+      } catch (e) {
+        console.warn('Could not set visible range for single stock chart:', e);
+      }
+    }, 0);
+
     stackedChartApiRef.current = chart;
     stackedChartInitializedRef.current = true;
+
+    // Subscribe to crosshair move to update pie chart
+    chart.subscribeCrosshairMove((param) => {
+      if (!param || !param.time) {
+        // When not hovering, data will remain at latest (set in separate useEffect)
+        return;
+      }
+
+      // Find the closest data point
+      const timestamp = param.time as number;
+      const date = new Date(timestamp * 1000).toISOString().split('T')[0];
+      const dataPoint = equityCurve.find(p => p.date === date);
+
+      if (dataPoint) {
+        const compositionData: Array<{ name: string; value: number; color: string }> = [];
+
+        const stockVal = (dataPoint.stock_value || 0);
+        const cashVal = (dataPoint.cash || 0);
+
+        compositionData.push({
+          name: 'Stock Value',
+          value: stockVal,
+          color: '#60a5fa', // Blue for stock
+        });
+
+        compositionData.push({
+          name: 'Cash',
+          value: cashVal,
+          color: '#e5e7eb', // Light gray for cash
+        });
+
+        setSingleCompositionData(compositionData);
+      }
+    });
 
     const handleResize = () => {
       if (stackedChartRef.current && chart && !(chart as any)._disposed) {
@@ -3143,25 +3536,42 @@ export default function BacktestResults({
             <span className="text-blue-600">📊</span> Portfolio Composition Over Time
           </h3>
           <div className="bg-white p-4 rounded-lg border shadow-sm">
-            <div ref={stackedChartRef} />
+            <div className="flex gap-4">
+              {/* Chart Section */}
+              <div className="flex-1">
+                <div ref={stackedChartRef} />
 
-            {/* Legend Panel - Below Chart */}
-            <div className="mt-4 pt-4 border-t">
-              <div className="text-sm font-semibold mb-3 text-gray-700">Legend (Top to Bottom)</div>
-              <div className="flex flex-wrap gap-4">
-                {/* Stock */}
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#60a5fa' }}></div>
-                  <span className="text-sm text-gray-700">Stock Value</span>
-                </div>
-                {/* Cash */}
-                <div className="flex items-center gap-2">
-                  <div className="w-4 h-4 rounded" style={{ backgroundColor: '#d1d5db' }}></div>
-                  <span className="text-sm text-gray-700">Cash</span>
+                {/* Legend Panel - Below Chart */}
+                <div className="mt-4 pt-4 border-t">
+                  <div className="text-sm font-semibold mb-3 text-gray-700">Legend (Top to Bottom)</div>
+                  <div className="flex flex-wrap gap-4">
+                    {/* Stock */}
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded" style={{ backgroundColor: '#60a5fa' }}></div>
+                      <span className="text-sm text-gray-700">Stock Value</span>
+                    </div>
+                    {/* Cash */}
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded" style={{ backgroundColor: '#e5e7eb' }}></div>
+                      <span className="text-sm text-gray-700">Cash</span>
+                    </div>
+                  </div>
+                  <div className="mt-3 text-xs text-gray-500">
+                    Each colored area shows the value of that component. The gap between the top line and cash line represents the stock value.
+                  </div>
                 </div>
               </div>
-              <div className="mt-3 text-xs text-gray-500">
-                Each colored area shows the value of that component. The gap between the top line and cash line represents the stock value.
+
+              {/* Composition Pie Chart - Beside Chart */}
+              <div className="flex-shrink-0 w-64 flex flex-col justify-center border-l pl-4">
+                <div className="text-sm font-semibold mb-3 text-gray-700 text-center">
+                  Portfolio Composition {hoveredTime ? '(Hover Point)' : '(Latest)'}
+                </div>
+                {singleCompositionData.length > 0 ? (
+                  <PieChart data={singleCompositionData} size={240} />
+                ) : (
+                  <div className="text-xs text-gray-500 text-center">Loading composition data...</div>
+                )}
               </div>
             </div>
           </div>

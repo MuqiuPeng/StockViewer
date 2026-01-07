@@ -374,7 +374,7 @@ export default function IndicatorEditorModal({
         onClick={onClose}
       />
 
-      <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+      <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-6xl max-h-[90vh] overflow-y-auto">
         <h2 className="text-xl font-bold mb-4">
           {indicator ? 'Edit Indicator' : 'Create New Indicator'}
         </h2>
