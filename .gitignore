@@ -44,8 +44,23 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# data
-/data
+# data - ignore user-generated data but keep Python code and directory structure
+/data/csv/*
+!/data/csv/.gitkeep
+
+/data/indicators/*.json
+/data/strategies/*.json
+/data/groups/*.json
+/data/backtest-history/*.json
+
+/data/datasets/*
+!/data/datasets/.gitkeep
+
+# Keep Python code files
+!/data/python/
+/data/python/__pycache__/
+/data/python/*.pyc
+/data/python/*.pyo
 
 # logs
 /logs

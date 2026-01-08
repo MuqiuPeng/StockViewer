@@ -22,6 +22,12 @@ export async function executePythonIndicator(
   return new Promise((resolve, reject) => {
     const pythonScript = path.join(process.cwd(), 'data', 'python', 'executor.py');
 
+    // Check if executor.py exists
+    if (!existsSync(pythonScript)) {
+      reject(new Error(`Python script not found: ${pythonScript}. Current directory: ${process.cwd()}`));
+      return;
+    }
+
     // Get Python executable - prioritize env config, then local venv
     let pythonExecutable: string;
 
@@ -38,11 +44,16 @@ export async function executePythonIndicator(
 
       if (existsSync(venvPython)) {
         pythonExecutable = venvPython;
+        console.log('[Python Executor] Using venv Python:', venvPython);
       } else {
         // Fall back to python3
         pythonExecutable = 'python3';
+        console.log('[Python Executor] venv not found, using system python3');
       }
     }
+
+    console.log('[Python Executor] Executing with:', pythonExecutable);
+    console.log('[Python Executor] Script:', pythonScript);
 
     // Spawn Python process
     const pythonProcess = spawn(pythonExecutable, [pythonScript], {
@@ -62,7 +73,11 @@ export async function executePythonIndicator(
 
     pythonProcess.on('close', (code) => {
       if (code !== 0 && code !== 1) {
-        reject(new Error(`Python process exited with code ${code}: ${stderr}`));
+        const errorMsg = stderr || 'No error output';
+        console.error('[Python Executor] Process exited with code:', code);
+        console.error('[Python Executor] stderr:', errorMsg);
+        console.error('[Python Executor] stdout:', stdout);
+        reject(new Error(`Python process exited with code ${code}. Error: ${errorMsg}`));
         return;
       }
 
@@ -70,12 +85,17 @@ export async function executePythonIndicator(
         const result: PythonExecutionResult = JSON.parse(stdout);
         resolve(result);
       } catch (error) {
-        reject(new Error(`Failed to parse Python output: ${stdout}`));
+        console.error('[Python Executor] Failed to parse output:', stdout);
+        console.error('[Python Executor] stderr:', stderr);
+        reject(new Error(`Failed to parse Python output. stdout: ${stdout.substring(0, 200)}, stderr: ${stderr.substring(0, 200)}`));
       }
     });
 
     pythonProcess.on('error', (error) => {
-      reject(new Error(`Failed to spawn Python process: ${error.message}`));
+      console.error('[Python Executor] Failed to spawn process:', error);
+      console.error('[Python Executor] Attempted to use:', pythonExecutable);
+      console.error('[Python Executor] Script path:', pythonScript);
+      reject(new Error(`Failed to spawn Python process: ${error.message}. Python executable: ${pythonExecutable}, Script: ${pythonScript}`));
     });
 
     // Send input data to Python via stdin
