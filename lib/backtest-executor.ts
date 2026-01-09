@@ -13,6 +13,7 @@ export interface BacktestInput {
   commission?: number;
   parameters?: Record<string, any>;
   constraints?: PortfolioConstraints;          // NEW: Portfolio constraints
+  externalDatasets?: Record<string, { groupId: string; datasetName: string }>;  // External datasets configuration
 }
 
 export interface BacktestResult {

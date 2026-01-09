@@ -7,12 +7,14 @@ interface BacktestHistoryDetailModalProps {
   entry: BacktestHistoryEntry | null;
   onClose: () => void;
   onRerun: (entry: BacktestHistoryEntry) => void;
+  onViewResults: (entry: BacktestHistoryEntry) => void;
 }
 
 export default function BacktestHistoryDetailModal({
   entry,
   onClose,
   onRerun,
+  onViewResults,
 }: BacktestHistoryDetailModalProps) {
   const [notes, setNotes] = useState('');
   const [tags, setTags] = useState<string[]>([]);
@@ -65,9 +67,17 @@ export default function BacktestHistoryDetailModal({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-lg w-[600px] max-h-[80vh] overflow-y-auto shadow-xl">
         <div className="p-6">
-          <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">
-            Backtest Details
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+              Backtest Details
+            </h2>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-2xl"
+            >
+              ✕
+            </button>
+          </div>
 
           {/* Summary */}
           <div className="mb-4 pb-4 border-b border-gray-200 dark:border-gray-700">
@@ -198,12 +208,20 @@ export default function BacktestHistoryDetailModal({
 
           {/* Actions */}
           <div className="flex justify-between">
-            <button
-              onClick={() => onRerun(entry)}
-              className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
-            >
-              Re-run Backtest
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={() => onViewResults(entry)}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                📊 View Results
+              </button>
+              <button
+                onClick={() => onRerun(entry)}
+                className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+              >
+                🔄 Re-run Backtest
+              </button>
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={onClose}

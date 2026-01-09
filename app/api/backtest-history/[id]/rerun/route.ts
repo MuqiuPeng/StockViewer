@@ -49,6 +49,34 @@ async function loadDataset(datasetIdentifier: string) {
   return dataset;
 }
 
+// Helper function to filter dataset by date range
+function filterDatasetByDateRange(
+  dataset: Record<string, any>[],
+  startDate?: string,
+  endDate?: string
+): Record<string, any>[] {
+  if (!startDate && !endDate) {
+    return dataset;
+  }
+
+  const filtered = dataset.filter((row) => {
+    const rowDate = row.date || row['日期'];
+    if (!rowDate) return true;
+
+    const normalizedDate = rowDate.split(' ')[0];
+
+    if (startDate && normalizedDate < startDate) return false;
+    if (endDate && normalizedDate > endDate) return false;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    throw new Error(`No data found between ${startDate || 'start'} and ${endDate || 'end'}`);
+  }
+
+  return filtered;
+}
+
 // POST /api/backtest-history/[id]/rerun - Re-run a backtest with original parameters
 export async function POST(
   request: Request,
@@ -83,10 +111,11 @@ export async function POST(
     if (target.type === 'single' && target.datasetName) {
       // Single stock backtest
       const dataset = await loadDataset(target.datasetName);
+      const filteredDataset = filterDatasetByDateRange(dataset, parameters.startDate, parameters.endDate);
 
       const result = await executeBacktest({
         strategyCode: strategy.pythonCode,
-        data: dataset,
+        data: filteredDataset,
         strategyType: 'single',
         initialCash: parameters.initialCash,
         commission: parameters.commission,
@@ -121,7 +150,8 @@ export async function POST(
       for (const symbol of target.symbols) {
         try {
           const dataset = await loadDataset(symbol);
-          dataMap[symbol] = dataset;
+          const filteredDataset = filterDatasetByDateRange(dataset, parameters.startDate, parameters.endDate);
+          dataMap[symbol] = filteredDataset;
         } catch (error) {
           loadErrors.push(`${symbol}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
@@ -187,10 +217,11 @@ export async function POST(
       for (const datasetName of group.datasetNames) {
         try {
           const dataset = await loadDataset(datasetName);
+          const filteredDataset = filterDatasetByDateRange(dataset, parameters.startDate, parameters.endDate);
 
           const result = await executeBacktest({
             strategyCode: strategy.pythonCode,
-            data: dataset,
+            data: filteredDataset,
             strategyType: 'single',
             initialCash: parameters.initialCash,
             commission: parameters.commission,
@@ -203,7 +234,7 @@ export async function POST(
               metrics: result.metrics,
               equityCurve: result.equityCurve,
               tradeMarkers: result.tradeMarkers,
-              dataPoints: dataset.length,
+              dataPoints: filteredDataset.length,
             });
           } else {
             errors.push({

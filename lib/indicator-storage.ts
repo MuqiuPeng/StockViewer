@@ -16,6 +16,9 @@ export interface Indicator {
   isGroup?: boolean;              // true for MyTT group indicators
   groupName?: string;             // e.g., "MACD" (same as outputColumn for groups)
   expectedOutputs?: string[];     // e.g., ["DIF", "DEA", "MACD"]
+
+  // External datasets to include in parameters
+  externalDatasets?: Record<string, { groupId: string; datasetName: string }>;
 }
 
 interface IndicatorsFile {

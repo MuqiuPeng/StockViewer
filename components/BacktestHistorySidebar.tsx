@@ -7,12 +7,14 @@ interface BacktestHistorySidebarProps {
   isOpen: boolean;
   onClose: () => void;
   onSelectEntry: (entry: BacktestHistoryEntry) => void;
+  onViewResults: (entry: BacktestHistoryEntry) => void;
 }
 
 export default function BacktestHistorySidebar({
   isOpen,
   onClose,
   onSelectEntry,
+  onViewResults,
 }: BacktestHistorySidebarProps) {
   const [entries, setEntries] = useState<BacktestHistoryEntry[]>([]);
   const [filter, setFilter] = useState({ starred: false, search: '' });
@@ -143,12 +145,20 @@ export default function BacktestHistorySidebar({
           <h2 className="text-lg font-semibold text-white">
             Backtest History
           </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-200"
-          >
-            ✕
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="px-3 py-1.5 text-sm bg-gray-700 text-white rounded hover:bg-gray-600"
+            >
+              ← Close
+            </button>
+            <button
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-200 text-xl"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {/* Batch Mode Toggle */}
@@ -313,21 +323,33 @@ export default function BacktestHistorySidebar({
 
                 {/* Actions - Hide in batch mode */}
                 {!batchMode && (
-                  <div className="flex gap-2 ml-2">
+                  <div className="flex flex-col gap-1 ml-2">
                     <button
-                      onClick={(e) => handleStar(entry.id, !entry.starred, e)}
-                      className="text-yellow-500 hover:text-yellow-600"
-                      title={entry.starred ? 'Unstar' : 'Star'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onViewResults(entry);
+                      }}
+                      className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                      title="View stored results"
                     >
-                      {entry.starred ? '★' : '☆'}
+                      📊 View
                     </button>
-                    <button
-                      onClick={(e) => handleDelete(entry.id, e)}
-                      className="text-red-500 hover:text-red-600"
-                      title="Delete"
-                    >
-                      🗑
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={(e) => handleStar(entry.id, !entry.starred, e)}
+                        className="text-yellow-500 hover:text-yellow-600"
+                        title={entry.starred ? 'Unstar' : 'Star'}
+                      >
+                        {entry.starred ? '★' : '☆'}
+                      </button>
+                      <button
+                        onClick={(e) => handleDelete(entry.id, e)}
+                        className="text-red-500 hover:text-red-600"
+                        title="Delete"
+                      >
+                        🗑
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>

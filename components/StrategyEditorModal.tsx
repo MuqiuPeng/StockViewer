@@ -15,6 +15,7 @@ interface Strategy {
     reserveCash?: number;
   };
   parameters?: Record<string, any>;
+  externalDatasets?: Record<string, { groupId: string; datasetName: string }>;
 }
 
 interface StrategyEditorModalProps {
@@ -214,10 +215,28 @@ export default function StrategyEditorModal({
     positionSizing: 'equal' as 'equal' | 'custom',
     reserveCash: 10,
   });
+  const [externalDatasets, setExternalDatasets] = useState<Record<string, { groupId: string; datasetName: string }>>({});
+  const [groups, setGroups] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(false);
   const [validationSuccess, setValidationSuccess] = useState<string | null>(null);
+
+  // Load groups on mount
+  useEffect(() => {
+    if (isOpen) {
+      fetch('/api/groups')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.groups) {
+            setGroups(data.groups);
+          }
+        })
+        .catch((err) => {
+          console.error('Failed to load groups:', err);
+        });
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (strategy) {
@@ -230,6 +249,7 @@ export default function StrategyEditorModal({
         positionSizing: strategy.constraints?.positionSizing ?? 'equal',
         reserveCash: strategy.constraints?.reserveCash ?? 10,
       });
+      setExternalDatasets(strategy.externalDatasets || {});
     } else {
       setName('');
       setDescription('');
@@ -240,6 +260,7 @@ export default function StrategyEditorModal({
         positionSizing: 'equal',
         reserveCash: 10,
       });
+      setExternalDatasets({});
     }
     setError(null);
     setValidationSuccess(null);
@@ -307,6 +328,13 @@ export default function StrategyEditorModal({
       const url = strategy ? `/api/strategies/${strategy.id}` : '/api/strategies';
       const method = strategy ? 'PUT' : 'POST';
 
+      // Filter out incomplete external datasets
+      const validExternalDatasets = Object.fromEntries(
+        Object.entries(externalDatasets).filter(
+          ([_, dataset]) => dataset.groupId && dataset.datasetName
+        )
+      );
+
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -316,6 +344,7 @@ export default function StrategyEditorModal({
           pythonCode,
           strategyType,
           constraints: strategyType === 'portfolio' ? constraints : undefined,
+          externalDatasets: Object.keys(validExternalDatasets).length > 0 ? validExternalDatasets : undefined,
         }),
       });
 
@@ -420,6 +449,207 @@ export default function StrategyEditorModal({
               rows={3}
               required
             />
+          </div>
+
+          {/* External Datasets Selector */}
+          <div className="border rounded p-4 bg-gray-50">
+            <h3 className="font-medium mb-2">External Datasets (Optional)</h3>
+            <p className="text-xs text-gray-500 mb-3">
+              Include additional datasets (e.g., market indices, reference stocks) in your strategy.
+            </p>
+
+            {/* Help Box */}
+            <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded">
+              <div className="flex items-start justify-between mb-1">
+                <div className="text-xs font-medium text-blue-800">💡 How to use:</div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const template = strategyType === 'portfolio'
+                      ? `def calculate(data_map, parameters):
+    """
+    Strategy using external dataset.
+
+    Args:
+        data_map: Dict[str, pd.DataFrame] - {symbol: OHLC data}
+        parameters: Dict containing external datasets
+
+    Returns:
+        List of signals
+    """
+    import pandas as pd
+
+    # Access external dataset (e.g., market index)
+    # Replace 'index' with your parameter name
+    index_data = parameters.get('index')
+
+    if index_data is not None:
+        # Example: Use index data for market timing
+        # Merge with first symbol to check market conditions
+        first_symbol = list(data_map.keys())[0]
+        stock_data = data_map[first_symbol]
+
+        # Merge on date
+        merged = stock_data.merge(
+            index_data[['date', 'close']],
+            on='date',
+            how='left',
+            suffixes=('', '_index')
+        )
+
+        # Your strategy logic here...
+
+    signals = []
+    # Add your trading logic here
+
+    return signals`
+                      : `def calculate(data, parameters):
+    """
+    Strategy using external dataset.
+
+    Args:
+        data: pandas DataFrame with OHLC data
+        parameters: Dict containing external datasets
+
+    Returns:
+        List of signals
+    """
+    import pandas as pd
+
+    # Access external dataset (e.g., market index)
+    # Replace 'index' with your parameter name
+    index_data = parameters.get('index')
+
+    signals = []
+
+    if index_data is not None:
+        # Merge with main data on date
+        merged = data.merge(
+            index_data[['date', 'close']],
+            on='date',
+            how='left',
+            suffixes=('', '_index')
+        )
+
+        # Calculate relative strength
+        merged['relative_strength'] = merged['close'] / merged['close_index']
+
+        # Example: Buy when stock outperforms index
+        for i in range(20, len(merged)):
+            if merged['relative_strength'].iloc[i] > 1.05:
+                signals.append({
+                    'date': merged['date'].iloc[i],
+                    'type': 'v',
+                    'amount': 10000,
+                    'execution': 'close'
+                })
+
+    return signals`;
+                    setPythonCode(template);
+                  }}
+                  className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  📝 Insert Template
+                </button>
+              </div>
+              <div className="text-xs text-blue-700 space-y-1">
+                <div>1. Click &quot;+ Add External Dataset&quot; below</div>
+                <div>2. Choose a parameter name (e.g., <code className="bg-blue-100 px-1">index</code>)</div>
+                <div>3. Select group and dataset</div>
+                <div>4. Click &quot;Insert Template&quot; to see example code</div>
+              </div>
+            </div>
+
+            {Object.entries(externalDatasets).map(([paramName, dataset]) => {
+              const selectedGroup = groups.find(g => g.id === dataset.groupId);
+              return (
+                <div key={paramName} className="mb-3 p-3 border rounded bg-white">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-sm font-medium">Parameter Name:</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const updated = { ...externalDatasets };
+                        delete updated[paramName];
+                        setExternalDatasets(updated);
+                      }}
+                      className="text-red-500 hover:text-red-700 text-sm"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                  <input
+                    type="text"
+                    value={paramName}
+                    onChange={(e) => {
+                      const newName = e.target.value;
+                      if (newName && newName !== paramName) {
+                        const updated = { ...externalDatasets };
+                        updated[newName] = updated[paramName];
+                        delete updated[paramName];
+                        setExternalDatasets(updated);
+                      }
+                    }}
+                    className="w-full px-2 py-1 border rounded text-sm mb-2"
+                    placeholder="e.g., index_data"
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-xs text-gray-600">Group:</label>
+                      <select
+                        value={dataset.groupId}
+                        onChange={(e) => {
+                          setExternalDatasets({
+                            ...externalDatasets,
+                            [paramName]: { ...dataset, groupId: e.target.value, datasetName: '' }
+                          });
+                        }}
+                        className="w-full px-2 py-1 border rounded text-sm"
+                      >
+                        <option value="">Select group</option>
+                        {groups.map((g) => (
+                          <option key={g.id} value={g.id}>{g.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-600">Dataset:</label>
+                      <select
+                        value={dataset.datasetName}
+                        onChange={(e) => {
+                          setExternalDatasets({
+                            ...externalDatasets,
+                            [paramName]: { ...dataset, datasetName: e.target.value }
+                          });
+                        }}
+                        className="w-full px-2 py-1 border rounded text-sm"
+                        disabled={!dataset.groupId}
+                      >
+                        <option value="">Select dataset</option>
+                        {selectedGroup?.datasetNames.map((ds: string) => (
+                          <option key={ds} value={ds}>{ds}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            <button
+              type="button"
+              onClick={() => {
+                const newName = `dataset_${Object.keys(externalDatasets).length + 1}`;
+                setExternalDatasets({
+                  ...externalDatasets,
+                  [newName]: { groupId: '', datasetName: '' }
+                });
+              }}
+              className="mt-2 px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+              title="Add an external dataset to use in your strategy. Access it via parameters['your_parameter_name'] in your code. Example: index_data = parameters['index']"
+            >
+              + Add External Dataset
+            </button>
           </div>
 
           {strategyType === 'portfolio' && (

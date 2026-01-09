@@ -11,6 +11,7 @@ export interface Strategy {
   strategyType: 'single' | 'portfolio';  // NEW: Strategy type
   constraints?: PortfolioConstraints;     // NEW: Portfolio constraints (only for portfolio type)
   parameters?: Record<string, any>;      // Configurable parameters
+  externalDatasets?: Record<string, { groupId: string; datasetName: string }>;  // External datasets to include in parameters
   createdAt: string;
   updatedAt?: string;
 }

@@ -22,6 +22,165 @@ except ImportError as e:
 
 from datetime import datetime
 from typing import List, Dict, Any
+import os
+
+
+# Global cache for loaded datasets to avoid repeated file I/O
+_dataset_cache = {}
+_group_cache = {}
+
+
+def load_group_definition(group_name: str) -> dict:
+    """
+    Load a group definition from groups.json.
+
+    Args:
+        group_name: Name of the group to load
+
+    Returns:
+        Group definition dictionary
+    """
+    # Check cache first
+    if group_name in _group_cache:
+        return _group_cache[group_name]
+
+    # Load groups.json
+    groups_file = os.path.join(os.getcwd(), 'data', 'groups', 'groups.json')
+
+    if not os.path.exists(groups_file):
+        raise FileNotFoundError(f"Groups file not found: {groups_file}")
+
+    with open(groups_file, 'r', encoding='utf-8') as f:
+        groups_data = json.load(f)
+
+    # Find the group by name
+    for group in groups_data.get('groups', []):
+        if group['name'] == group_name:
+            _group_cache[group_name] = group
+            return group
+
+    raise ValueError(f"Group '{group_name}' not found in groups.json")
+
+
+def load_dataset_from_group(group_name: str, dataset_identifier: str) -> pd.DataFrame:
+    """
+    Load a dataset that belongs to a specific group.
+
+    Args:
+        group_name: Name of the group the dataset belongs to
+        dataset_identifier: Dataset name within the group (stock code or filename)
+
+    Returns:
+        DataFrame with the loaded data
+    """
+    # Create cache key
+    cache_key = f"{group_name}:{dataset_identifier}"
+
+    # Check cache first
+    if cache_key in _dataset_cache:
+        return _dataset_cache[cache_key].copy()
+
+    # Load group definition
+    group = load_group_definition(group_name)
+
+    # Find the dataset in the group
+    dataset_name = None
+    for ds_name in group.get('datasetNames', []):
+        # Match by stock code or full filename
+        ds_code = ds_name.replace('.csv', '').split('_')[0]
+        if ds_code == dataset_identifier or ds_name == dataset_identifier or ds_name.replace('.csv', '') == dataset_identifier:
+            dataset_name = ds_name
+            break
+
+    if not dataset_name:
+        raise ValueError(
+            f"Dataset '{dataset_identifier}' not found in group '{group_name}'. "
+            f"Available datasets: {', '.join(group.get('datasetNames', []))}"
+        )
+
+    # Construct file path
+    csv_dir = os.path.join(os.getcwd(), 'data', 'csv')
+    file_path = os.path.join(csv_dir, dataset_name)
+
+    if not os.path.exists(file_path):
+        raise FileNotFoundError(f"Dataset file not found: {file_path}")
+
+    # Load CSV
+    df = pd.read_csv(file_path)
+
+    # Parse date column
+    if 'date' in df.columns:
+        df['date'] = pd.to_datetime(df['date'])
+    elif '日期' in df.columns:
+        df['date'] = pd.to_datetime(df['日期'])
+        df = df.drop('日期', axis=1)
+
+    # Cache it
+    _dataset_cache[cache_key] = df.copy()
+
+    return df
+
+
+def load_external_datasets(external_datasets_config: dict) -> dict:
+    """
+    Load external datasets based on configuration.
+
+    Args:
+        external_datasets_config: Dict mapping parameter names to dataset configs
+                                   Format: {param_name: {groupId: str, datasetName: str}}
+
+    Returns:
+        Dict mapping parameter names to DataFrames
+
+    Example:
+        config = {'index_data': {'groupId': 'group-123', 'datasetName': '000001.csv'}}
+        result = load_external_datasets(config)
+        # result = {'index_data': DataFrame(...)}
+    """
+    if not external_datasets_config:
+        return {}
+
+    result = {}
+
+    # First, load groups.json to resolve group IDs to group names
+    groups_file = os.path.join(os.getcwd(), 'data', 'groups', 'groups.json')
+    if not os.path.exists(groups_file):
+        print(f"WARNING: groups.json not found, skipping external datasets", file=sys.stderr)
+        return {}
+
+    with open(groups_file, 'r', encoding='utf-8') as f:
+        groups_data = json.load(f)
+
+    # Create mapping from group ID to group name
+    group_id_to_name = {}
+    for group in groups_data.get('groups', []):
+        group_id_to_name[group['id']] = group['name']
+
+    # Load each external dataset
+    for param_name, dataset_config in external_datasets_config.items():
+        try:
+            group_id = dataset_config.get('groupId')
+            dataset_name = dataset_config.get('datasetName')
+
+            if not group_id or not dataset_name:
+                print(f"WARNING: Skipping incomplete external dataset config for '{param_name}'", file=sys.stderr)
+                continue
+
+            # Resolve group ID to group name
+            group_name = group_id_to_name.get(group_id)
+            if not group_name:
+                print(f"WARNING: Group ID '{group_id}' not found for parameter '{param_name}'", file=sys.stderr)
+                continue
+
+            # Load the dataset
+            df = load_dataset_from_group(group_name, dataset_name)
+            result[param_name] = df
+
+        except Exception as e:
+            print(f"WARNING: Failed to load external dataset '{param_name}': {e}", file=sys.stderr)
+            continue
+
+    return result
 
 
 def manual_backtest(df: pd.DataFrame, signals: List[Dict], initial_cash: float, commission: float) -> Dict[str, Any]:
@@ -850,6 +1009,13 @@ def main():
         commission = input_data.get('commission', 0.001)
         parameters = input_data.get('parameters', {})
         constraints = input_data.get('constraints', {})
+
+        # Load external datasets and add them to parameters
+        external_datasets_config = input_data.get('externalDatasets', {})
+        if external_datasets_config:
+            external_datasets = load_external_datasets(external_datasets_config)
+            # Add external datasets to parameters so they're accessible via parameters['param_name']
+            parameters.update(external_datasets)
 
         # Check if this is a portfolio backtest
         is_portfolio = strategy_type == 'portfolio' or 'dataMap' in input_data

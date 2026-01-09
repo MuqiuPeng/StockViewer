@@ -8,6 +8,7 @@ import { executePythonIndicator } from '@/lib/python-executor';
 import { addIndicatorColumn, addIndicatorGroupColumns } from '@/lib/csv-updater';
 import { topologicalSort } from '@/lib/indicator-dependencies';
 import { API_CONFIG } from '@/lib/env';
+import { getDataSourceConfig } from '@/lib/data-sources';
 import Papa from 'papaparse';
 
 export const runtime = 'nodejs';
@@ -24,17 +25,18 @@ const COLUMN_MAPPING: Record<string, string> = {
   '振幅': 'amplitude',
   '涨跌幅': 'change_pct',
   '涨跌额': 'change_amount',
-  '换手率': 'turnover_rate'
+  '换手率': 'turnover_rate',
+  '最新价': 'close',  // For some data sources
+  '涨跌额': 'change_amount',
+  '涨跌幅': 'change_pct',
+  '代码': 'code',
+  '名称': 'name'
 };
 
 interface RequestBody {
   symbol: string;
   dataSource?: string;
-}
-
-function validateStockSymbol(symbol: string): boolean {
-  // Chinese A-share stocks are 6 digits
-  return /^\d{6}$/.test(symbol);
+  customParams?: Record<string, any>;
 }
 
 function getDateRange(): { startDate: string; endDate: string } {
@@ -53,32 +55,69 @@ function getDateRange(): { startDate: string; endDate: string } {
   };
 }
 
+/**
+ * Build API URL based on data source configuration
+ */
+function buildApiUrl(
+  dataSourceId: string,
+  symbol: string,
+  params: Record<string, any>
+): string {
+  const config = getDataSourceConfig(dataSourceId);
+  if (!config) {
+    throw new Error(`Unknown data source: ${dataSourceId}`);
+  }
+
+  // Merge default params with custom params
+  const allParams = { ...config.defaultParams, ...params, symbol };
+
+  // Build query string
+  const queryParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(allParams)) {
+    if (value !== undefined && value !== null) {
+      queryParams.append(key, String(value));
+    }
+  }
+
+  return `${API_CONFIG.AKTOOLS_URL}/api/public/${config.apiEndpoint}?${queryParams.toString()}`;
+}
+
 export async function POST(request: Request) {
   try {
     const body: RequestBody = await request.json();
-    const { symbol, dataSource = 'stock_zh_a_hist' } = body;
+    const { symbol, dataSource = 'stock_zh_a_hist', customParams = {} } = body;
 
     // Validate symbol
-    if (!symbol || !validateStockSymbol(symbol)) {
+    if (!symbol) {
       return NextResponse.json(
-        { error: 'Invalid stock symbol', message: 'Stock symbol must be 6 digits' },
+        { error: 'Invalid symbol', message: 'Symbol is required' },
         { status: 400 }
       );
     }
 
-    // Get date range
-    const { startDate, endDate } = getDateRange();
-
-    // Fetch data from local API based on data source
-    let apiUrl: string;
-    if (dataSource === 'stock_zh_a_hist') {
-      apiUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/stock_zh_a_hist?symbol=${symbol}&start_date=${startDate}&end_date=${endDate}&adjust=qfq`;
-    } else {
+    // Get data source config
+    const config = getDataSourceConfig(dataSource);
+    if (!config) {
       return NextResponse.json(
         { error: 'Invalid data source', message: `Unknown data source: ${dataSource}` },
         { status: 400 }
       );
     }
+
+    // Get date range if needed
+    const { startDate, endDate } = getDateRange();
+    const params: Record<string, any> = { ...customParams };
+
+    // Add date range if required by the data source
+    if (config.requiredParams.includes('start_date')) {
+      params.start_date = params.start_date || startDate;
+    }
+    if (config.requiredParams.includes('end_date')) {
+      params.end_date = params.end_date || endDate;
+    }
+
+    // Build API URL
+    const apiUrl = buildApiUrl(dataSource, symbol, params);
 
     const response = await fetch(apiUrl);
     if (!response.ok) {
@@ -196,22 +235,34 @@ export async function POST(request: Request) {
     // Get dataset info (after indicators have been applied)
     const datasetInfo = await getDatasetInfo(filename);
 
-    // Fetch stock name from stock info API
+    // Fetch name for the symbol based on data source
     let stockName = symbol; // Default to symbol if API fails
-    try {
-      const infoApiUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/stock_individual_info_em?symbol=${symbol}`;
-      const infoResponse = await fetch(infoApiUrl);
-      if (infoResponse.ok) {
-        const infoData = await infoResponse.json();
-        // Find the item with "股票简称" (Stock Short Name)
-        const nameItem = infoData.find((item: any) => item.item === '股票简称');
-        if (nameItem && nameItem.value) {
-          stockName = nameItem.value;
-          console.log(`Fetched stock name for ${symbol}: ${stockName}`);
+
+    // Try to get name from stock info API (for A-shares only)
+    if (dataSource.startsWith('stock_zh_a_')) {
+      try {
+        const infoApiUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/stock_individual_info_em?symbol=${symbol}`;
+        const infoResponse = await fetch(infoApiUrl);
+        if (infoResponse.ok) {
+          const infoData = await infoResponse.json();
+          // Find the item with "股票简称" (Stock Short Name)
+          const nameItem = infoData.find((item: any) => item.item === '股票简称');
+          if (nameItem && nameItem.value) {
+            stockName = nameItem.value;
+            console.log(`Fetched stock name for ${symbol}: ${stockName}`);
+          }
         }
+      } catch (err) {
+        console.warn(`Failed to fetch stock name for ${symbol}, using symbol as name:`, err);
       }
-    } catch (err) {
-      console.warn(`Failed to fetch stock name for ${symbol}, using symbol as name:`, err);
+    }
+
+    // For other data sources, check if the data itself contains a name field
+    if (stockName === symbol && transformedData.length > 0) {
+      const firstRow = transformedData[0];
+      if (firstRow.name) {
+        stockName = firstRow.name;
+      }
     }
 
     // Register dataset in metadata

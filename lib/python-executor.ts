@@ -7,6 +7,7 @@ export interface PythonExecutionInput {
   code: string;
   data: Record<string, any>[];
   isGroup?: boolean;  // NEW: indicates group mode for MyTT indicators
+  externalDatasets?: Record<string, { groupId: string; datasetName: string }>;  // External datasets configuration
 }
 
 export interface PythonExecutionResult {

@@ -163,6 +163,7 @@ export async function POST(request: Request) {
         initialCash: initialCash || 100000,
         commission: commission || 0.001,
         parameters: parameters || strategy.parameters || {},
+        externalDatasets: strategy.externalDatasets,
       });
       const executionTime = Date.now() - startTime;
 
@@ -276,6 +277,7 @@ export async function POST(request: Request) {
         commission: commission || 0.001,
         parameters: parameters || strategy.parameters || {},
         constraints: strategy.constraints,
+        externalDatasets: strategy.externalDatasets,
       });
       const executionTime = Date.now() - startTime;
 
@@ -368,6 +370,7 @@ export async function POST(request: Request) {
             initialCash: initialCash || 100000,
             commission: commission || 0.001,
             parameters: parameters || strategy.parameters || {},
+            externalDatasets: strategy.externalDatasets,
           });
           const stockExecutionTime = Date.now() - stockStartTime;
 

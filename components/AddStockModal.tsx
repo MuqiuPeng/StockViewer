@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { DATA_SOURCES, getDataSourceConfig, getDataSourceCategories } from '@/lib/data-sources';
 
 interface AddStockModalProps {
   isOpen: boolean;
@@ -22,15 +23,15 @@ export default function AddStockModal({ isOpen, onClose, onSuccess }: AddStockMo
   const [results, setResults] = useState<AddResult[]>([]);
   const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
 
-  // Available data sources
-  const dataSources = [
-    { value: 'stock_zh_a_hist', label: 'stock_zh_a_hist' }
-  ];
-
   if (!isOpen) return null;
 
+  // Get the current data source config
+  const currentConfig = getDataSourceConfig(dataSource);
+
   const validateSymbol = (symbol: string): boolean => {
-    return /^\d{6}$/.test(symbol);
+    // Basic validation - just check if not empty
+    // Specific format validation will happen on the server
+    return symbol.trim().length > 0;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -149,29 +150,38 @@ export default function AddStockModal({ isOpen, onClose, onSuccess }: AddStockMo
               className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               disabled={isLoading}
             >
-              {dataSources.map((ds) => (
-                <option key={ds.value} value={ds.value}>
-                  {ds.label}
-                </option>
+              {getDataSourceCategories().map((category) => (
+                <optgroup key={category} label={category}>
+                  {DATA_SOURCES.filter(ds => ds.category === category).map((ds) => (
+                    <option key={ds.id} value={ds.id}>
+                      {ds.name}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
+            {currentConfig && (
+              <p className="text-xs text-gray-600 mt-1">
+                {currentConfig.description}
+              </p>
+            )}
           </div>
 
           <div className="mb-4">
             <label htmlFor="stock-symbol" className="block text-sm font-medium mb-2">
-              Stock Symbol(s)
+              Symbol(s)
             </label>
             <input
               id="stock-symbol"
               type="text"
               value={stockSymbol}
               onChange={(e) => setStockSymbol(e.target.value)}
-              placeholder="e.g., 000001 or 000001, 000002, 600000"
+              placeholder={currentConfig?.exampleSymbol ? `e.g., ${currentConfig.exampleSymbol}` : 'Enter symbol'}
               className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               disabled={isLoading}
             />
             <p className="text-xs text-gray-500 mt-1">
-              Enter 6-digit stock code(s). Separate multiple stocks with commas. All historical data will be fetched.
+              {currentConfig?.symbolFormat || 'Enter symbol(s)'}. Separate multiple symbols with commas. All historical data will be fetched.
             </p>
           </div>
 

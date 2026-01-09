@@ -77,6 +77,7 @@ export async function POST(request: Request) {
           code: indicator.pythonCode,
           data: dataRecords,
           isGroup: indicator.isGroup || false,
+          externalDatasets: indicator.externalDatasets,
         });
 
         if (!executionResult.success) {

@@ -82,6 +82,36 @@ export default function BacktestPage() {
     datasetName?: string;
   } | null>(null);
 
+  const handleViewResults = async (entry: BacktestHistoryEntry) => {
+    // Close the detail modal
+    setSelectedHistoryEntry(null);
+
+    // Display the stored result directly
+    setBacktestResults(entry.result);
+
+    // Load dataset for single stock backtests (for chart display)
+    if (entry.target.type === 'single' && entry.target.datasetName) {
+      const datasetApiName = entry.target.datasetName.replace(/\.csv$/i, '');
+      const datasetRes = await fetch(`/api/dataset/${encodeURIComponent(datasetApiName)}`);
+      const datasetResult = await datasetRes.json();
+      if (!datasetResult.error) {
+        setDatasetData(datasetResult);
+      }
+    } else {
+      setDatasetData(null);
+    }
+
+    // Set strategy and params for display
+    const strategy = strategies.find(s => s.id === entry.strategyId);
+    setSelectedStrategy(strategy || null);
+    setBacktestParams({
+      initialCash: entry.parameters.initialCash,
+      commission: entry.parameters.commission,
+      parameters: entry.parameters.strategyParameters || {},
+      datasetName: entry.target.type === 'single' ? entry.target.datasetName : undefined,
+    });
+  };
+
   const handleRerunBacktest = async (entry: BacktestHistoryEntry) => {
     setSelectedHistoryEntry(null);
     setIsBacktestLoading(true);
@@ -361,6 +391,10 @@ export default function BacktestPage() {
           setSelectedHistoryEntry(entry);
           setIsHistorySidebarOpen(false);
         }}
+        onViewResults={(entry) => {
+          handleViewResults(entry);
+          setIsHistorySidebarOpen(false);
+        }}
       />
 
       {/* History Detail Modal */}
@@ -368,6 +402,7 @@ export default function BacktestPage() {
         entry={selectedHistoryEntry}
         onClose={() => setSelectedHistoryEntry(null)}
         onRerun={handleRerunBacktest}
+        onViewResults={handleViewResults}
       />
     </div>
   );
