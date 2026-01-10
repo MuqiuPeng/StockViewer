@@ -15,6 +15,14 @@ export interface PythonExecutionResult {
   values?: (number | null)[] | Record<string, (number | null)[]>;  // Single array OR dict for groups
   error?: string;
   type?: string;
+  details?: {
+    message?: string;
+    type?: string;
+    code_line?: string;
+    hints?: string[];
+    traceback?: string;
+    warnings?: string[];
+  };
 }
 
 export async function executePythonIndicator(

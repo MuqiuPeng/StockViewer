@@ -5,13 +5,19 @@ import {
   updateGroup,
   deleteGroup,
   getGroupById,
+  syncDataSourceGroups,
 } from '@/lib/group-storage';
+import { loadMetadata } from '@/lib/dataset-metadata';
 
 export const runtime = 'nodejs';
 
 // GET /api/groups - List all groups
 export async function GET() {
   try {
+    // Sync data source groups before returning
+    const datasets = await loadMetadata();
+    await syncDataSourceGroups(datasets);
+
     const groups = await loadGroups();
     return NextResponse.json({ groups });
   } catch (error) {
@@ -62,6 +68,15 @@ export async function PUT(request: Request) {
       return NextResponse.json(
         { error: 'Invalid input', message: 'id is required' },
         { status: 400 }
+      );
+    }
+
+    // Check if this is a data source group (auto-generated, cannot be edited)
+    const existingGroup = await getGroupById(id);
+    if (existingGroup?.isDataSource) {
+      return NextResponse.json(
+        { error: 'Cannot edit data source group', message: 'Data source groups are auto-generated and cannot be modified' },
+        { status: 403 }
       );
     }
 
@@ -116,6 +131,15 @@ export async function DELETE(request: Request) {
       return NextResponse.json(
         { error: 'Invalid input', message: 'id is required' },
         { status: 400 }
+      );
+    }
+
+    // Check if this is a data source group (auto-generated, cannot be deleted)
+    const existingGroup = await getGroupById(id);
+    if (existingGroup?.isDataSource) {
+      return NextResponse.json(
+        { error: 'Cannot delete data source group', message: 'Data source groups are auto-generated and cannot be deleted' },
+        { status: 403 }
       );
     }
 

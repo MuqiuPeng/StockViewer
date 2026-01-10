@@ -35,7 +35,7 @@ interface BacktestPanelProps {
   metrics: BacktestMetrics;
   equityCurve: EquityPoint[];
   tradeMarkers: TradeMarker[];
-  candles: Array<{ time: number; open: number; high: number; low: number; close: number }>;
+  candles: Array<{ time: string; open: number; high: number; low: number; close: number }>; // YYYY-MM-DD format
   isOpen: boolean;
   onClose: () => void;
 }

@@ -1,13 +1,21 @@
 import { NextResponse } from 'next/server';
 import { getCsvFileStats } from '@/lib/datasets';
 import { unlink } from 'fs/promises';
-import { loadMetadata } from '@/lib/dataset-metadata';
+import { loadMetadata, migrateDatasetIds } from '@/lib/dataset-metadata';
 
 export const runtime = 'nodejs';
 
 export async function GET() {
   try {
-    const datasets = await loadMetadata();
+    let datasets = await loadMetadata();
+
+    // Auto-migration: If any dataset is missing ID, run migration
+    if (datasets.length > 0 && !datasets[0].id) {
+      console.log('Datasets missing IDs, running migration...');
+      await migrateDatasetIds();
+      datasets = await loadMetadata();
+    }
+
     return NextResponse.json(datasets);
   } catch (error) {
     console.error('Error listing datasets:', error);
@@ -22,17 +30,21 @@ export async function GET() {
 export async function DELETE(request: Request) {
   try {
     const body = await request.json();
-    const { name } = body;
+    const { identifier, name } = body; // Accept both identifier (new) and name (legacy)
 
-    if (!name) {
+    const lookupValue = identifier || name;
+    if (!lookupValue) {
       return NextResponse.json(
-        { error: 'Missing required field', message: 'name is required' },
+        { error: 'Missing required field', message: 'identifier or name is required' },
         { status: 400 }
       );
     }
 
-    const fileStats = await getCsvFileStats(name);
-    if (!fileStats.exists) {
+    // Find dataset by ID (or name/filename for backward compatibility)
+    const { findDataset, removeDataset } = await import('@/lib/dataset-metadata');
+    const dataset = await findDataset(lookupValue);
+
+    if (!dataset) {
       return NextResponse.json(
         { error: 'Dataset not found' },
         { status: 404 }
@@ -40,13 +52,15 @@ export async function DELETE(request: Request) {
     }
 
     // Delete CSV file
-    await unlink(fileStats.path);
+    const fileStats = await getCsvFileStats(dataset.filename);
+    if (fileStats.exists) {
+      await unlink(fileStats.path);
+    }
 
     // Remove from metadata
-    const { removeDataset } = await import('@/lib/dataset-metadata');
-    await removeDataset(name);
+    await removeDataset(dataset.filename);
 
-    return NextResponse.json({ success: true, message: `Dataset ${name} deleted successfully` });
+    return NextResponse.json({ success: true, message: `Dataset ${dataset.name} deleted successfully` });
   } catch (error) {
     console.error('Error deleting dataset:', error);
     return NextResponse.json(

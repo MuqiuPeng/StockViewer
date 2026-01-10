@@ -3,13 +3,15 @@
 import { useState, useEffect, useMemo } from 'react';
 import ChartPanel from './ChartPanel';
 import IndicatorSelector from './IndicatorSelector';
-import AddStockModal from './AddStockModal';
+import AddDatasetModal from './AddDatasetModal';
 import IndicatorManager from './IndicatorManager';
 import DataPanel from './DataPanel';
 import { API_CONFIG } from '@/lib/env';
+import { getDataSourceConfig } from '@/lib/data-sources';
 import Link from 'next/link';
 
 interface DatasetInfo {
+  id: string;
   name: string;
   code: string;
   filename: string;
@@ -19,8 +21,15 @@ interface DatasetInfo {
   dataSource?: string;
 }
 
+// Helper function to format dataset display name
+function formatDatasetDisplay(dataset: DatasetInfo): string {
+  const sourceConfig = getDataSourceConfig(dataset.dataSource || 'stock_zh_a_hist');
+  const sourceName = sourceConfig?.name || dataset.dataSource;
+  return `${dataset.code} - ${sourceName}`;
+}
+
 interface CandleData {
-  time: number;
+  time: string; // YYYY-MM-DD format
   open: number;
   high: number;
   low: number;
@@ -28,7 +37,7 @@ interface CandleData {
 }
 
 interface IndicatorData {
-  time: number;
+  time: string; // YYYY-MM-DD format
   value: number | null;
 }
 
@@ -63,14 +72,14 @@ export default function StockViewer() {
   const [enabledIndicators2, setEnabledIndicators2] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isAddStockModalOpen, setIsAddStockModalOpen] = useState(false);
+  const [isAddDatasetModalOpen, setIsAddDatasetModalOpen] = useState(false);
   const [isIndicatorManagerOpen, setIsIndicatorManagerOpen] = useState(false);
   const [isOutdated, setIsOutdated] = useState(false);
   const [lastDataDate, setLastDataDate] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [definedIndicators, setDefinedIndicators] = useState<string[]>([]);
   const [indicatorGroups, setIndicatorGroups] = useState<Set<string>>(new Set());
-  const [crosshairTime, setCrosshairTime] = useState<number | null>(null);
+  const [crosshairTime, setCrosshairTime] = useState<string | null>(null);
   const [showAddToGroupModal, setShowAddToGroupModal] = useState(false);
 
   // Base indicators from API (not custom calculated)
@@ -96,22 +105,24 @@ export default function StockViewer() {
   // Get available groups (custom groups + data sources)
   const availableGroups = useMemo(() => {
     const groupList: Array<{ id: string; name: string; type: 'group' | 'datasource' }> = [];
-    
+
     // Add custom groups
     groups.forEach(group => {
       groupList.push({ id: group.id, name: group.name, type: 'group' });
     });
-    
-    // Add data sources
+
+    // Add data sources with friendly names
     const dataSources = new Set<string>();
     datasets.forEach(ds => {
       const source = ds.dataSource || 'stock_zh_a_hist';
       dataSources.add(source);
     });
     dataSources.forEach(source => {
-      groupList.push({ id: `datasource_${source}`, name: source, type: 'datasource' });
+      const sourceConfig = getDataSourceConfig(source);
+      const friendlyName = sourceConfig?.name || source;
+      groupList.push({ id: `datasource_${source}`, name: friendlyName, type: 'datasource' });
     });
-    
+
     return groupList.sort((a, b) => {
       if (a.type === 'group' && b.type === 'datasource') return -1;
       if (a.type === 'datasource' && b.type === 'group') return 1;
@@ -137,8 +148,9 @@ export default function StockViewer() {
       });
     } else {
       // Data source - filter by dataSource
-      const sourceName = group.name;
-      return datasets.filter(ds => (ds.dataSource || 'stock_zh_a_hist') === sourceName);
+      // Extract technical source name from group ID (format: "datasource_{source}")
+      const technicalSourceName = group.id.replace('datasource_', '');
+      return datasets.filter(ds => (ds.dataSource || 'stock_zh_a_hist') === technicalSourceName);
     }
   }, [selectedGroup, datasets, groups, availableGroups]);
 
@@ -153,8 +165,8 @@ export default function StockViewer() {
   useEffect(() => {
     if (filteredDatasets.length > 0) {
       // If current dataset is not in filtered list, select first one
-      if (!filteredDatasets.find(ds => ds.name === selectedDataset)) {
-        setSelectedDataset(filteredDatasets[0].name);
+      if (!filteredDatasets.find(ds => ds.id === selectedDataset)) {
+        setSelectedDataset(filteredDatasets[0].id);
       }
     } else {
       setSelectedDataset('');
@@ -163,26 +175,26 @@ export default function StockViewer() {
 
   // Navigation functions
   const handlePrevious = () => {
-    const currentIndex = filteredDatasets.findIndex(ds => ds.name === selectedDataset);
+    const currentIndex = filteredDatasets.findIndex(ds => ds.id === selectedDataset);
     if (currentIndex > 0) {
-      setSelectedDataset(filteredDatasets[currentIndex - 1].name);
+      setSelectedDataset(filteredDatasets[currentIndex - 1].id);
     } else if (filteredDatasets.length > 0) {
       // Wrap around to last
-      setSelectedDataset(filteredDatasets[filteredDatasets.length - 1].name);
+      setSelectedDataset(filteredDatasets[filteredDatasets.length - 1].id);
     }
   };
 
   const handleNext = () => {
-    const currentIndex = filteredDatasets.findIndex(ds => ds.name === selectedDataset);
+    const currentIndex = filteredDatasets.findIndex(ds => ds.id === selectedDataset);
     if (currentIndex < filteredDatasets.length - 1) {
-      setSelectedDataset(filteredDatasets[currentIndex + 1].name);
+      setSelectedDataset(filteredDatasets[currentIndex + 1].id);
     } else if (filteredDatasets.length > 0) {
       // Wrap around to first
-      setSelectedDataset(filteredDatasets[0].name);
+      setSelectedDataset(filteredDatasets[0].id);
     }
   };
 
-  const currentIndex = filteredDatasets.findIndex(ds => ds.name === selectedDataset);
+  const currentIndex = filteredDatasets.findIndex(ds => ds.id === selectedDataset);
   const canNavigate = filteredDatasets.length > 1;
 
   // Load datasets list, groups, and defined indicators on mount
@@ -262,7 +274,8 @@ export default function StockViewer() {
         // Check if data is outdated (older than 1 day)
         if (data.candles && data.candles.length > 0) {
           const lastCandle = data.candles[data.candles.length - 1];
-          const lastDate = new Date(lastCandle.time * 1000);
+          // Parse YYYY-MM-DD format
+          const lastDate = new Date(lastCandle.time + 'T00:00:00Z'); // Add time to treat as UTC
           const now = new Date();
           const daysDiff = (now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24);
 
@@ -329,7 +342,7 @@ export default function StockViewer() {
     return false;
   };
 
-  const handleAddStockSuccess = async () => {
+  const handleAddDatasetSuccess = async () => {
     // Refresh datasets list
     await refreshDatasets();
   };
@@ -360,7 +373,7 @@ export default function StockViewer() {
       const symbol = nameParts[0];
       const dataSource = nameParts.length > 1 ? nameParts.slice(1).join('_') : 'stock_zh_a_hist';
 
-      const response = await fetch('/api/add-stock', {
+      const response = await fetch('/api/add-dataset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ symbol, dataSource }),
@@ -542,8 +555,8 @@ export default function StockViewer() {
               <option value="">No datasets in this group</option>
             ) : (
               filteredDatasets.map((ds) => (
-                <option key={ds.name} value={ds.name}>
-                  {ds.name} ({ds.rowCount.toLocaleString()} rows)
+                <option key={ds.id} value={ds.id}>
+                  {formatDatasetDisplay(ds)} ({ds.rowCount.toLocaleString()} rows)
                 </option>
               ))
             )}
@@ -580,10 +593,10 @@ export default function StockViewer() {
 
         <div className="flex items-center gap-2 ml-auto">
           <button
-            onClick={() => setIsAddStockModalOpen(true)}
+            onClick={() => setIsAddDatasetModalOpen(true)}
             className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 whitespace-nowrap"
           >
-            + Add Stock
+            + Add Dataset
           </button>
           <button
             onClick={() => setIsIndicatorManagerOpen(true)}
@@ -655,10 +668,10 @@ export default function StockViewer() {
         </div>
       )}
 
-      <AddStockModal
-        isOpen={isAddStockModalOpen}
-        onClose={() => setIsAddStockModalOpen(false)}
-        onSuccess={handleAddStockSuccess}
+      <AddDatasetModal
+        isOpen={isAddDatasetModalOpen}
+        onClose={() => setIsAddDatasetModalOpen(false)}
+        onSuccess={handleAddDatasetSuccess}
       />
 
       <IndicatorManager

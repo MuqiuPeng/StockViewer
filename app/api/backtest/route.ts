@@ -171,7 +171,12 @@ export async function POST(request: Request) {
         const errorMessage = result.error || result.type || 'Unknown error';
         console.error('Backtest failed:', errorMessage);
         return NextResponse.json(
-          { error: 'Backtest failed', message: errorMessage },
+          {
+            error: 'Backtest failed',
+            message: errorMessage,
+            errorType: result.type,
+            details: result.details,
+          },
           { status: 400 }
         );
       }
@@ -285,7 +290,12 @@ export async function POST(request: Request) {
         const errorMessage = result.error || result.type || 'Unknown error';
         console.error('Portfolio backtest failed:', errorMessage);
         return NextResponse.json(
-          { error: 'Portfolio backtest failed', message: errorMessage },
+          {
+            error: 'Portfolio backtest failed',
+            message: errorMessage,
+            errorType: result.type,
+            details: result.details,
+          },
           { status: 400 }
         );
       }
@@ -387,6 +397,8 @@ export async function POST(request: Request) {
             errors.push({
               datasetName,
               error: result.error || 'Unknown error',
+              errorType: result.type,
+              details: result.details,
             });
           }
         } catch (error) {

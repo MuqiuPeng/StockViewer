@@ -8,6 +8,7 @@ export interface StockGroup {
   datasetNames: string[]; // Array of dataset filenames
   createdAt: string;
   updatedAt?: string;
+  isDataSource?: boolean; // True for auto-generated data source groups
 }
 
 const GROUPS_DIR = join(process.cwd(), 'data', 'groups');
@@ -104,6 +105,74 @@ export async function deleteGroup(id: string): Promise<boolean> {
 export async function getGroupsByDataset(datasetName: string): Promise<StockGroup[]> {
   const groups = await loadGroups();
   return groups.filter(g => g.datasetNames.includes(datasetName));
+}
+
+/**
+ * Sync data source groups to groups.json
+ * This creates/updates groups for each data source (e.g., datasource_stock_zh_a_hist)
+ */
+export async function syncDataSourceGroups(datasets: any[]): Promise<void> {
+  const groups = await loadGroups();
+
+  // Extract unique data sources from datasets
+  const dataSources = new Map<string, string[]>();
+  for (const dataset of datasets) {
+    if (dataset.dataSource) {
+      if (!dataSources.has(dataset.dataSource)) {
+        dataSources.set(dataset.dataSource, []);
+      }
+      dataSources.get(dataset.dataSource)!.push(dataset.filename);
+    }
+  }
+
+  let modified = false;
+
+  // For each data source, ensure a group exists
+  for (const [dataSource, datasetNames] of dataSources.entries()) {
+    const groupId = `datasource_${dataSource}`;
+    const existingGroup = groups.find(g => g.id === groupId);
+
+    if (existingGroup) {
+      // Update dataset names if changed
+      const sortedExisting = [...existingGroup.datasetNames].sort();
+      const sortedNew = [...datasetNames].sort();
+
+      if (JSON.stringify(sortedExisting) !== JSON.stringify(sortedNew)) {
+        existingGroup.datasetNames = datasetNames;
+        existingGroup.updatedAt = new Date().toISOString();
+        modified = true;
+      }
+    } else {
+      // Create new data source group
+      const { getDataSourceConfig } = await import('./data-sources');
+      const sourceConfig = getDataSourceConfig(dataSource);
+      const friendlyName = sourceConfig?.name || dataSource;
+
+      groups.push({
+        id: groupId,
+        name: friendlyName,
+        description: `All datasets from ${friendlyName}`,
+        datasetNames,
+        isDataSource: true,
+        createdAt: new Date().toISOString(),
+      });
+      modified = true;
+    }
+  }
+
+  // Remove data source groups for sources that no longer have datasets
+  const currentDataSources = new Set(Array.from(dataSources.keys()).map(s => `datasource_${s}`));
+  const removedGroups = groups.filter(g => g.isDataSource && !currentDataSources.has(g.id));
+
+  if (removedGroups.length > 0) {
+    const filteredGroups = groups.filter(g => !g.isDataSource || currentDataSources.has(g.id));
+    await saveGroups(filteredGroups);
+    return;
+  }
+
+  if (modified) {
+    await saveGroups(groups);
+  }
 }
 
 /**

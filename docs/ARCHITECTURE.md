@@ -82,7 +82,7 @@ StockViewer is a full-stack Next.js application with Python backend integration 
     /datasets                 # Dataset CRUD endpoints
       route.ts                # GET /api/datasets
       /[name]/route.ts        # GET /api/dataset/[name]
-    /add-stock/route.ts       # POST /api/add-stock
+    /add-stock/route.ts       # POST /api/add-dataset
     /indicators               # Indicator management
       route.ts                # GET, POST /api/indicators
       /[id]/route.ts          # GET, PUT, DELETE /api/indicators/[id]
@@ -456,7 +456,7 @@ function getPythonExecutable(): string {
 ```
 User Input (symbol)
   → AddStockModal component
-  → POST /api/add-stock
+  → POST /api/add-dataset
     → Fetch from aktools API
     → Save to CSV (/data/csv/{symbol}_{source}.csv)
     → Load all indicators (indicator-storage.ts)

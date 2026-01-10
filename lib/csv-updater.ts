@@ -1,6 +1,7 @@
 import Papa from 'papaparse';
 import { readFile, writeFile } from 'fs/promises';
 import { getCsvFileStats } from './datasets';
+import { cleanDateColumn } from './date-cleaner';
 
 export async function addIndicatorGroupColumns(
   filename: string,
@@ -62,6 +63,12 @@ export async function addIndicatorGroupColumns(
             });
           }
 
+          // Clean date column if all dates are at midnight (T00:00:00.000)
+          const datesCleaned = cleanDateColumn(rows, 'date');
+          if (datesCleaned) {
+            console.log(`Cleaned date column: stripped T00:00:00.000 from all dates`);
+          }
+
           // Generate updated CSV
           const updatedCsv = Papa.unparse(rows);
 
@@ -116,6 +123,12 @@ export async function addIndicatorColumn(
           rows.forEach((row, index) => {
             row[columnName] = values[index];
           });
+
+          // Clean date column if all dates are at midnight (T00:00:00.000)
+          const datesCleaned = cleanDateColumn(rows, 'date');
+          if (datesCleaned) {
+            console.log(`Cleaned date column: stripped T00:00:00.000 from all dates`);
+          }
 
           // Generate updated CSV
           const updatedCsv = Papa.unparse(rows);

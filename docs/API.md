@@ -120,13 +120,13 @@ GET /api/dataset/000001_stock_zh_a_hist.csv
 
 ---
 
-### POST /api/add-stock
+### POST /api/add-dataset
 
 Add a new stock or update existing stock data.
 
 **Request:**
 ```http
-POST /api/add-stock
+POST /api/add-dataset
 Content-Type: application/json
 
 {

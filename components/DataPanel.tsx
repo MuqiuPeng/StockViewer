@@ -1,7 +1,7 @@
 'use client';
 
 interface CandleData {
-  time: number;
+  time: string; // YYYY-MM-DD format
   open: number;
   high: number;
   low: number;
@@ -9,14 +9,14 @@ interface CandleData {
 }
 
 interface IndicatorData {
-  time: number;
+  time: string; // YYYY-MM-DD format
   value: number | null;
 }
 
 interface DataPanelProps {
   candles: CandleData[];
   indicators: Record<string, IndicatorData[]>;
-  crosshairTime: number | null;
+  crosshairTime: string | null;
   colorMap: Map<string, string>;
   enabledIndicators1: Set<string>;
   enabledIndicators2: Set<string>;
@@ -45,26 +45,8 @@ export default function DataPanel({
   }
 
   // Find the candle data at the crosshair time
-  // Use findIndex with exact match first, then fallback to closest match
-  let candleIndex = candles.findIndex(c => c.time === crosshairTime);
-  
-  // If no exact match, find the closest time (within 1 day tolerance)
-  if (candleIndex === -1) {
-    const tolerance = 86400; // 1 day in seconds
-    let closestIndex = -1;
-    let closestDiff = Infinity;
-    
-    candles.forEach((candle, idx) => {
-      const diff = Math.abs(candle.time - crosshairTime);
-      if (diff < closestDiff && diff <= tolerance) {
-        closestDiff = diff;
-        closestIndex = idx;
-      }
-    });
-    
-    candleIndex = closestIndex;
-  }
-  
+  const candleIndex = candles.findIndex(c => c.time === crosshairTime);
+
   if (candleIndex === -1) {
     return (
       <div className="data-panel p-3 bg-gray-50 border border-gray-200 rounded text-sm text-gray-500 h-full flex items-center justify-center">
@@ -74,7 +56,8 @@ export default function DataPanel({
   }
 
   const candle = candles[candleIndex];
-  const date = new Date(candle.time * 1000);
+  // Parse YYYY-MM-DD format
+  const date = new Date(candle.time + 'T00:00:00Z'); // Add time to treat as UTC
 
   // Get all indicator values at this time
   // Only include basic indicators and defined indicators (exclude deleted ones)
@@ -97,25 +80,9 @@ export default function DataPanel({
     if (!isAllowed) {
       continue;
     }
-    // Try exact match first, then closest match
-    let indicatorPoint = indicatorData.find(d => d.time === candleTime);
-    if (!indicatorPoint && indicatorData.length > 0) {
-      // Find closest match
-      const tolerance = 86400; // 1 day
-      let closest: IndicatorData | null = null;
-      let closestDiff = Infinity;
-      
-      indicatorData.forEach(d => {
-        const diff = Math.abs(d.time - candleTime);
-        if (diff < closestDiff && diff <= tolerance) {
-          closestDiff = diff;
-          closest = d;
-        }
-      });
-      
-      indicatorPoint = closest || undefined;
-    }
-    
+    // Find indicator data at the same time (exact match only for string dates)
+    const indicatorPoint = indicatorData.find(d => d.time === candleTime);
+
     if (indicatorPoint !== undefined) {
       indicatorValues.push({
         name: indicatorName,

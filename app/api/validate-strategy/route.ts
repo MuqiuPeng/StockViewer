@@ -267,15 +267,60 @@ except SyntaxError as e:
     print(json.dumps({
         'valid': False,
         'error': 'Syntax Error in strategy code',
-        'details': f'Line {e.lineno}: {str(e)}'
+        'details': f'Line {e.lineno}: {str(e)}',
+        'errorType': 'SyntaxError',
+        'hints': ['Check for missing colons, parentheses, or indentation errors']
     }))
     sys.exit(1)
 except Exception as e:
-    print(json.dumps({
+    error_type = type(e).__name__
+    error_msg = str(e)
+    tb = traceback.format_exc()
+
+    # Extract user code context from traceback
+    tb_lines = tb.split('\\n')
+    user_code_line = None
+    for i, line in enumerate(tb_lines):
+        if 'File "<string>"' in line:
+            if i + 1 < len(tb_lines):
+                user_code_line = tb_lines[i + 1].strip()
+            break
+
+    # Add helpful hints based on error type
+    hints = []
+    if error_type == 'KeyError':
+        hints.append('Available columns in sample data: date, open, high, low, close, volume')
+        if '@' in error_msg:
+            hints.append('External dataset columns use format "dataset_name@column_name"')
+            hints.append('Configure external datasets in strategy settings before validation')
+    elif error_type == 'AttributeError':
+        hints.append('Check that you are using correct pandas/numpy methods')
+        hints.append('Make sure variables are defined before use')
+    elif error_type == 'NameError':
+        hints.append('Check for typos in variable or function names')
+        hints.append('Available variables: data, parameters, pd, np')
+    elif error_type == 'TypeError':
+        hints.append('Check that you are using correct data types')
+        hints.append('Signals must be dictionaries with date, type, and amount fields')
+
+    result = {
         'valid': False,
-        'error': str(e),
-        'details': traceback.format_exc()
-    }))
+        'error': error_msg,
+        'errorType': error_type,
+        'details': {
+            'message': error_msg,
+            'type': error_type,
+            'traceback': tb[-1000:]  # Last 1000 chars of traceback
+        }
+    }
+
+    if user_code_line:
+        result['details']['code_line'] = user_code_line
+
+    if hints:
+        result['details']['hints'] = hints
+
+    print(json.dumps(result))
     sys.exit(1)
 `;
 

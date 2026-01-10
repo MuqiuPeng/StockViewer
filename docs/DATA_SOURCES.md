@@ -26,7 +26,7 @@ StockViewer now supports **30+ data sources** from AKShare, covering:
 ### Via API
 
 ```bash
-POST /api/add-stock
+POST /api/add-dataset
 Content-Type: application/json
 
 {
@@ -178,11 +178,13 @@ Content-Type: application/json
 - **Description**: 国外期货历史数据
 - **Symbol Format**: 合约代码 (如: CL for crude oil)
 
-## Stock List API
+## Parameter Listing APIs
 
-Get a complete list of all available stocks (including delisted ones):
+Before importing historical data, use these APIs to get available symbols/codes:
 
-### GET /api/stock-list
+### 1. GET /api/stock-list - A-Share Stock List
+
+**AKTools Functions Used:** `stock_info_a_code_name`, `stock_info_sh_delist`, `stock_info_sz_delist`
 
 **Query Parameters:**
 - `source`: 'active' | 'delisted_sh' | 'delisted_sz' | 'all' (default: 'active')
@@ -193,30 +195,136 @@ Get a complete list of all available stocks (including delisted ones):
   "success": true,
   "count": 5234,
   "stocks": [
-    {
-      "code": "000001",
-      "name": "平安银行",
-      "status": "active"
-    },
-    {
-      "code": "000002",
-      "name": "万科A",
-      "status": "active"
-    }
+    {"code": "000001", "name": "平安银行", "status": "active"},
+    {"code": "000002", "name": "万科A", "status": "active"}
   ]
 }
 ```
 
-**Example Usage:**
+**Example:**
 ```bash
-# Get all active stocks
 curl "http://localhost:3000/api/stock-list?source=active"
-
-# Get all stocks including delisted
 curl "http://localhost:3000/api/stock-list?source=all"
+```
 
-# Get only Shanghai delisted stocks
-curl "http://localhost:3000/api/stock-list?source=delisted_sh"
+### 2. GET /api/index-list - Index List
+
+**AKTools Functions Used:** `stock_zh_index_spot_em`, `stock_hk_index_spot_em`, `index_us_stock_sina`, `index_global_spot_em`
+
+**Query Parameters:**
+- `source`: 'zh' | 'hk' | 'us' | 'global' (default: 'zh')
+
+**Response:**
+```json
+{
+  "success": true,
+  "source": "zh",
+  "count": 500,
+  "indices": [
+    {"code": "000001", "name": "上证指数", "source": "zh"},
+    {"code": "399001", "name": "深证成指", "source": "zh"}
+  ]
+}
+```
+
+**Example:**
+```bash
+curl "http://localhost:3000/api/index-list?source=zh"
+curl "http://localhost:3000/api/index-list?source=hk"
+```
+
+### 3. GET /api/fund-list - Fund/ETF List
+
+**AKTools Functions Used:** `fund_etf_spot_em`, `fund_lof_spot_em`
+
+**Query Parameters:**
+- `type`: 'etf' | 'lof' | 'all' (default: 'etf')
+
+**Response:**
+```json
+{
+  "success": true,
+  "type": "etf",
+  "count": 800,
+  "funds": [
+    {"code": "510300", "name": "沪深300ETF", "type": "etf"},
+    {"code": "510500", "name": "中证500ETF", "type": "etf"}
+  ]
+}
+```
+
+**Example:**
+```bash
+curl "http://localhost:3000/api/fund-list?type=etf"
+curl "http://localhost:3000/api/fund-list?type=all"
+```
+
+### 4. GET /api/futures-list - Futures Contract List
+
+**AKTools Functions Used:** `futures_zh_spot`
+
+**Response:**
+```json
+{
+  "success": true,
+  "count": 200,
+  "futures": [
+    {"code": "RB2405", "name": "螺纹钢2405", "exchange": "SHFE"},
+    {"code": "M2405", "name": "豆粕2405", "exchange": "DCE"}
+  ],
+  "byExchange": {
+    "SHFE": [...],
+    "DCE": [...],
+    "CZCE": [...]
+  }
+}
+```
+
+**Example:**
+```bash
+curl "http://localhost:3000/api/futures-list"
+```
+
+### 5. GET /api/hk-stock-list - Hong Kong Stock List
+
+**AKTools Functions Used:** `stock_hk_spot_em`
+
+**Response:**
+```json
+{
+  "success": true,
+  "count": 2800,
+  "stocks": [
+    {"code": "00700", "name": "腾讯控股"},
+    {"code": "09988", "name": "阿里巴巴-SW"}
+  ]
+}
+```
+
+**Example:**
+```bash
+curl "http://localhost:3000/api/hk-stock-list"
+```
+
+### 6. GET /api/us-stock-list - US Stock List
+
+**AKTools Functions Used:** `stock_us_spot_em`
+
+**Response:**
+```json
+{
+  "success": true,
+  "count": 8000,
+  "stocks": [
+    {"code": "AAPL", "name": "苹果"},
+    {"code": "MSFT", "name": "微软"}
+  ]
+}
+```
+
+**Example:**
+```bash
+curl "http://localhost:3000/api/us-stock-list"
 ```
 
 ## Data Source Configuration
@@ -257,6 +365,38 @@ To add a new data source:
 ```
 
 3. The UI will automatically show the new data source in the dropdown
+
+## How It Works
+
+All data is fetched through the **AKTools API** running locally at `http://127.0.0.1:8080`.
+
+### AKTools API Pattern
+
+Any AKShare function can be called via:
+```
+GET http://127.0.0.1:8080/api/public/{function_name}?{param1}={value1}&{param2}={value2}
+```
+
+**Examples:**
+```bash
+# Get A-share stock list
+curl "http://127.0.0.1:8080/api/public/stock_info_a_code_name"
+
+# Get historical data for stock 000001
+curl "http://127.0.0.1:8080/api/public/stock_zh_a_hist?symbol=000001&start_date=20230101&end_date=20231231&adjust=qfq"
+
+# Get Chinese index list
+curl "http://127.0.0.1:8080/api/public/stock_zh_index_spot_em"
+
+# Get ETF list
+curl "http://127.0.0.1:8080/api/public/fund_etf_spot_em"
+```
+
+StockViewer wraps these calls in convenient API endpoints that handle:
+- Column name mapping (Chinese → English)
+- Data transformation and validation
+- Automatic indicator application
+- Dataset registration
 
 ## Technical Details
 

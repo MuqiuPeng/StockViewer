@@ -41,7 +41,7 @@ export async function PUT(
 ) {
   try {
     const body = await request.json();
-    const { name, description, pythonCode, outputColumn, isGroup, groupName, expectedOutputs } = body;
+    const { name, description, pythonCode, outputColumn, isGroup, groupName, expectedOutputs, externalDatasets } = body;
 
     // Validate Python code if provided
     if (pythonCode) {
@@ -91,6 +91,7 @@ export async function PUT(
     if (expectedOutputs !== undefined) {
       updates.expectedOutputs = expectedOutputs.filter((output: string) => output.trim() !== '');
     }
+    if (externalDatasets !== undefined) updates.externalDatasets = externalDatasets;
 
     // Re-detect dependencies if Python code is being updated
     if (pythonCode !== undefined) {

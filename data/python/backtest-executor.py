@@ -6,6 +6,7 @@ Reads JSON from stdin, executes strategy, outputs backtest results to stdout.
 import sys
 import json
 import traceback
+import warnings
 
 # Check for required dependencies
 try:
@@ -121,32 +122,35 @@ def load_dataset_from_group(group_name: str, dataset_identifier: str) -> pd.Data
     return df
 
 
-def load_external_datasets(external_datasets_config: dict) -> dict:
+def load_and_merge_external_datasets(main_df: pd.DataFrame, external_datasets_config: dict) -> pd.DataFrame:
     """
-    Load external datasets based on configuration.
+    Load external datasets and LEFT JOIN them with the main dataset on date.
+    Columns from external datasets are renamed to {param_name}@{column_name}.
 
     Args:
+        main_df: Main DataFrame with date index
         external_datasets_config: Dict mapping parameter names to dataset configs
                                    Format: {param_name: {groupId: str, datasetName: str}}
 
     Returns:
-        Dict mapping parameter names to DataFrames
+        DataFrame with external datasets merged in
 
     Example:
-        config = {'index_data': {'groupId': 'group-123', 'datasetName': '000001.csv'}}
-        result = load_external_datasets(config)
-        # result = {'index_data': DataFrame(...)}
+        config = {'index': {'groupId': 'datasource_index_zh_a_hist', 'datasetName': '000001.csv'}}
+        result = load_and_merge_external_datasets(main_df, config)
+        # result has columns like: date, open, close, index@open, index@close, ...
     """
     if not external_datasets_config:
-        return {}
+        return main_df
 
-    result = {}
+    # Create a copy to avoid modifying the original
+    result_df = main_df.copy()
 
     # First, load groups.json to resolve group IDs to group names
     groups_file = os.path.join(os.getcwd(), 'data', 'groups', 'groups.json')
     if not os.path.exists(groups_file):
-        print(f"WARNING: groups.json not found, skipping external datasets", file=sys.stderr)
-        return {}
+        warnings.warn(f"groups.json not found, skipping external datasets")
+        return result_df
 
     with open(groups_file, 'r', encoding='utf-8') as f:
         groups_data = json.load(f)
@@ -156,31 +160,68 @@ def load_external_datasets(external_datasets_config: dict) -> dict:
     for group in groups_data.get('groups', []):
         group_id_to_name[group['id']] = group['name']
 
-    # Load each external dataset
+    # Load and merge each external dataset
     for param_name, dataset_config in external_datasets_config.items():
         try:
             group_id = dataset_config.get('groupId')
             dataset_name = dataset_config.get('datasetName')
 
             if not group_id or not dataset_name:
-                print(f"WARNING: Skipping incomplete external dataset config for '{param_name}'", file=sys.stderr)
+                warnings.warn(f"Skipping incomplete external dataset config for '{param_name}'")
                 continue
 
-            # Resolve group ID to group name
-            group_name = group_id_to_name.get(group_id)
-            if not group_name:
-                print(f"WARNING: Group ID '{group_id}' not found for parameter '{param_name}'", file=sys.stderr)
+            # Load the external dataset
+            ext_df = None
+            if group_id.startswith('datasource_'):
+                # Data source group - load directly from CSV file
+                csv_path = os.path.join(os.getcwd(), 'data', 'csv', dataset_name)
+                if not os.path.exists(csv_path):
+                    warnings.warn(f"Dataset file not found: {csv_path}")
+                    continue
+
+                ext_df = pd.read_csv(csv_path)
+            else:
+                # Custom group - resolve group ID to group name
+                group_name = group_id_to_name.get(group_id)
+                if not group_name:
+                    warnings.warn(f"Group ID '{group_id}' not found for parameter '{param_name}'")
+                    continue
+
+                # Load the dataset from group
+                ext_df = load_dataset_from_group(group_name, dataset_name)
+
+            if ext_df is None or ext_df.empty:
+                warnings.warn(f"External dataset '{param_name}' is empty, skipping")
                 continue
 
-            # Load the dataset
-            df = load_dataset_from_group(group_name, dataset_name)
-            result[param_name] = df
+            # Prepare external dataset for merging
+            if 'date' in ext_df.columns:
+                ext_df['date'] = pd.to_datetime(ext_df['date'])
+                ext_df.set_index('date', drop=True, inplace=True)
+
+            # Normalize date indices to date-only (remove time component) for reliable matching
+            # This ensures dates in different formats (e.g., "2024-01-01" vs "2024-01-01 00:00:00") match correctly
+            if isinstance(result_df.index, pd.DatetimeIndex):
+                result_df.index = result_df.index.normalize()
+            if isinstance(ext_df.index, pd.DatetimeIndex):
+                ext_df.index = ext_df.index.normalize()
+
+            # Rename all columns to {param_name}@{column_name}
+            renamed_cols = {col: f'{param_name}@{col}' for col in ext_df.columns}
+            ext_df.rename(columns=renamed_cols, inplace=True)
+
+            # Left join on date index
+            result_df = result_df.join(ext_df, how='left')
+
+            print(f"INFO: Merged external dataset '{param_name}' with {len(renamed_cols)} columns", file=sys.stderr)
 
         except Exception as e:
-            print(f"WARNING: Failed to load external dataset '{param_name}': {e}", file=sys.stderr)
+            warnings.warn(f"Failed to load/merge external dataset '{param_name}': {e}")
+            import traceback
+            traceback.print_exc(file=sys.stderr)
             continue
 
-    return result
+    return result_df
 
 
 def manual_backtest(df: pd.DataFrame, signals: List[Dict], initial_cash: float, commission: float) -> Dict[str, Any]:
@@ -998,6 +1039,15 @@ def calculate_metrics_from_data(equity_curve: List[Dict], trades: List[Dict], in
 
 
 def main():
+    # Capture warnings
+    captured_warnings = []
+
+    def warning_handler(message, category, filename, lineno, file=None, line=None):
+        captured_warnings.append(str(message))
+
+    old_showwarning = warnings.showwarning
+    warnings.showwarning = warning_handler
+
     try:
         # Read input from stdin
         input_data = json.load(sys.stdin)
@@ -1010,12 +1060,8 @@ def main():
         parameters = input_data.get('parameters', {})
         constraints = input_data.get('constraints', {})
 
-        # Load external datasets and add them to parameters
+        # External datasets configuration (will be merged per-symbol below)
         external_datasets_config = input_data.get('externalDatasets', {})
-        if external_datasets_config:
-            external_datasets = load_external_datasets(external_datasets_config)
-            # Add external datasets to parameters so they're accessible via parameters['param_name']
-            parameters.update(external_datasets)
 
         # Check if this is a portfolio backtest
         is_portfolio = strategy_type == 'portfolio' or 'dataMap' in input_data
@@ -1036,6 +1082,8 @@ def main():
                     df['date'] = pd.to_datetime(df['date'])
                     # Set as index for backtest processing, but keep as column for strategy code
                     df.set_index('date', drop=False, inplace=True)
+                    # Normalize to date-only for consistent matching
+                    df.index = df.index.normalize()
                     # Sort by date
                     df = df.sort_index()
 
@@ -1054,6 +1102,10 @@ def main():
 
                 if len(df) == 0:
                     raise ValueError(f"Symbol {symbol}: No valid data rows after cleaning")
+
+                # Merge external datasets if configured
+                if external_datasets_config:
+                    df = load_and_merge_external_datasets(df, external_datasets_config)
 
                 data_map[symbol] = df
 
@@ -1153,6 +1205,8 @@ def main():
                 df['date'] = pd.to_datetime(df['date'])
                 # Set as index for backtest processing, but keep as column for strategy code
                 df.set_index('date', drop=False, inplace=True)
+                # Normalize to date-only for consistent matching
+                df.index = df.index.normalize()
                 # Sort by date
                 df = df.sort_index()
             elif df.index.name != 'date' and not isinstance(df.index, pd.DatetimeIndex):
@@ -1161,6 +1215,8 @@ def main():
                         df.index = pd.to_datetime(df.index)
                     except Exception:
                         raise ValueError("DataFrame index must be convertible to datetime")
+                # Normalize to date-only for consistent matching
+                df.index = df.index.normalize()
                 # Sort by date
                 df = df.sort_index()
                 # Add date as a column for strategy code
@@ -1189,6 +1245,10 @@ def main():
 
             if len(df) == 0:
                 raise ValueError("No valid data rows after cleaning")
+
+            # Merge external datasets if configured
+            if external_datasets_config:
+                df = load_and_merge_external_datasets(df, external_datasets_config)
 
             # Execute user strategy code to get signals
             namespace = {
@@ -1253,16 +1313,79 @@ def main():
             print(json.dumps(output, default=str))
 
     except Exception as e:
-        # Output error
+        # Build detailed error message
+        error_type = type(e).__name__
+        error_msg = str(e)
         error_trace = traceback.format_exc()
+
+        # Try to extract user code line from traceback
+        tb_lines = error_trace.split('\n')
+        user_code_context = None
+        for i, line in enumerate(tb_lines):
+            if 'File "<string>"' in line:
+                # Found user code execution, get the next line with actual error
+                if i + 1 < len(tb_lines):
+                    user_code_context = tb_lines[i + 1].strip()
+                break
+
+        # Add helpful context for common errors
+        additional_info = []
+
+        if error_type == 'KeyError':
+            # Column access error - show available columns
+            try:
+                # Check if we have dataframes available
+                if 'df' in locals():
+                    available_cols = list(locals()['df'].columns)
+                    additional_info.append(f"Available columns in single-stock data: {', '.join(available_cols)}")
+                elif 'data_map' in locals():
+                    first_symbol = list(locals()['data_map'].keys())[0]
+                    available_cols = list(locals()['data_map'][first_symbol].columns)
+                    additional_info.append(f"Available columns in portfolio data: {', '.join(available_cols)}")
+
+                # Check if error is about missing external dataset column
+                if '@' in error_msg:
+                    additional_info.append("Hint: External dataset columns use format 'dataset_name@column_name'")
+                    additional_info.append("Make sure you configured external datasets in the strategy settings")
+            except:
+                pass
+
+        elif error_type == 'ValueError' and 'signal' in error_msg.lower():
+            additional_info.append("Hint: Check that your signals have required fields: 'date', 'type', 'amount'")
+            additional_info.append("Portfolio strategies also need 'symbol' field in each signal")
+
+        elif error_type == 'AttributeError':
+            additional_info.append("Hint: Check that you're using the correct pandas/numpy methods")
+            if 'data_map' in error_msg:
+                additional_info.append("Portfolio strategies receive 'data_map' (dict), not 'data'")
+
+        # Build detailed error output
         output = {
             'success': False,
-            'error': str(e),
-            'type': type(e).__name__,
-            'traceback': error_trace
+            'error': error_msg,
+            'type': error_type,
+            'traceback': error_trace,
+            'details': {
+                'message': error_msg,
+                'type': error_type,
+            }
         }
+
+        if user_code_context:
+            output['details']['code_line'] = user_code_context
+
+        if additional_info:
+            output['details']['hints'] = additional_info
+
+        # Add captured warnings if any
+        if captured_warnings:
+            output['details']['warnings'] = captured_warnings
+
         print(json.dumps(output))
         sys.exit(1)
+    finally:
+        # Restore original warning handler
+        warnings.showwarning = old_showwarning
 
 
 if __name__ == '__main__':

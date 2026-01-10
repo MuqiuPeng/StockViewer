@@ -8,7 +8,9 @@ export const runtime = 'nodejs';
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { pythonCode, isGroup } = body;
+    const { pythonCode, isGroup, externalDatasets } = body;
+
+    console.log('[validate-indicator] Received request with externalDatasets:', externalDatasets);
 
     if (!pythonCode) {
       return NextResponse.json(
@@ -40,12 +42,15 @@ export async function POST(request: Request) {
         code: pythonCode,
         data: sampleData,
         isGroup: isGroup || false,
+        externalDatasets: externalDatasets || undefined,
       });
 
       if (!result.success) {
         return NextResponse.json({
           valid: false,
           error: result.error || 'Python execution failed',
+          errorType: result.type,
+          details: result.details,
         });
       }
 

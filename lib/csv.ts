@@ -4,7 +4,7 @@ import { getCsvFileStats, hasRequiredColumns } from './datasets';
 import { findDataset } from './dataset-metadata';
 
 export interface CandleData {
-  time: number;
+  time: string; // YYYY-MM-DD format to avoid timezone issues
   open: number;
   high: number;
   low: number;
@@ -12,7 +12,7 @@ export interface CandleData {
 }
 
 export interface IndicatorData {
-  time: number;
+  time: string; // YYYY-MM-DD format to avoid timezone issues
   value: number | null;
 }
 
@@ -44,17 +44,39 @@ function findColumnIndex(headers: string[], normalizedName: string): number {
 }
 
 /**
- * Parse a date string to UNIX timestamp (seconds)
+ * Parse a date string to YYYY-MM-DD format
+ * Extracts date component (YYYY-MM-DD) from various formats
+ * Returns string format to avoid timezone conversion issues when displaying on charts
  */
-function parseDate(dateStr: string): number | null {
+function parseDate(dateStr: string): string | null {
   if (!dateStr || typeof dateStr !== 'string') {
     return null;
   }
-  const date = new Date(dateStr.trim());
+
+  const trimmed = dateStr.trim();
+
+  // Extract date part (YYYY-MM-DD) from various formats:
+  // "2024-01-15", "2024-01-15T00:00:00", "2024-01-15T00:00:00.000+00:00"
+  const dateMatch = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+  if (dateMatch) {
+    // Return YYYY-MM-DD format directly
+    // This avoids timezone issues when lightweight-charts displays the date
+    const [, year, month, day] = dateMatch;
+    return `${year}-${month}-${day}`;
+  }
+
+  // Fallback: try parsing the full string and extract date
+  const date = new Date(trimmed);
   if (isNaN(date.getTime())) {
     return null;
   }
-  return Math.floor(date.getTime() / 1000);
+
+  // Extract YYYY-MM-DD from the parsed date (using UTC to avoid timezone shift)
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /**
@@ -163,10 +185,10 @@ export async function loadDataset(filename: string): Promise<DatasetData> {
             });
           }
 
-          // Sort by time ascending
-          candles.sort((a, b) => a.time - b.time);
+          // Sort by time ascending (YYYY-MM-DD format is lexicographically sortable)
+          candles.sort((a, b) => a.time.localeCompare(b.time));
           indicatorColumns.forEach(col => {
-            indicatorData[col].sort((a, b) => a.time - b.time);
+            indicatorData[col].sort((a, b) => a.time.localeCompare(b.time));
           });
 
           if (candles.length === 0) {
@@ -182,7 +204,7 @@ export async function loadDataset(filename: string): Promise<DatasetData> {
             const indicator = indicatorData[col];
             
             // Create a map of existing indicator data by time for quick lookup
-            const indicatorMap = new Map<number, number | null>();
+            const indicatorMap = new Map<string, number | null>();
             indicator.forEach(d => {
               indicatorMap.set(d.time, d.value);
             });

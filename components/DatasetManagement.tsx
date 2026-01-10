@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import AddStockModal from './AddStockModal';
+import AddDatasetModal from './AddDatasetModal';
 import GroupManager from './GroupManager';
 import Link from 'next/link';
+import { getDataSourceConfig } from '@/lib/data-sources';
 
 interface DatasetInfo {
+  id: string;
   name: string;
   code: string;
   filename: string;
@@ -16,6 +18,13 @@ interface DatasetInfo {
   firstDate?: string;
   lastDate?: string;
   lastUpdate?: string;
+}
+
+// Helper function to format dataset display name
+function formatDatasetDisplay(dataset: DatasetInfo): string {
+  const sourceConfig = getDataSourceConfig(dataset.dataSource || 'stock_zh_a_hist');
+  const sourceName = sourceConfig?.name || dataset.dataSource;
+  return `${dataset.code} - ${sourceName}`;
 }
 
 interface StockGroup {
@@ -32,7 +41,7 @@ export default function DatasetManagement() {
   const [groups, setGroups] = useState<StockGroup[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isAddStockModalOpen, setIsAddStockModalOpen] = useState(false);
+  const [isAddDatasetModalOpen, setIsAddDatasetModalOpen] = useState(false);
   const [isGroupManagerOpen, setIsGroupManagerOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState<Record<string, boolean>>({});
   const [selectedDatasets, setSelectedDatasets] = useState<Set<string>>(new Set());
@@ -77,8 +86,9 @@ export default function DatasetManagement() {
     }
   };
 
-  const handleDelete = async (filename: string) => {
-    if (!confirm(`Are you sure you want to delete "${filename}"? This action cannot be undone.`)) {
+  const handleDelete = async (dataset: DatasetInfo) => {
+    const displayName = formatDatasetDisplay(dataset);
+    if (!confirm(`Are you sure you want to delete "${displayName}"? This action cannot be undone.`)) {
       return;
     }
 
@@ -86,7 +96,7 @@ export default function DatasetManagement() {
       const response = await fetch('/api/datasets', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: filename }),
+        body: JSON.stringify({ identifier: dataset.id }),
       });
 
       if (!response.ok) {
@@ -118,7 +128,7 @@ export default function DatasetManagement() {
     setError(null);
 
     try {
-      const response = await fetch('/api/add-stock', {
+      const response = await fetch('/api/add-dataset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ symbol, dataSource }),
@@ -137,7 +147,7 @@ export default function DatasetManagement() {
     }
   };
 
-  const handleAddStockSuccess = async () => {
+  const handleAddDatasetSuccess = async () => {
     await loadDatasets();
   };
 
@@ -202,7 +212,7 @@ export default function DatasetManagement() {
           const response = await fetch('/api/datasets', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: dataset.filename }),
+            body: JSON.stringify({ identifier: dataset.id }),
           });
 
           if (!response.ok) {
@@ -210,7 +220,8 @@ export default function DatasetManagement() {
             throw new Error(data.message || 'Failed to delete dataset');
           }
         } catch (err) {
-          alert(`Failed to delete ${dataset.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+          const displayName = formatDatasetDisplay(dataset);
+          alert(`Failed to delete ${displayName}: ${err instanceof Error ? err.message : 'Unknown error'}`);
         }
       }
     }
@@ -318,6 +329,17 @@ export default function DatasetManagement() {
     setNewName('');
   };
 
+  // Helper to get display name for a group
+  const getGroupDisplayName = (groupKey: string, groupType: 'group' | 'datasource'): string => {
+    if (groupType === 'group') {
+      return groupKey; // Custom groups use their own name
+    } else {
+      // Data source groups - get friendly name
+      const sourceConfig = getDataSourceConfig(groupKey);
+      return sourceConfig?.name || groupKey;
+    }
+  };
+
   // Group datasets: first by custom groups, then by data source
   // Datasets can appear in both custom groups AND their data source groups
   const groupedDatasets: Record<string, { type: 'group' | 'datasource'; datasets: DatasetInfo[] }> = {};
@@ -387,7 +409,7 @@ export default function DatasetManagement() {
 
       <div className="mb-4 flex gap-2 flex-wrap">
         <button
-          onClick={() => setIsAddStockModalOpen(true)}
+          onClick={() => setIsAddDatasetModalOpen(true)}
           className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
         >
           + Add New Dataset
@@ -433,7 +455,7 @@ export default function DatasetManagement() {
         <div className="text-center py-8 text-gray-500">
           <p className="mb-4">No datasets found.</p>
           <button
-            onClick={() => setIsAddStockModalOpen(true)}
+            onClick={() => setIsAddDatasetModalOpen(true)}
             className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
           >
             Add Your First Dataset
@@ -445,7 +467,7 @@ export default function DatasetManagement() {
             <div key={groupKey} className="border rounded-lg p-4">
               <div className="flex items-center gap-2 mb-4">
                 <h2 className="text-xl font-semibold text-gray-800">
-                  {groupData.type === 'group' ? '📁 ' : ''}{groupKey} ({groupData.datasets.length} datasets)
+                  {groupData.type === 'group' ? '📁 ' : ''}{getGroupDisplayName(groupKey, groupData.type)} ({groupData.datasets.length} datasets)
                 </h2>
                 {groupData.type === 'datasource' && (
                   <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
@@ -472,6 +494,7 @@ export default function DatasetManagement() {
                       </th>
                       <th className="border p-2 text-left">Code</th>
                       <th className="border p-2 text-left">Name</th>
+                      <th className="border p-2 text-left">Data Source</th>
                       <th className="border p-2 text-left">Start Date</th>
                       <th className="border p-2 text-left">End Date</th>
                       <th className="border p-2 text-left">Last Update</th>
@@ -495,6 +518,7 @@ export default function DatasetManagement() {
                           </td>
                           <td className="border p-2 font-mono font-medium">{dataset.code}</td>
                           <td className="border p-2">{dataset.name}</td>
+                          <td className="border p-2 text-sm">{getGroupDisplayName(dataset.dataSource || 'stock_zh_a_hist', 'datasource')}</td>
                           <td className="border p-2 text-sm">
                             {dataset.firstDate ? dataset.firstDate.split('T')[0] : 'N/A'}
                           </td>
@@ -534,7 +558,7 @@ export default function DatasetManagement() {
                                 + Group
                               </button>
                               <button
-                                onClick={() => handleDelete(dataset.filename)}
+                                onClick={() => handleDelete(dataset)}
                                 className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
                               >
                                 Delete
@@ -557,10 +581,10 @@ export default function DatasetManagement() {
         datasets={datasets.map(ds => ({ name: ds.name, filename: ds.filename }))}
       />
 
-      <AddStockModal
-        isOpen={isAddStockModalOpen}
-        onClose={() => setIsAddStockModalOpen(false)}
-        onSuccess={handleAddStockSuccess}
+      <AddDatasetModal
+        isOpen={isAddDatasetModalOpen}
+        onClose={() => setIsAddDatasetModalOpen(false)}
+        onSuccess={handleAddDatasetSuccess}
       />
 
       {/* Add to Group Modal */}

@@ -4,7 +4,7 @@ import { useEffect, useRef } from 'react';
 import { createChart, IChartApi, ISeriesApi, ColorType } from 'lightweight-charts';
 
 interface CandleData {
-  time: number;
+  time: string; // YYYY-MM-DD format to avoid timezone issues
   open: number;
   high: number;
   low: number;
@@ -12,7 +12,7 @@ interface CandleData {
 }
 
 interface IndicatorData {
-  time: number;
+  time: string; // YYYY-MM-DD format to avoid timezone issues
   value: number | null;
 }
 
@@ -22,7 +22,7 @@ interface ChartPanelProps {
   enabledIndicators1: Set<string>;
   enabledIndicators2: Set<string>;
   colorMap: Map<string, string>;
-  onCrosshairMove?: (time: number | null) => void;
+  onCrosshairMove?: (time: string | null) => void;
 }
 
 // Predefined color palette for indicators
@@ -294,7 +294,7 @@ export default function ChartPanel({
     // Synchronize crosshair across all three charts
     candlestickChart.subscribeCrosshairMove((param) => {
       if (onCrosshairMove) {
-        onCrosshairMove(param.time as number | null);
+        onCrosshairMove(param.time as string | null);
       }
 
       // Sync crosshair to other charts
@@ -330,7 +330,7 @@ export default function ChartPanel({
 
     indicator1Chart.subscribeCrosshairMove((param) => {
       if (onCrosshairMove) {
-        onCrosshairMove(param.time as number | null);
+        onCrosshairMove(param.time as string | null);
       }
 
       // Sync crosshair to other charts
@@ -357,7 +357,7 @@ export default function ChartPanel({
 
     indicator2Chart.subscribeCrosshairMove((param) => {
       if (onCrosshairMove) {
-        onCrosshairMove(param.time as number | null);
+        onCrosshairMove(param.time as string | null);
       }
 
       // Sync crosshair to other charts

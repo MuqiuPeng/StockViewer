@@ -25,7 +25,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, description, pythonCode, parameters, strategyType, constraints } = body;
+    const { name, description, pythonCode, parameters, strategyType, constraints, externalDatasets } = body;
 
     // Validate required fields
     if (!name || !description || !pythonCode) {
@@ -62,6 +62,7 @@ export async function POST(request: Request) {
       strategyType: validStrategyType,
       parameters: parameters || {},
       constraints: validStrategyType === 'portfolio' ? constraints : undefined,
+      externalDatasets: externalDatasets || undefined,
     });
 
     return NextResponse.json({ strategy }, { status: 201 });

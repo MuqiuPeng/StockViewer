@@ -35,6 +35,7 @@ async function migrateMetadata() {
 
         // Register in metadata
         await registerDataset({
+          id: `${code}_${dataSource}`,  // Generate unique ID
           code,
           name: code, // Default name is the code
           filename,

@@ -79,6 +79,14 @@ export interface BacktestResult {
   constraints?: PortfolioConstraints;
   error?: string;
   type?: string;
+  details?: {
+    message?: string;
+    type?: string;
+    code_line?: string;
+    hints?: string[];
+    traceback?: string;
+    warnings?: string[];
+  };
 }
 
 export async function executeBacktest(

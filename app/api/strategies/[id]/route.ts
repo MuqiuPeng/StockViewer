@@ -40,7 +40,7 @@ export async function PUT(
 ) {
   try {
     const body = await request.json();
-    const { name, description, pythonCode, parameters, constraints } = body;
+    const { name, description, pythonCode, parameters, constraints, externalDatasets } = body;
 
     // Validate that strategy exists
     const existing = await getStrategyById(params.id);
@@ -75,6 +75,7 @@ export async function PUT(
       updates.pythonCode = pythonCode;
     }
     if (parameters !== undefined) updates.parameters = parameters;
+    if (externalDatasets !== undefined) updates.externalDatasets = externalDatasets;
 
     // Allow updating constraints for portfolio strategies
     if (constraints !== undefined && existing.strategyType === 'portfolio') {

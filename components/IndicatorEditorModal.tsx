@@ -31,6 +31,8 @@ const CODE_TEMPLATE = `def calculate(data):
             - date (datetime)
             - open, high, low, close, volume (float)
             - All other existing indicators
+            - If external datasets are configured, their columns will be included
+              with format: {dataset_name}@{column_name}
 
     Returns:
         pandas Series or list of same length as data
@@ -47,6 +49,8 @@ const MYTT_TEMPLATE = `def calculate(data):
             - date (datetime)
             - open, high, low, close, volume (float)
             - All existing indicators
+            - If external datasets are configured, their columns will be included
+              with format: {dataset_name}@{column_name}
 
     Returns:
         dict with indicator_name: values (numpy array or pandas Series)
@@ -74,26 +78,27 @@ export default function IndicatorEditorModal({
   const [expectedOutputs, setExpectedOutputs] = useState<string[]>(['']);
   const [pythonCode, setPythonCode] = useState('');
   const [externalDatasets, setExternalDatasets] = useState<Record<string, { groupId: string; datasetName: string }>>({});
+  const [editingDataset, setEditingDataset] = useState<string | null>(null);
+  const [tempDatasetConfig, setTempDatasetConfig] = useState<{ paramName: string; groupId: string; datasetName: string } | null>(null);
   const [groups, setGroups] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'text' | 'upload'>('text');
   const [isLoading, setIsLoading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorDetails, setErrorDetails] = useState<any>(null);
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const [syntaxWarnings, setSyntaxWarnings] = useState<string[]>([]);
   const [showSyntaxHelp, setShowSyntaxHelp] = useState(false);
   const [editorInstance, setEditorInstance] = useState<any>(null);
   const [monacoInstance, setMonacoInstance] = useState<any>(null);
 
-  // Load groups on mount
+  // Load groups on mount (includes both custom and data source groups)
   useEffect(() => {
     if (isOpen) {
       fetch('/api/groups')
         .then((res) => res.json())
         .then((data) => {
-          if (data.groups) {
-            setGroups(data.groups);
-          }
+          setGroups(data.groups || []);
         })
         .catch((err) => {
           console.error('Failed to load groups:', err);
@@ -161,21 +166,36 @@ export default function IndicatorEditorModal({
     setError(null);
 
     try {
+      // Filter out incomplete external datasets
+      const validExternalDatasets = Object.fromEntries(
+        Object.entries(externalDatasets).filter(
+          ([_, dataset]) => dataset.groupId && dataset.datasetName
+        )
+      );
+
+      const requestBody: any = {
+        pythonCode,
+        isGroup: indicatorType === 'mytt_group'
+      };
+
+      if (Object.keys(validExternalDatasets).length > 0) {
+        requestBody.externalDatasets = validExternalDatasets;
+      }
+
       const response = await fetch('/api/validate-indicator', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pythonCode,
-          isGroup: indicatorType === 'mytt_group'
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
 
       if (data.valid) {
         setValidationMessage('✓ Code is valid!');
+        setErrorDetails(null);
       } else {
         setError(data.error || 'Validation failed');
+        setErrorDetails(data);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Validation error');
@@ -526,50 +546,109 @@ export default function IndicatorEditorModal({
             </div>
 
             {Object.entries(externalDatasets).map(([paramName, dataset]) => {
-              const selectedGroup = groups.find(g => g.id === dataset.groupId);
+              const isEditing = editingDataset === paramName;
+              const config = isEditing && tempDatasetConfig ? tempDatasetConfig : { paramName, ...dataset };
+              const selectedGroup = groups.find(g => g.id === config.groupId);
+
               return (
                 <div key={paramName} className="mb-3 p-3 border rounded bg-white">
                   <div className="flex items-center justify-between mb-2">
                     <label className="text-sm font-medium">Parameter Name:</label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const updated = { ...externalDatasets };
-                        delete updated[paramName];
-                        setExternalDatasets(updated);
-                      }}
-                      className="text-red-500 hover:text-red-700 text-sm"
-                    >
-                      Remove
-                    </button>
+                    <div className="flex gap-2">
+                      {isEditing ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (tempDatasetConfig) {
+                                const updated = { ...externalDatasets };
+                                // Remove old key if name changed
+                                if (tempDatasetConfig.paramName !== paramName) {
+                                  delete updated[paramName];
+                                }
+                                // Add/update with new configuration
+                                updated[tempDatasetConfig.paramName] = {
+                                  groupId: tempDatasetConfig.groupId,
+                                  datasetName: tempDatasetConfig.datasetName
+                                };
+                                setExternalDatasets(updated);
+                              }
+                              setEditingDataset(null);
+                              setTempDatasetConfig(null);
+                            }}
+                            className="text-green-600 hover:text-green-700 text-sm font-medium"
+                          >
+                            Confirm
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingDataset(null);
+                              setTempDatasetConfig(null);
+                            }}
+                            className="text-gray-500 hover:text-gray-700 text-sm"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingDataset(paramName);
+                              setTempDatasetConfig({ paramName, ...dataset });
+                            }}
+                            className="text-blue-500 hover:text-blue-700 text-sm"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = { ...externalDatasets };
+                              delete updated[paramName];
+                              setExternalDatasets(updated);
+                            }}
+                            className="text-red-500 hover:text-red-700 text-sm"
+                          >
+                            Remove
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                   <input
                     type="text"
-                    value={paramName}
+                    value={config.paramName}
                     onChange={(e) => {
-                      const newName = e.target.value;
-                      if (newName && newName !== paramName) {
-                        const updated = { ...externalDatasets };
-                        updated[newName] = updated[paramName];
-                        delete updated[paramName];
-                        setExternalDatasets(updated);
+                      if (isEditing) {
+                        setTempDatasetConfig({
+                          ...tempDatasetConfig!,
+                          paramName: e.target.value
+                        });
                       }
                     }}
                     className="w-full px-2 py-1 border rounded text-sm mb-2"
                     placeholder="e.g., index_data"
+                    disabled={!isEditing}
                   />
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="text-xs text-gray-600">Group:</label>
                       <select
-                        value={dataset.groupId}
+                        value={config.groupId}
                         onChange={(e) => {
-                          setExternalDatasets({
-                            ...externalDatasets,
-                            [paramName]: { ...dataset, groupId: e.target.value, datasetName: '' }
-                          });
+                          if (isEditing) {
+                            setTempDatasetConfig({
+                              ...tempDatasetConfig!,
+                              groupId: e.target.value,
+                              datasetName: ''
+                            });
+                          }
                         }}
                         className="w-full px-2 py-1 border rounded text-sm"
+                        disabled={!isEditing}
                       >
                         <option value="">Select group</option>
                         {groups.map((g) => (
@@ -580,15 +659,17 @@ export default function IndicatorEditorModal({
                     <div>
                       <label className="text-xs text-gray-600">Dataset:</label>
                       <select
-                        value={dataset.datasetName}
+                        value={config.datasetName}
                         onChange={(e) => {
-                          setExternalDatasets({
-                            ...externalDatasets,
-                            [paramName]: { ...dataset, datasetName: e.target.value }
-                          });
+                          if (isEditing) {
+                            setTempDatasetConfig({
+                              ...tempDatasetConfig!,
+                              datasetName: e.target.value
+                            });
+                          }
                         }}
                         className="w-full px-2 py-1 border rounded text-sm"
-                        disabled={!dataset.groupId}
+                        disabled={!isEditing || !config.groupId}
                       >
                         <option value="">Select dataset</option>
                         {selectedGroup?.datasetNames.map((ds: string) => (
@@ -605,13 +686,17 @@ export default function IndicatorEditorModal({
               type="button"
               onClick={() => {
                 const newName = `dataset_${Object.keys(externalDatasets).length + 1}`;
-                setExternalDatasets({
+                const updated = {
                   ...externalDatasets,
                   [newName]: { groupId: '', datasetName: '' }
-                });
+                };
+                setExternalDatasets(updated);
+                // Auto-edit the newly added dataset
+                setEditingDataset(newName);
+                setTempDatasetConfig({ paramName: newName, groupId: '', datasetName: '' });
               }}
               className="mt-2 px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-              title="Add an external dataset to use in your indicator. Access it via parameters['your_parameter_name'] in your code. Example: index_data = parameters['index']"
+              title="Add an external dataset to use in your indicator. Access columns via data['dataset_name@column_name']"
             >
               + Add External Dataset
             </button>
@@ -852,7 +937,41 @@ export default function IndicatorEditorModal({
 
           {error && (
             <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded text-sm">
-              {error}
+              <div className="font-semibold mb-2">{error}</div>
+              {errorDetails?.details?.warnings && errorDetails.details.warnings.length > 0 && (
+                <div className="mt-2 p-2 bg-yellow-50 border border-yellow-300 rounded">
+                  <div className="font-semibold text-yellow-800 text-xs mb-1">⚠️ Warnings:</div>
+                  {errorDetails.details.warnings.map((warning: string, i: number) => (
+                    <div key={i} className="text-xs text-yellow-700">
+                      • {warning}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {errorDetails?.details?.code_line && (
+                <div className="mt-2 p-2 bg-red-50 border border-red-300 rounded font-mono text-xs">
+                  Code: {errorDetails.details.code_line}
+                </div>
+              )}
+              {errorDetails?.details?.hints && errorDetails.details.hints.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {errorDetails.details.hints.map((hint: string, i: number) => (
+                    <div key={i} className="text-xs text-blue-700">
+                      💡 {hint}
+                    </div>
+                  ))}
+                </div>
+              )}
+              {errorDetails?.details?.traceback && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer text-gray-600 hover:text-gray-800 text-xs">
+                    Show full error details
+                  </summary>
+                  <pre className="mt-1 p-2 bg-gray-50 border border-gray-300 rounded overflow-x-auto max-h-40 text-xs">
+                    {errorDetails.details.traceback}
+                  </pre>
+                </details>
+              )}
             </div>
           )}
 

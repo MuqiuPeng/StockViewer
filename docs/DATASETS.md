@@ -589,7 +589,7 @@ Error: File is locked
 **Adding Custom Data Sources:**
 
 1. Update API endpoint configuration in `lib/env.ts`
-2. Modify fetch logic in `app/api/add-stock/route.ts`
+2. Modify fetch logic in `app/api/add-dataset/route.ts`
 3. Handle different response formats
 4. Test thoroughly with sample data
 

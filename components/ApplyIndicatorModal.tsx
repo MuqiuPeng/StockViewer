@@ -20,6 +20,15 @@ interface ApplyResult {
   success: boolean;
   rowsProcessed?: number;
   error?: string;
+  errorType?: string;
+  details?: {
+    message?: string;
+    type?: string;
+    code_line?: string;
+    hints?: string[];
+    traceback?: string;
+    warnings?: string[];
+  };
 }
 
 export default function ApplyIndicatorModal({
@@ -244,9 +253,33 @@ export default function ApplyIndicatorModal({
                             )}
                           </td>
                           <td className="border p-1 text-xs">
-                            {result.success
-                              ? `${result.rowsProcessed} rows`
-                              : result.error}
+                            {result.success ? (
+                              `${result.rowsProcessed} rows`
+                            ) : (
+                              <div>
+                                <div className="font-medium text-red-600">{result.error}</div>
+                                {result.details?.warnings && result.details.warnings.length > 0 && (
+                                  <div className="mt-1 p-1 bg-yellow-50 border border-yellow-300 rounded">
+                                    <div className="font-semibold text-yellow-800 text-xs">⚠️ Warnings:</div>
+                                    {result.details.warnings.map((warning: string, i: number) => (
+                                      <div key={i} className="text-xs text-yellow-700">• {warning}</div>
+                                    ))}
+                                  </div>
+                                )}
+                                {result.details?.hints && (
+                                  <div className="mt-1 text-blue-600">
+                                    {result.details.hints.map((hint: string, i: number) => (
+                                      <div key={i}>💡 {hint}</div>
+                                    ))}
+                                  </div>
+                                )}
+                                {result.details?.code_line && (
+                                  <div className="mt-1 text-gray-600 font-mono">
+                                    Code: {result.details.code_line}
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </td>
                         </tr>
                       ))}

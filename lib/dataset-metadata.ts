@@ -4,6 +4,7 @@ import { join } from 'path';
 const METADATA_FILE = join(process.cwd(), 'data', 'datasets', 'datasets.json');
 
 export interface DatasetMetadata {
+  id: string;              // Unique identifier: {symbol}_{dataSource}
   code: string;
   name: string;
   filename: string;
@@ -36,22 +37,44 @@ export async function loadMetadata(): Promise<DatasetMetadata[]> {
 /**
  * Save all dataset metadata
  */
-async function saveMetadata(datasets: DatasetMetadata[]): Promise<void> {
+export async function saveMetadata(datasets: DatasetMetadata[]): Promise<void> {
   const data: MetadataStore = { datasets };
   await writeFile(METADATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
 }
 
 /**
- * Find dataset by code, name, or filename
+ * Find dataset by ID, code, name, or filename
+ * Priority: ID > filename > name > code (only if unique)
  */
 export async function findDataset(identifier: string): Promise<DatasetMetadata | null> {
   const datasets = await loadMetadata();
-  return datasets.find(
-    ds => ds.code === identifier ||
-          ds.name === identifier ||
-          ds.filename === identifier ||
-          ds.filename.replace(/\.csv$/i, '') === identifier
-  ) || null;
+
+  // Priority 1: Match by unique ID
+  let match = datasets.find(ds => ds.id === identifier);
+  if (match) return match;
+
+  // Priority 2: Match by filename (with or without .csv)
+  match = datasets.find(ds =>
+    ds.filename === identifier ||
+    ds.filename.replace(/\.csv$/i, '') === identifier
+  );
+  if (match) return match;
+
+  // Priority 3: Match by name
+  match = datasets.find(ds => ds.name === identifier);
+  if (match) return match;
+
+  // Priority 4: Match by code (only if unique)
+  const codeMatches = datasets.filter(ds => ds.code === identifier);
+  if (codeMatches.length === 1) {
+    return codeMatches[0];
+  } else if (codeMatches.length > 1) {
+    console.warn(`Ambiguous dataset code: ${identifier}, found ${codeMatches.length} matches. Use ID instead.`);
+    return null;
+  }
+
+  // Not found
+  return null;
 }
 
 /**
@@ -90,5 +113,30 @@ export async function updateDatasetName(filename: string, name: string): Promise
   if (dataset) {
     dataset.name = name;
     await saveMetadata(datasets);
+  }
+}
+
+/**
+ * Migrate existing datasets to add ID field
+ * ID format: {symbol}_{dataSource}
+ */
+export async function migrateDatasetIds(): Promise<void> {
+  const datasets = await loadMetadata();
+  let modified = false;
+
+  for (const dataset of datasets) {
+    if (!dataset.id) {
+      // Generate ID from code + dataSource
+      dataset.id = `${dataset.code}_${dataset.dataSource}`;
+      modified = true;
+      console.log(`Migrated dataset: ${dataset.name} -> ID: ${dataset.id}`);
+    }
+  }
+
+  if (modified) {
+    await saveMetadata(datasets);
+    console.log(`Migration complete: ${datasets.filter(d => d.id).length} datasets have IDs`);
+  } else {
+    console.log('No migration needed: all datasets already have IDs');
   }
 }

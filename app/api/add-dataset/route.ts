@@ -9,6 +9,7 @@ import { addIndicatorColumn, addIndicatorGroupColumns } from '@/lib/csv-updater'
 import { topologicalSort } from '@/lib/indicator-dependencies';
 import { API_CONFIG } from '@/lib/env';
 import { getDataSourceConfig } from '@/lib/data-sources';
+import { cleanDateColumn } from '@/lib/date-cleaner';
 import Papa from 'papaparse';
 
 export const runtime = 'nodejs';
@@ -27,8 +28,6 @@ const COLUMN_MAPPING: Record<string, string> = {
   '涨跌额': 'change_amount',
   '换手率': 'turnover_rate',
   '最新价': 'close',  // For some data sources
-  '涨跌额': 'change_amount',
-  '涨跌幅': 'change_pct',
   '代码': 'code',
   '名称': 'name'
 };
@@ -147,6 +146,12 @@ export async function POST(request: Request) {
       }
       return newRow;
     });
+
+    // Clean date column if all dates are at midnight (T00:00:00.000)
+    const datesCleaned = cleanDateColumn(transformedData, 'date');
+    if (datesCleaned) {
+      console.log(`Cleaned date column: stripped T00:00:00.000 from all ${transformedData.length} dates`);
+    }
 
     // Generate CSV
     const csv = Papa.unparse(transformedData);
@@ -267,7 +272,9 @@ export async function POST(request: Request) {
 
     // Register dataset in metadata
     const { registerDataset } = await import('@/lib/dataset-metadata');
+    const datasetId = `${symbol}_${dataSource}`;
     await registerDataset({
+      id: datasetId,
       code: symbol,
       name: stockName, // Use fetched stock name or symbol as fallback
       filename,
@@ -284,6 +291,7 @@ export async function POST(request: Request) {
       success: true,
       dataset: {
         ...datasetInfo,
+        id: datasetId,
         name: stockName, // Return the fetched stock name
       }
     });

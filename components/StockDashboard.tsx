@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import ChartPanel from './ChartPanel';
 import IndicatorSelector from './IndicatorSelector';
-import AddStockModal from './AddStockModal';
+import AddDatasetModal from './AddDatasetModal';
 import IndicatorManager from './IndicatorManager';
 import DataPanel from './DataPanel';
 import StrategyManager from './StrategyManager';
@@ -22,7 +22,7 @@ interface DatasetInfo {
 }
 
 interface CandleData {
-  time: number;
+  time: string; // YYYY-MM-DD format
   open: number;
   high: number;
   low: number;
@@ -30,7 +30,7 @@ interface CandleData {
 }
 
 interface IndicatorData {
-  time: number;
+  time: string; // YYYY-MM-DD format
   value: number | null;
 }
 
@@ -54,14 +54,14 @@ export default function StockDashboard() {
   const [enabledIndicators2, setEnabledIndicators2] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isAddStockModalOpen, setIsAddStockModalOpen] = useState(false);
+  const [isAddDatasetModalOpen, setIsAddDatasetModalOpen] = useState(false);
   const [isIndicatorManagerOpen, setIsIndicatorManagerOpen] = useState(false);
   const [isOutdated, setIsOutdated] = useState(false);
   const [lastDataDate, setLastDataDate] = useState<string | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const [definedIndicators, setDefinedIndicators] = useState<string[]>([]);
   const [indicatorGroups, setIndicatorGroups] = useState<Set<string>>(new Set());
-  const [crosshairTime, setCrosshairTime] = useState<number | null>(null);
+  const [crosshairTime, setCrosshairTime] = useState<string | null>(null);
   const [isStrategyManagerOpen, setIsStrategyManagerOpen] = useState(false);
   const [isRunBacktestOpen, setIsRunBacktestOpen] = useState(false);
   const [strategies, setStrategies] = useState<any[]>([]);
@@ -323,8 +323,8 @@ export default function StockDashboard() {
     }
   };
 
-  const handleAddStockSuccess = async (datasetName: string) => {
-    setIsAddStockModalOpen(false);
+  const handleAddDatasetSuccess = async (datasetName: string) => {
+    setIsAddDatasetModalOpen(false);
     await refreshDatasets();
     setSelectedDataset(datasetName);
   };
@@ -336,7 +336,7 @@ export default function StockDashboard() {
     setError(null);
 
     try {
-      const response = await fetch('/api/add-stock', {
+      const response = await fetch('/api/add-dataset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ symbol: selectedDataset }),
@@ -445,10 +445,10 @@ export default function StockDashboard() {
           })()}
         </select>
         <button
-          onClick={() => setIsAddStockModalOpen(true)}
+          onClick={() => setIsAddDatasetModalOpen(true)}
           className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 whitespace-nowrap"
         >
-          + Add Stock
+          + Add Dataset
         </button>
         <button
           onClick={() => setIsIndicatorManagerOpen(true)}
@@ -540,10 +540,10 @@ export default function StockDashboard() {
         </div>
       )}
 
-      <AddStockModal
-        isOpen={isAddStockModalOpen}
-        onClose={() => setIsAddStockModalOpen(false)}
-        onSuccess={handleAddStockSuccess}
+      <AddDatasetModal
+        isOpen={isAddDatasetModalOpen}
+        onClose={() => setIsAddDatasetModalOpen(false)}
+        onSuccess={handleAddDatasetSuccess}
       />
 
       <IndicatorManager

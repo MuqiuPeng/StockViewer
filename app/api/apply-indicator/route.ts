@@ -10,6 +10,15 @@ interface ApplyResult {
   success: boolean;
   rowsProcessed?: number;
   error?: string;
+  errorType?: string;
+  details?: {
+    message?: string;
+    type?: string;
+    code_line?: string;
+    hints?: string[];
+    traceback?: string;
+    warnings?: string[];
+  };
 }
 
 // POST /api/apply-indicator - Apply indicator to dataset(s)
@@ -55,7 +64,7 @@ export async function POST(request: Request) {
         // Prepare data for Python (convert to array of records)
         const dataRecords = datasetData.candles.map((candle, index) => {
           const record: Record<string, any> = {
-            date: new Date(candle.time * 1000).toISOString(),
+            date: candle.time, // Already in YYYY-MM-DD format
             open: candle.open,
             high: candle.high,
             low: candle.low,
@@ -84,6 +93,8 @@ export async function POST(request: Request) {
           results[filename] = {
             success: false,
             error: executionResult.error || 'Python execution failed',
+            errorType: executionResult.type,
+            details: executionResult.details,
           };
           continue;
         }
