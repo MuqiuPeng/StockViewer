@@ -3,6 +3,7 @@ import { getIndicatorById, updateIndicator, deleteIndicator, loadIndicators, sav
 import { validatePythonCode } from '@/lib/indicator-validator';
 import { findDependentIndicators, getCascadeDeleteList } from '@/lib/indicator-dependencies';
 import { detectDependencies } from '@/lib/detect-dependencies';
+import { renameGroupIndicatorColumns } from '@/lib/csv-updater';
 
 export const runtime = 'nodejs';
 
@@ -81,6 +82,15 @@ export async function PUT(
       }
     }
 
+    // Get the existing indicator to check for group name changes
+    const existingIndicator = await getIndicatorById(params.id);
+    if (!existingIndicator) {
+      return NextResponse.json(
+        { error: 'Indicator not found' },
+        { status: 404 }
+      );
+    }
+
     const updates: any = {};
     if (name !== undefined) updates.name = name;
     if (description !== undefined) updates.description = description;
@@ -97,6 +107,25 @@ export async function PUT(
     if (pythonCode !== undefined) {
       const allIndicators = await loadIndicators();
       updates.dependencies = detectDependencies(pythonCode, allIndicators, params.id);
+    }
+
+    // Check if group name is changing for a group indicator
+    const isGroupNameChanging =
+      existingIndicator.isGroup &&
+      groupName !== undefined &&
+      existingIndicator.groupName &&
+      existingIndicator.groupName !== groupName;
+
+    if (isGroupNameChanging) {
+      // Rename all columns with the old group name prefix to the new group name
+      console.log(`Renaming group indicator columns from "${existingIndicator.groupName}" to "${groupName}"`);
+      const renameResult = await renameGroupIndicatorColumns(existingIndicator.groupName!, groupName);
+
+      if (renameResult.errors.length > 0) {
+        console.error('Some datasets failed to update:', renameResult.errors);
+      }
+
+      console.log(`Updated ${renameResult.updatedCount} datasets with renamed columns`);
     }
 
     const indicator = await updateIndicator(params.id, updates);

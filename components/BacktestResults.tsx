@@ -49,6 +49,7 @@ interface TradeMarker {
   value?: number;
   commission?: number;
   execution_mode?: 'close' | 'next_open';
+  symbol?: string; // For portfolio backtests
 }
 
 interface DateRange {
@@ -94,6 +95,7 @@ interface GroupBacktestResult {
 interface PortfolioBacktestResult {
   type: 'portfolio';
   symbols: string[];
+  datasetFilenames?: Record<string, string>; // Mapping from stock code to original dataset filename
   metrics: BacktestMetrics;
   equityCurve: Array<{ date: string; value: number; cash?: number; shares?: number; positions?: Record<string, number> }>;
   tradeMarkers: TradeMarker[];
@@ -125,7 +127,7 @@ interface BacktestResultsProps {
   metrics?: BacktestMetrics;
   equityCurve?: EquityPoint[];
   tradeMarkers?: TradeMarker[];
-  candles?: Array<{ time: number; open: number; high: number; low: number; close: number }>;
+  candles?: Array<{ time: number | string; open: number; high: number; low: number; close: number }>;
   dateRange?: DateRange;
   strategyInfo?: StrategyInfo;
   groupResult?: GroupBacktestResult;
@@ -294,7 +296,7 @@ function PortfolioBacktestResults({
   const [tradeFilter, setTradeFilter] = useState<'all' | 'buy' | 'sell'>('all');
   const [symbolFilter, setSymbolFilter] = useState<string>('');
   const [selectedStockSymbol, setSelectedStockSymbol] = useState<string>(portfolioResult.symbols[0] || '');
-  const [stockCandles, setStockCandles] = useState<Array<{ time: number; open: number; high: number; low: number; close: number }>>([]);
+  const [stockCandles, setStockCandles] = useState<Array<{ time: number | string; open: number; high: number; low: number; close: number }>>([]);
   const [isLoadingCandles, setIsLoadingCandles] = useState(false);
   const [tradesPerPage, setTradesPerPage] = useState(25);
   const [currentPage, setCurrentPage] = useState(1);
@@ -332,25 +334,47 @@ function PortfolioBacktestResults({
   }, [portfolioResult.equityCurve]);
 
   // Filter trade markers for selected stock
-  const stockTradeMarkers = useMemo(() => {
-    return portfolioResult.tradeMarkers.filter(trade => (trade as any).symbol === selectedStockSymbol);
+  const stockTradeMarkers = useMemo((): TradeMarker[] => {
+    return portfolioResult.tradeMarkers.filter(trade => trade.symbol === selectedStockSymbol);
   }, [portfolioResult.tradeMarkers, selectedStockSymbol]);
 
   // Filter candles by backtest date range
   const filteredStockCandles = useMemo(() => {
     if (!stockCandles.length || !portfolioResult.dateRange) return stockCandles;
 
-    const startTime = new Date(portfolioResult.dateRange.startDate).getTime() / 1000;
-    const endTime = new Date(portfolioResult.dateRange.endDate).getTime() / 1000;
+    // Check if date range is valid
+    if (!portfolioResult.dateRange.startDate || !portfolioResult.dateRange.endDate) {
+      console.warn('Date range missing, showing all candles');
+      return stockCandles;
+    }
 
-    const filtered = stockCandles.filter(candle => candle.time >= startTime && candle.time <= endTime);
+    // Use date string comparison to avoid timezone issues
+    const startDateStr = portfolioResult.dateRange.startDate;  // YYYY-MM-DD
+    const endDateStr = portfolioResult.dateRange.endDate;      // YYYY-MM-DD
+
+    const filtered = stockCandles.filter(candle => {
+      // Convert candle time to YYYY-MM-DD string (handle both string and number formats)
+      let candleDateStr: string;
+      if (typeof candle.time === 'string') {
+        // Time is already in YYYY-MM-DD format
+        candleDateStr = candle.time;
+      } else {
+        // Time is a timestamp, convert to YYYY-MM-DD
+        const candleDate = new Date(candle.time * 1000);
+        candleDateStr = candleDate.toISOString().split('T')[0];
+      }
+
+      return candleDateStr >= startDateStr && candleDateStr <= endDateStr;
+    });
 
     console.log('Filtering candles:', {
       total: stockCandles.length,
       filtered: filtered.length,
       dateRange: portfolioResult.dateRange,
-      startTime: new Date(startTime * 1000).toISOString(),
-      endTime: new Date(endTime * 1000).toISOString(),
+      startDateStr,
+      endDateStr,
+      firstCandleTime: stockCandles.length > 0 ? stockCandles[0].time : 'N/A',
+      lastCandleTime: stockCandles.length > 0 ? stockCandles[stockCandles.length - 1].time : 'N/A',
     });
 
     return filtered;
@@ -366,20 +390,40 @@ function PortfolioBacktestResults({
         const datasets = await response.json();
         const namesMap: Record<string, string> = {};
 
-        datasets.forEach((dataset: any) => {
-          // Extract stock code from filename (e.g., "000001" from "000001_stock_zh_a_hist.csv")
-          const filenameWithoutExt = dataset.filename.replace(/\.csv$/i, '');
-          const stockCode = filenameWithoutExt.split('_')[0];
+        // If we have datasetFilenames mapping, use it to get the correct dataset names
+        const datasetFilenames = (portfolioResult as any).datasetFilenames;
 
-          // Map code to name
-          if (dataset.name) {
-            namesMap[stockCode] = dataset.name;
-          }
-          // Also map by symbol if available
-          if (dataset.symbol) {
-            namesMap[dataset.symbol] = dataset.name;
-          }
-        });
+        if (datasetFilenames) {
+          // Use the exact datasets that were used in the backtest
+          portfolioResult.symbols.forEach((symbol: string) => {
+            const filename = datasetFilenames[symbol];
+            if (filename) {
+              const dataset = datasets.find((d: any) =>
+                d.filename === filename ||
+                d.filename.replace(/\.csv$/i, '') === filename.replace(/\.csv$/i, '')
+              );
+              if (dataset && dataset.name) {
+                namesMap[symbol] = dataset.name;
+              }
+            }
+          });
+        } else {
+          // Fallback: map by stock code (old format)
+          datasets.forEach((dataset: any) => {
+            // Extract stock code from filename (e.g., "000001" from "000001_stock_zh_a_hist.csv")
+            const filenameWithoutExt = dataset.filename.replace(/\.csv$/i, '');
+            const stockCode = filenameWithoutExt.split('_')[0];
+
+            // Map code to name
+            if (dataset.name) {
+              namesMap[stockCode] = dataset.name;
+            }
+            // Also map by symbol if available
+            if (dataset.symbol) {
+              namesMap[dataset.symbol] = dataset.name;
+            }
+          });
+        }
 
         setStockNames(namesMap);
       } catch (error) {
@@ -388,7 +432,7 @@ function PortfolioBacktestResults({
     };
 
     loadStockNames();
-  }, []);
+  }, [portfolioResult]);
 
   // Helper function to get stock display name
   const getStockDisplayName = (symbol: string) => {
@@ -410,46 +454,60 @@ function PortfolioBacktestResults({
       try {
         console.log('Loading data for symbol:', selectedStockSymbol);
 
-        // Find dataset metadata
-        const metadataRes = await fetch('/api/datasets');
-        if (!metadataRes.ok) {
-          console.error('Failed to fetch datasets metadata:', metadataRes.statusText);
-          setIsLoadingCandles(false);
-          return;
+        // Check if portfolioResult has datasetFilenames mapping (new format)
+        const datasetFilename = (portfolioResult as any).datasetFilenames?.[selectedStockSymbol];
+
+        let datasetIdentifier: string;
+
+        if (datasetFilename) {
+          // Use the exact dataset filename from the backtest result
+          console.log('Using dataset filename from backtest result:', datasetFilename);
+          datasetIdentifier = datasetFilename;
+        } else {
+          // Fallback: try to find dataset by stock code (old format or backward compatibility)
+          console.log('No datasetFilenames mapping, falling back to search by stock code');
+
+          const metadataRes = await fetch('/api/datasets');
+          if (!metadataRes.ok) {
+            console.error('Failed to fetch datasets metadata:', metadataRes.statusText);
+            setIsLoadingCandles(false);
+            return;
+          }
+
+          const allDatasets = await metadataRes.json();
+          console.log('All datasets:', allDatasets.map((d: any) => d.filename));
+          console.log('Looking for symbol:', selectedStockSymbol);
+
+          // Try to find dataset by stock code
+          let dataset = allDatasets.find((d: any) => {
+            // Extract stock code from filename for comparison
+            const filenameWithoutExt = d.filename.replace(/\.csv$/i, '');
+            const stockCodeFromFilename = filenameWithoutExt.split('_')[0];
+
+            // Match by stock code
+            const stockCodeMatch = stockCodeFromFilename === selectedStockSymbol;
+
+            // Also check if it's the full filename (backward compatibility)
+            const exactFilenameMatch = d.filename === selectedStockSymbol;
+            const symbolMatch = d.symbol === selectedStockSymbol;
+
+            return stockCodeMatch || exactFilenameMatch || symbolMatch;
+          });
+
+          if (!dataset) {
+            console.error('Dataset not found for symbol:', selectedStockSymbol);
+            console.error('Available datasets:', allDatasets.map((d: any) => ({ filename: d.filename, symbol: d.symbol })));
+            setIsLoadingCandles(false);
+            return;
+          }
+
+          datasetIdentifier = dataset.filename;
         }
 
-        const allDatasets = await metadataRes.json();
-        console.log('All datasets:', allDatasets.map((d: any) => d.filename));
-        console.log('Looking for symbol:', selectedStockSymbol);
-
-        // Try to find dataset by stock code
-        // The symbol is now just the stock code (e.g., "000001"), not the full filename
-        let dataset = allDatasets.find((d: any) => {
-          // Extract stock code from filename for comparison
-          const filenameWithoutExt = d.filename.replace(/\.csv$/i, '');
-          const stockCodeFromFilename = filenameWithoutExt.split('_')[0];
-
-          // Match by stock code
-          const stockCodeMatch = stockCodeFromFilename === selectedStockSymbol;
-
-          // Also check if it's the full filename (backward compatibility)
-          const exactFilenameMatch = d.filename === selectedStockSymbol;
-          const symbolMatch = d.symbol === selectedStockSymbol;
-
-          return stockCodeMatch || exactFilenameMatch || symbolMatch;
-        });
-
-        if (!dataset) {
-          console.error('Dataset not found for symbol:', selectedStockSymbol);
-          console.error('Available datasets:', allDatasets.map((d: any) => ({ filename: d.filename, symbol: d.symbol })));
-          setIsLoadingCandles(false);
-          return;
-        }
-
-        console.log('Found dataset:', dataset.filename);
+        console.log('Loading dataset:', datasetIdentifier);
 
         // Load the dataset using the correct API endpoint
-        const dataRes = await fetch(`/api/dataset/${encodeURIComponent(dataset.filename)}`);
+        const dataRes = await fetch(`/api/dataset/${encodeURIComponent(datasetIdentifier)}`);
         if (!dataRes.ok) {
           console.error('Failed to load dataset:', dataRes.statusText);
           setIsLoadingCandles(false);
@@ -494,7 +552,7 @@ function PortfolioBacktestResults({
     };
 
     loadStockData();
-  }, [selectedStockSymbol, selectedTab]);
+  }, [selectedStockSymbol, selectedTab, portfolioResult]);
 
   // Initialize equity curve chart
   useEffect(() => {
@@ -722,7 +780,8 @@ function PortfolioBacktestResults({
 
     // Add buy/sell markers - show only B/S on chart
     const markers = stockTradeMarkers.map(trade => {
-      const tradeTime = new Date(trade.execution_date || trade.date).getTime() / 1000;
+      const tradeDateStr = trade.execution_date || trade.date;
+      const tradeTime = new Date(tradeDateStr + 'T00:00:00Z').getTime() / 1000;
       return {
         time: tradeTime,
         position: trade.type === 'buy' ? 'belowBar' : 'aboveBar',
@@ -776,17 +835,33 @@ function PortfolioBacktestResults({
         return;
       }
 
-      const currentTime = param.time as number;
+      // Convert param.time to timestamp (handle both string and number formats)
+      let currentTime: number;
+      if (typeof param.time === 'string') {
+        // Time is in YYYY-MM-DD format
+        currentTime = new Date(param.time + 'T00:00:00Z').getTime() / 1000;
+      } else {
+        // Time is already a timestamp
+        currentTime = param.time as number;
+      }
+
       setHoveredTime(currentTime);
 
       // Find nearest left and right trades
-      let leftTrade = null;
-      let rightTrade = null;
+      let leftTrade: TradeMarker | null = null;
+      let rightTrade: TradeMarker | null = null;
       let leftDistance = Infinity;
       let rightDistance = Infinity;
 
-      stockTradeMarkers.forEach(trade => {
-        const tradeTime = new Date(trade.execution_date || trade.date).getTime() / 1000;
+      console.log('Portfolio hover - Current time:', param.time, 'Timestamp:', currentTime, 'Total trades:', stockTradeMarkers.length);
+
+      for (const trade of stockTradeMarkers) {
+        // Parse trade date (YYYY-MM-DD format) to timestamp in seconds
+        const tradeDateStr = trade.execution_date || trade.date;
+        if (!tradeDateStr) continue;
+
+        // Convert YYYY-MM-DD to timestamp at midnight UTC
+        const tradeTime = new Date(tradeDateStr + 'T00:00:00Z').getTime() / 1000;
         const distance = tradeTime - currentTime;
 
         if (distance <= 0 && Math.abs(distance) < leftDistance) {
@@ -797,14 +872,18 @@ function PortfolioBacktestResults({
           rightDistance = distance;
           rightTrade = trade;
         }
-      });
+      }
+
+      console.log('Found trades - Left:', leftTrade?.execution_date || leftTrade?.date, 'Right:', rightTrade?.execution_date || rightTrade?.date);
 
       setNearestLeftTrade(leftTrade);
       setNearestRightTrade(rightTrade);
 
       // Find if there's a trade at this exact time for tooltip
       const trade = stockTradeMarkers.find(t => {
-        const tradeTime = new Date(t.execution_date || t.date).getTime() / 1000;
+        const tradeDateStr = t.execution_date || t.date;
+        if (!tradeDateStr) return false;
+        const tradeTime = new Date(tradeDateStr + 'T00:00:00Z').getTime() / 1000;
         return tradeTime === param.time;
       });
 
@@ -1166,7 +1245,10 @@ function PortfolioBacktestResults({
     };
   }, [portfolioResult.perSymbolEquityCurves, portfolioResult.equityCurve, portfolioResult.symbols, selectedTab, stockNames]);
 
-  const formatNumber = (value: number, decimals: number = 2): string => {
+  const formatNumber = (value: number | null | undefined, decimals: number = 2): string => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return 'N/A';
+    }
     if (value >= 1000000) {
       return (value / 1000000).toFixed(decimals) + 'M';
     } else if (value >= 1000) {
@@ -1175,7 +1257,10 @@ function PortfolioBacktestResults({
     return value.toFixed(decimals);
   };
 
-  const formatPercent = (value: number): string => {
+  const formatPercent = (value: number | null | undefined): string => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return 'N/A';
+    }
     return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
   };
 
@@ -1493,7 +1578,7 @@ function PortfolioBacktestResults({
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="bg-gray-50 p-4 rounded border">
                 <div className="text-xs text-gray-500 mb-1">Win Rate</div>
-                <div className="text-xl font-semibold">{(portfolioResult.metrics.winRate * 100).toFixed(1)}%</div>
+                <div className="text-xl font-semibold">{portfolioResult.metrics.winRate.toFixed(1)}%</div>
               </div>
               <div className="bg-gray-50 p-4 rounded border">
                 <div className="text-xs text-gray-500 mb-1">Profit Factor</div>
@@ -1875,7 +1960,7 @@ function PortfolioBacktestResults({
                     <td className="text-right py-3 px-4 font-mono">{stock.sharpeRatio.toFixed(2)}</td>
                     <td className="text-right py-3 px-4 font-mono text-red-600">{formatPercent(stock.maxDrawdownPct)}</td>
                     <td className="text-right py-3 px-4">{stock.tradeCount}</td>
-                    <td className="text-right py-3 px-4 font-mono">{(stock.winRate * 100).toFixed(1)}%</td>
+                    <td className="text-right py-3 px-4 font-mono">{stock.winRate.toFixed(1)}%</td>
                     <td className={`text-right py-3 px-4 font-mono ${stock.contributionToPortfolio >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       ¥{stock.contributionToPortfolio.toFixed(2)}
                     </td>
@@ -1905,7 +1990,10 @@ function GroupBacktestResults({
   const [expandedStocks, setExpandedStocks] = useState<Set<string>>(new Set());
   const [stockCandles, setStockCandles] = useState<Record<string, any>>({});
 
-  const formatNumber = (value: number, decimals: number = 2): string => {
+  const formatNumber = (value: number | null | undefined, decimals: number = 2): string => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return 'N/A';
+    }
     if (value >= 1000000) {
       return (value / 1000000).toFixed(decimals) + 'M';
     } else if (value >= 1000) {
@@ -1914,7 +2002,10 @@ function GroupBacktestResults({
     return value.toFixed(decimals);
   };
 
-  const formatPercent = (value: number): string => {
+  const formatPercent = (value: number | null | undefined): string => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return 'N/A';
+    }
     return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
   };
 
@@ -2903,7 +2994,7 @@ export default function BacktestResults({
 
     // Add trade markers
     const markers = tradeMarkers.map(trade => {
-      const tradeTime = new Date(trade.date).getTime() / 1000;
+      const tradeTime = new Date(trade.date + 'T00:00:00Z').getTime() / 1000;
       return {
         time: tradeTime as any,
         position: trade.type === 'buy' ? 'belowBar' : 'aboveBar',
@@ -2921,20 +3012,31 @@ export default function BacktestResults({
     // Add crosshair move listener to track hover and find nearest trades
     chart.subscribeCrosshairMove((param) => {
       if (param.time) {
-        const hoveredTimestamp = param.time as number;
+        // Convert param.time to timestamp (handle both string and number formats)
+        let hoveredTimestamp: number;
+        if (typeof param.time === 'string') {
+          // Time is in YYYY-MM-DD format
+          hoveredTimestamp = new Date(param.time + 'T00:00:00Z').getTime() / 1000;
+        } else {
+          // Time is already a timestamp
+          hoveredTimestamp = param.time as number;
+        }
+
         setHoveredTime(hoveredTimestamp);
+
+        console.log('Single stock hover - Current time:', param.time, 'Timestamp:', hoveredTimestamp, 'Total trades:', tradeMarkers.length);
 
         // Find nearest left and right trades
         const sortedTrades = [...tradeMarkers].sort((a, b) => {
-          const timeA = new Date(a.date).getTime() / 1000;
-          const timeB = new Date(b.date).getTime() / 1000;
+          const timeA = new Date(a.date + 'T00:00:00Z').getTime() / 1000;
+          const timeB = new Date(b.date + 'T00:00:00Z').getTime() / 1000;
           return timeA - timeB;
         });
 
         // Find nearest left trade (trade before or at hover time)
         let leftTrade = null;
         for (let i = sortedTrades.length - 1; i >= 0; i--) {
-          const tradeTime = new Date(sortedTrades[i].date).getTime() / 1000;
+          const tradeTime = new Date(sortedTrades[i].date + 'T00:00:00Z').getTime() / 1000;
           if (tradeTime <= hoveredTimestamp) {
             leftTrade = sortedTrades[i];
             break;
@@ -2944,18 +3046,22 @@ export default function BacktestResults({
         // Find nearest right trade (trade after hover time)
         let rightTrade = null;
         for (let i = 0; i < sortedTrades.length; i++) {
-          const tradeTime = new Date(sortedTrades[i].date).getTime() / 1000;
+          const tradeTime = new Date(sortedTrades[i].date + 'T00:00:00Z').getTime() / 1000;
           if (tradeTime > hoveredTimestamp) {
             rightTrade = sortedTrades[i];
             break;
           }
         }
 
+        console.log('Single stock found - Left:', leftTrade?.date, 'Right:', rightTrade?.date);
+
         setNearestLeftTrade(leftTrade);
         setNearestRightTrade(rightTrade);
       } else {
         // Mouse left the chart
         setHoveredTime(null);
+        setNearestLeftTrade(null);
+        setNearestRightTrade(null);
       }
     });
 
@@ -3106,7 +3212,10 @@ export default function BacktestResults({
     }
   }, [selectedTab]);
 
-  const formatNumber = (value: number, decimals: number = 2): string => {
+  const formatNumber = (value: number | null | undefined, decimals: number = 2): string => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return 'N/A';
+    }
     if (value >= 1000000) {
       return (value / 1000000).toFixed(decimals) + 'M';
     } else if (value >= 1000) {
@@ -3115,7 +3224,10 @@ export default function BacktestResults({
     return value.toFixed(decimals);
   };
 
-  const formatPercent = (value: number): string => {
+  const formatPercent = (value: number | null | undefined): string => {
+    if (value === null || value === undefined || isNaN(value)) {
+      return 'N/A';
+    }
     return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
   };
 

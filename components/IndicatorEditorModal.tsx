@@ -128,6 +128,10 @@ export default function IndicatorEditorModal({
     }
     setError(null);
     setValidationMessage(null);
+    setIsLoading(false);
+    setIsValidating(false);
+    setEditingDataset(null);
+    setTempDatasetConfig(null);
   }, [indicator, isOpen]);
 
   // Auto-fill output column or groupName from name
@@ -276,6 +280,7 @@ export default function IndicatorEditorModal({
         return;
       }
 
+      setIsLoading(false);
       onSuccess();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error');

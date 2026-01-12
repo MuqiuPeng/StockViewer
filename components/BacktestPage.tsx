@@ -78,8 +78,13 @@ export default function BacktestPage() {
   const [backtestParams, setBacktestParams] = useState<{
     initialCash: number;
     commission: number;
+    startDate?: string;
+    endDate?: string;
     parameters: Record<string, any>;
     datasetName?: string;
+    targetType?: 'single' | 'portfolio' | 'group';
+    symbols?: string[];
+    groupId?: string;
   } | null>(null);
 
   const handleViewResults = async (entry: BacktestHistoryEntry) => {
@@ -112,50 +117,35 @@ export default function BacktestPage() {
     });
   };
 
-  const handleRerunBacktest = async (entry: BacktestHistoryEntry) => {
+  const handleUseAsTemplate = (entry: BacktestHistoryEntry) => {
+    // Close the detail modal
     setSelectedHistoryEntry(null);
-    setIsBacktestLoading(true);
 
-    try {
-      const response = await fetch(`/api/backtest-history/${entry.id}/rerun`, {
-        method: 'POST',
-      });
-
-      const data = await response.json();
-      if (data.error) {
-        alert(`Failed to re-run backtest: ${data.message || data.error}`);
-        return;
-      }
-
-      // Set the result
-      setBacktestResults(data.result);
-
-      // Load dataset for single stock backtests
-      if (entry.target.type === 'single' && entry.target.datasetName) {
-        const datasetApiName = entry.target.datasetName.replace(/\.csv$/i, '');
-        const datasetRes = await fetch(`/api/dataset/${encodeURIComponent(datasetApiName)}`);
-        const datasetResult = await datasetRes.json();
-        if (!datasetResult.error) {
-          setDatasetData(datasetResult);
-        }
-      } else {
-        setDatasetData(null);
-      }
-
-      // Set strategy and params for display
-      const strategy = strategies.find(s => s.id === entry.strategyId);
-      setSelectedStrategy(strategy || null);
-      setBacktestParams({
-        initialCash: entry.parameters.initialCash,
-        commission: entry.parameters.commission,
-        parameters: entry.parameters.strategyParameters || {},
-        datasetName: entry.target.type === 'single' ? entry.target.datasetName : undefined,
-      });
-    } catch (err) {
-      alert(`Failed to re-run backtest: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setIsBacktestLoading(false);
+    // Find the strategy
+    const strategy = strategies.find(s => s.id === entry.strategyId);
+    if (!strategy) {
+      alert('Strategy not found. It may have been deleted.');
+      return;
     }
+
+    // Set the strategy
+    setSelectedStrategy(strategy);
+
+    // Pre-fill the backtest parameters from history (including date range and target info)
+    setBacktestParams({
+      initialCash: entry.parameters.initialCash,
+      commission: entry.parameters.commission,
+      startDate: entry.parameters.startDate,
+      endDate: entry.parameters.endDate,
+      parameters: entry.parameters.strategyParameters || {},
+      datasetName: entry.target.type === 'single' ? entry.target.datasetName : undefined,
+      targetType: entry.target.type,
+      symbols: entry.target.type === 'portfolio' ? entry.target.symbols : undefined,
+      groupId: entry.target.type === 'group' ? entry.target.groupId : undefined,
+    });
+
+    // Open the Run Backtest modal with pre-filled values
+    setIsRunBacktestOpen(true);
   };
 
   const handleRunBacktest = async (
@@ -181,6 +171,8 @@ export default function BacktestPage() {
     setBacktestParams({
       initialCash,
       commission,
+      startDate,
+      endDate,
       parameters,
       datasetName: target.type === 'single' ? target.datasetName : undefined,
     });
@@ -266,11 +258,16 @@ export default function BacktestPage() {
             Manage Strategies
           </button>
           <button
-            onClick={() => setIsRunBacktestOpen(true)}
-            className="px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium"
-            disabled={strategies.length === 0 || datasets.length === 0}
+            onClick={() => {
+              if (!isBacktestLoading) {
+                setBacktestParams(null); // Clear previous params when opening fresh
+                setIsRunBacktestOpen(true);
+              }
+            }}
+            className="px-6 py-3 bg-orange-600 text-white rounded-lg hover:bg-orange-700 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled={strategies.length === 0 || datasets.length === 0 || isBacktestLoading}
           >
-            Run Backtest
+            {isBacktestLoading ? 'Running...' : 'Run Backtest'}
           </button>
           <button
             onClick={() => setIsHistorySidebarOpen(true)}
@@ -324,13 +321,28 @@ export default function BacktestPage() {
 
       <RunBacktestModal
         isOpen={isRunBacktestOpen}
-        onClose={() => setIsRunBacktestOpen(false)}
+        onClose={() => {
+          setIsRunBacktestOpen(false);
+          setBacktestParams(null); // Clear params when closing
+        }}
         onRun={handleRunBacktest}
         currentDataset={datasets.length > 0 ? datasets[0].name : ''}
         strategies={strategies}
         datasets={datasets}
         groups={groups}
         isLoading={isBacktestLoading}
+        initialValues={backtestParams ? {
+          strategyId: selectedStrategy?.id,
+          targetType: backtestParams.targetType,
+          initialCash: backtestParams.initialCash,
+          commission: backtestParams.commission,
+          startDate: backtestParams.startDate,
+          endDate: backtestParams.endDate,
+          parameters: backtestParams.parameters,
+          datasetName: backtestParams.datasetName,
+          symbols: backtestParams.symbols,
+          groupId: backtestParams.groupId,
+        } : undefined}
       />
 
       {isBacktestLoading && (
@@ -401,7 +413,7 @@ export default function BacktestPage() {
       <BacktestHistoryDetailModal
         entry={selectedHistoryEntry}
         onClose={() => setSelectedHistoryEntry(null)}
-        onRerun={handleRerunBacktest}
+        onUseAsTemplate={handleUseAsTemplate}
         onViewResults={handleViewResults}
       />
     </div>

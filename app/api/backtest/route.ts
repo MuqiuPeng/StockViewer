@@ -238,6 +238,7 @@ export async function POST(request: Request) {
       const dataMap: Record<string, Record<string, any>[]> = {};
       const loadErrors: string[] = [];
       const symbolMapping: Record<string, string> = {}; // filename -> stock code
+      const datasetFilenames: Record<string, string> = {}; // stock code -> original filename
 
       // Helper function to extract stock code from filename
       const extractStockCode = (filename: string): string => {
@@ -257,6 +258,7 @@ export async function POST(request: Request) {
           const stockCode = extractStockCode(filename);
           dataMap[stockCode] = filteredDataset;
           symbolMapping[filename] = stockCode;
+          datasetFilenames[stockCode] = filename; // Preserve the original filename
         } catch (error) {
           loadErrors.push(`${filename}: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
@@ -300,15 +302,40 @@ export async function POST(request: Request) {
         );
       }
 
+      // Calculate actual date range from the data if not specified
+      let actualStartDate = startDate;
+      let actualEndDate = endDate;
+      let dataPoints = 0;
+
+      if (!actualStartDate || !actualEndDate) {
+        // Get date range from the first symbol's data
+        const firstSymbol = Object.keys(dataMap)[0];
+        const firstDataset = dataMap[firstSymbol];
+        if (firstDataset && firstDataset.length > 0) {
+          actualStartDate = actualStartDate || (firstDataset[0]?.date || firstDataset[0]?.['日期'] || null);
+          actualEndDate = actualEndDate || (firstDataset[firstDataset.length - 1]?.date || firstDataset[firstDataset.length - 1]?.['日期'] || null);
+          dataPoints = firstDataset.length;
+        }
+      } else {
+        // Calculate data points from first symbol
+        const firstSymbol = Object.keys(dataMap)[0];
+        const firstDataset = dataMap[firstSymbol];
+        if (firstDataset) {
+          dataPoints = firstDataset.length;
+        }
+      }
+
       const resultWithMetadata = {
         ...result,
         type: 'portfolio',
         symbols: Object.keys(dataMap), // Use stock codes, not filenames
         successfulSymbols: Object.keys(dataMap),
+        datasetFilenames, // Mapping from stock code to original dataset filename
         loadErrors: loadErrors.length > 0 ? loadErrors : undefined,
         dateRange: {
-          startDate,
-          endDate,
+          startDate: actualStartDate,
+          endDate: actualEndDate,
+          dataPoints,
         },
       };
 
@@ -433,6 +460,27 @@ export async function POST(request: Request) {
         stockCount: stockResults.length,
       };
 
+      // Calculate actual date range from the first successful result if not specified
+      let actualStartDate = startDate;
+      let actualEndDate = endDate;
+      let totalDataPoints = 0;
+
+      if (stockResults.length > 0) {
+        totalDataPoints = stockResults.reduce((sum, r) => sum + (r.dataPoints || 0), 0);
+
+        if (!actualStartDate || !actualEndDate) {
+          // Load the first dataset to get date range
+          try {
+            const firstDataset = await loadDataset(stockResults[0].datasetName);
+            const filteredFirstDataset = filterDatasetByDateRange(firstDataset, startDate, endDate);
+            actualStartDate = actualStartDate || (filteredFirstDataset[0]?.date || filteredFirstDataset[0]?.['日期'] || null);
+            actualEndDate = actualEndDate || (filteredFirstDataset[filteredFirstDataset.length - 1]?.date || filteredFirstDataset[filteredFirstDataset.length - 1]?.['日期'] || null);
+          } catch (error) {
+            console.error('Failed to get date range from first dataset:', error);
+          }
+        }
+      }
+
       const groupResult = {
         success: true,
         type: 'group',
@@ -442,8 +490,9 @@ export async function POST(request: Request) {
         stockResults,
         errors: errors.length > 0 ? errors : undefined,
         dateRange: {
-          startDate,
-          endDate,
+          startDate: actualStartDate,
+          endDate: actualEndDate,
+          dataPoints: totalDataPoints,
         },
       };
 

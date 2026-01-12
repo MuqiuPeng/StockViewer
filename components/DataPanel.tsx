@@ -59,6 +59,25 @@ export default function DataPanel({
   // Parse YYYY-MM-DD format
   const date = new Date(candle.time + 'T00:00:00Z'); // Add time to treat as UTC
 
+  // Calculate percentage changes from previous day's close
+  const prevCandle = candleIndex > 0 ? candles[candleIndex - 1] : null;
+  const prevClose = prevCandle?.close || 0;
+
+  const calcChange = (value: number) => {
+    if (!prevCandle || prevClose === 0) return null;
+    const change = ((value - prevClose) / prevClose) * 100;
+    return {
+      value: change,
+      color: change >= 0 ? 'text-green-600' : 'text-red-600',
+      sign: change >= 0 ? '+' : ''
+    };
+  };
+
+  const openChange = calcChange(candle.open);
+  const highChange = calcChange(candle.high);
+  const lowChange = calcChange(candle.low);
+  const closeChange = calcChange(candle.close);
+
   // Get all indicator values at this time
   // Only include basic indicators and defined indicators (exclude deleted ones)
   const allowedIndicators = new Set([...baseIndicators, ...definedIndicators]);
@@ -129,19 +148,47 @@ export default function DataPanel({
       <div className="grid grid-cols-2 gap-2 mb-3">
         <div>
           <div className="text-xs text-gray-500">Open</div>
-          <div className="text-sm font-medium">{candle.open.toFixed(2)}</div>
+          <div className="text-sm font-medium flex items-center gap-2">
+            <span>{candle.open.toFixed(2)}</span>
+            {openChange && (
+              <span className={`text-xs font-semibold ${openChange.color}`}>
+                {openChange.sign}{openChange.value.toFixed(2)}%
+              </span>
+            )}
+          </div>
         </div>
         <div>
           <div className="text-xs text-gray-500">High</div>
-          <div className="text-sm font-medium text-green-600">{candle.high.toFixed(2)}</div>
+          <div className="text-sm font-medium flex items-center gap-2">
+            <span className="text-green-600">{candle.high.toFixed(2)}</span>
+            {highChange && (
+              <span className={`text-xs font-semibold ${highChange.color}`}>
+                {highChange.sign}{highChange.value.toFixed(2)}%
+              </span>
+            )}
+          </div>
         </div>
         <div>
           <div className="text-xs text-gray-500">Low</div>
-          <div className="text-sm font-medium text-red-600">{candle.low.toFixed(2)}</div>
+          <div className="text-sm font-medium flex items-center gap-2">
+            <span className="text-red-600">{candle.low.toFixed(2)}</span>
+            {lowChange && (
+              <span className={`text-xs font-semibold ${lowChange.color}`}>
+                {lowChange.sign}{lowChange.value.toFixed(2)}%
+              </span>
+            )}
+          </div>
         </div>
         <div>
           <div className="text-xs text-gray-500">Close</div>
-          <div className="text-sm font-medium">{candle.close.toFixed(2)}</div>
+          <div className="text-sm font-medium flex items-center gap-2">
+            <span>{candle.close.toFixed(2)}</span>
+            {closeChange && (
+              <span className={`text-xs font-semibold ${closeChange.color}`}>
+                {closeChange.sign}{closeChange.value.toFixed(2)}%
+              </span>
+            )}
+          </div>
         </div>
       </div>
 

@@ -41,6 +41,7 @@ interface DatasetData {
     columns: string[];
     indicators: string[];
     rowCount: number;
+    lastUpdate?: string;
   };
   candles: CandleData[];
   indicators: Record<string, IndicatorData[]>;
@@ -215,43 +216,16 @@ export default function StockDashboard() {
         // Keep existing enabled indicators if they exist in new dataset
         // No default indicators - user must manually enable them
 
-        // Check if data is outdated by fetching latest 10 days from API
-        if (data.candles && data.candles.length > 0) {
-          const lastCandle = data.candles[data.candles.length - 1];
-          const lastLocalDate = new Date(lastCandle.time * 1000);
+        // Check if data is outdated based on lastUpdate time (older than 1 day)
+        if (data.meta.lastUpdate) {
+          const lastUpdateDate = new Date(data.meta.lastUpdate);
+          const now = new Date();
+          const daysDiff = (now.getTime() - lastUpdateDate.getTime()) / (1000 * 60 * 60 * 24);
 
-          // Fetch last 10 days of data from API to check for updates
-          const today = new Date();
-          const tenDaysAgo = new Date(today);
-          tenDaysAgo.setDate(today.getDate() - 10);
-
-          const formatDate = (date: Date) => {
-            const year = date.getFullYear();
-            const month = String(date.getMonth() + 1).padStart(2, '0');
-            const day = String(date.getDate()).padStart(2, '0');
-            return `${year}${month}${day}`;
-          };
-
-          // Check for newer data from API
-          fetch(`${API_CONFIG.AKTOOLS_URL}/api/public/stock_zh_a_hist?symbol=${selectedDataset}&start_date=${formatDate(tenDaysAgo)}&end_date=${formatDate(today)}&adjust=qfq`)
-            .then(res => res.json())
-            .then(apiData => {
-              if (apiData && apiData.data && apiData.data.length > 0) {
-                // Get the latest date from API data
-                const latestApiData = apiData.data[apiData.data.length - 1];
-                const latestApiDate = new Date(latestApiData.日期);
-
-                // Compare with local data
-                if (latestApiDate > lastLocalDate) {
-                  setIsOutdated(true);
-                  setLastDataDate(lastLocalDate.toISOString().split('T')[0]);
-                }
-              }
-            })
-            .catch(err => {
-              // Silently fail - if we can't check, don't show warning
-              console.warn('Failed to check for data updates:', err);
-            });
+          if (daysDiff > 1) {
+            setIsOutdated(true);
+            setLastDataDate(lastUpdateDate.toLocaleDateString());
+          }
         }
       } catch (err: any) {
         setError(`Failed to load dataset: ${err.message}`);

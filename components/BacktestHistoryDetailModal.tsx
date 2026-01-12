@@ -6,14 +6,14 @@ import { BacktestHistoryEntry } from '@/lib/backtest-history-storage';
 interface BacktestHistoryDetailModalProps {
   entry: BacktestHistoryEntry | null;
   onClose: () => void;
-  onRerun: (entry: BacktestHistoryEntry) => void;
+  onUseAsTemplate: (entry: BacktestHistoryEntry) => void;
   onViewResults: (entry: BacktestHistoryEntry) => void;
 }
 
 export default function BacktestHistoryDetailModal({
   entry,
   onClose,
-  onRerun,
+  onUseAsTemplate,
   onViewResults,
 }: BacktestHistoryDetailModalProps) {
   const [notes, setNotes] = useState('');
@@ -216,10 +216,10 @@ export default function BacktestHistoryDetailModal({
                 📊 View Results
               </button>
               <button
-                onClick={() => onRerun(entry)}
+                onClick={() => onUseAsTemplate(entry)}
                 className="px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
               >
-                🔄 Re-run Backtest
+                📋 Use as Template
               </button>
             </div>
             <div className="flex gap-2">

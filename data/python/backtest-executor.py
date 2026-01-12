@@ -840,12 +840,71 @@ def portfolio_backtest(
         if len(symbol_trades) == 0:
             continue
 
-        # Calculate symbol-specific metrics
-        total_pnl = sum(
-            t['value'] * (1 if t['type'] == 'sell' else -1)
-            for t in symbol_trades
-        )
+        # Calculate symbol-specific P&L by pairing buy and sell trades
+        buy_queue = []  # Queue of (price, size, total_cost) tuples
+        realized_pnl = 0  # Realized profit/loss from closed positions
+        total_commissions = 0
+        total_invested = 0  # Total capital invested in this symbol
 
+        for trade in symbol_trades:
+            trade_type = trade['type']
+            price = trade['price']
+            size = trade['size']
+            value = trade['value']
+            commission = trade['commission']
+
+            total_commissions += commission
+
+            if trade_type == 'buy':
+                # Record the buy with total cost including commission
+                total_cost = value + commission
+                buy_queue.append((price, size, total_cost))
+                total_invested += total_cost
+            elif trade_type == 'sell':
+                # Calculate realized P&L by matching with buys (FIFO)
+                sell_proceeds = value - commission
+                shares_to_match = size
+
+                while shares_to_match > 0 and buy_queue:
+                    buy_price, buy_shares, buy_cost = buy_queue[0]
+
+                    if buy_shares <= shares_to_match:
+                        # Use entire buy order
+                        sell_value = buy_shares * price
+                        realized_pnl += (sell_value - buy_cost)
+                        shares_to_match -= buy_shares
+                        buy_queue.pop(0)
+                    else:
+                        # Partial match
+                        cost_per_share = buy_cost / buy_shares
+                        sell_value = shares_to_match * price
+                        realized_pnl += (sell_value - (shares_to_match * cost_per_share))
+                        # Update remaining buy order
+                        remaining_shares = buy_shares - shares_to_match
+                        remaining_cost = remaining_shares * cost_per_share
+                        buy_queue[0] = (buy_price, remaining_shares, remaining_cost)
+                        shares_to_match = 0
+
+        # Account for unrealized P&L from remaining positions
+        unrealized_pnl = 0
+        if buy_queue:
+            # Get the last price for this symbol
+            last_date = max(equity_curve, key=lambda x: x['date'])['date']
+            df = data_map[symbol]
+            last_date_obj = pd.to_datetime(last_date).date()
+            if last_date_obj in df.index.date:
+                last_row = df[df.index.date == last_date_obj].iloc[0]
+                last_price = float(last_row['close'])
+                for buy_price, buy_shares, buy_cost in buy_queue:
+                    current_value = buy_shares * last_price
+                    unrealized_pnl += (current_value - buy_cost)
+
+        total_pnl = realized_pnl + unrealized_pnl
+
+        # Calculate return percentage based on capital invested in this symbol
+        return_pct = (total_pnl / total_invested * 100) if total_invested > 0 else 0
+
+        # Calculate win rate
         win_trades = [t for t in symbol_trades if t['type'] == 'sell' and
                      t['price'] > (t.get('signal_price', t['price']))]
         win_rate = len(win_trades) / len([t for t in symbol_trades if t['type'] == 'sell']) \
@@ -854,12 +913,15 @@ def portfolio_backtest(
         per_symbol_metrics.append({
             'symbol': symbol,
             'totalReturn': total_pnl,
-            'totalReturnPct': (total_pnl / initial_cash * 100) if initial_cash > 0 else 0,
+            'totalReturnPct': return_pct,
             'sharpeRatio': 0,  # Simplified for now
             'maxDrawdownPct': 0,
             'tradeCount': len(symbol_trades),
             'contributionToPortfolio': total_pnl,
-            'winRate': win_rate * 100
+            'winRate': win_rate * 100,
+            'capitalInvested': total_invested,
+            'realizedPnL': realized_pnl,
+            'unrealizedPnL': unrealized_pnl
         })
 
     # Calculate portfolio metrics
@@ -953,32 +1015,89 @@ def calculate_metrics_from_data(equity_curve: List[Dict], trades: List[Dict], in
             max_drawdown = drawdown
             max_drawdown_pct = drawdown_pct
 
-    # Trade analysis
+    # Trade analysis - improved for portfolio backtests
     if trades:
-        # Pair buy/sell trades
-        buy_prices = []
-        sell_prices = []
+        # Simple approach: match sells with average buy cost
+        # Count completed round trips (buy -> sell) as trades
+        completed_trades = []
+
+        # Group trades by symbol (if symbol field exists, otherwise treat as single stock)
+        symbol_trades = {}
         for trade in trades:
+            symbol = trade.get('symbol', 'DEFAULT')
+            if symbol not in symbol_trades:
+                symbol_trades[symbol] = {'buys': [], 'sells': []}
+
             if trade['type'] == 'buy':
-                buy_prices.append(trade['price'])
-            elif trade['type'] == 'sell' and buy_prices:
-                sell_prices.append((trade['price'], buy_prices.pop(0)))
+                symbol_trades[symbol]['buys'].append(trade)
+            else:
+                symbol_trades[symbol]['sells'].append(trade)
 
-        # Calculate win/loss
-        wins = [sell - buy for sell, buy in sell_prices if sell > buy]
-        losses = [sell - buy for sell, buy in sell_prices if sell <= buy]
+        # For each symbol, pair buys with sells
+        for symbol, trades_dict in symbol_trades.items():
+            buys = sorted(trades_dict['buys'], key=lambda t: t.get('execution_date', t.get('date')))
+            sells = sorted(trades_dict['sells'], key=lambda t: t.get('execution_date', t.get('date')))
 
-        total_trades = len(sell_prices)
-        won_trades = len(wins)
-        lost_trades = len(losses)
-        win_rate = (won_trades / total_trades * 100) if total_trades > 0 else 0
+            # Simple FIFO matching
+            buy_idx = 0
+            sell_idx = 0
+            buy_remaining = 0
 
-        avg_win = np.mean(wins) if wins else 0
-        avg_loss = abs(np.mean(losses)) if losses else 0
+            while sell_idx < len(sells):
+                sell = sells[sell_idx]
+                sell_remaining = sell['size']
 
-        total_won_pnl = sum(wins) if wins else 0
-        total_lost_pnl = abs(sum(losses)) if losses else 0
-        profit_factor = (total_won_pnl / total_lost_pnl) if total_lost_pnl > 0 else (float('inf') if total_won_pnl > 0 else 0)
+                while sell_remaining > 0 and buy_idx < len(buys):
+                    buy = buys[buy_idx]
+
+                    # Initialize buy_remaining for this buy if first time
+                    if buy_remaining == 0:
+                        buy_remaining = buy['size']
+
+                    # Match shares
+                    matched_shares = min(buy_remaining, sell_remaining)
+
+                    # Calculate P&L for this matched portion
+                    buy_cost_per_share = (buy['value'] + buy['commission']) / buy['size']
+                    sell_revenue_per_share = (sell['value'] - sell['commission']) / sell['size']
+
+                    pnl = (sell_revenue_per_share - buy_cost_per_share) * matched_shares
+                    completed_trades.append(pnl)
+
+                    # Update remaining
+                    buy_remaining -= matched_shares
+                    sell_remaining -= matched_shares
+
+                    # Move to next buy if current one is exhausted
+                    if buy_remaining == 0:
+                        buy_idx += 1
+
+                sell_idx += 1
+
+        # Calculate metrics from completed trades
+        if completed_trades:
+            wins = [pnl for pnl in completed_trades if pnl > 0]
+            losses = [pnl for pnl in completed_trades if pnl <= 0]
+
+            total_trades = len(completed_trades)
+            won_trades = len(wins)
+            lost_trades = len(losses)
+            win_rate = (won_trades / total_trades * 100) if total_trades > 0 else 0
+
+            avg_win = float(np.mean(wins)) if wins else 0
+            avg_loss = abs(float(np.mean(losses))) if losses else 0
+
+            total_won_pnl = sum(wins) if wins else 0
+            total_lost_pnl = abs(sum(losses)) if losses else 0
+            profit_factor = (total_won_pnl / total_lost_pnl) if total_lost_pnl > 0 else (float('inf') if total_won_pnl > 0 else 0)
+        else:
+            total_trades = 0
+            won_trades = 0
+            lost_trades = 0
+            win_rate = 0
+            avg_win = 0
+            avg_loss = 0
+            profit_factor = 0
     else:
         total_trades = 0
         won_trades = 0

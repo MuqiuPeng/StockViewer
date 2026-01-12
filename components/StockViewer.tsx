@@ -48,6 +48,7 @@ interface DatasetData {
     columns: string[];
     indicators: string[];
     rowCount: number;
+    lastUpdate?: string;
   };
   candles: CandleData[];
   indicators: Record<string, IndicatorData[]>;
@@ -81,6 +82,7 @@ export default function StockViewer() {
   const [indicatorGroups, setIndicatorGroups] = useState<Set<string>>(new Set());
   const [crosshairTime, setCrosshairTime] = useState<string | null>(null);
   const [showAddToGroupModal, setShowAddToGroupModal] = useState(false);
+  const [isOutdatedModalDismissed, setIsOutdatedModalDismissed] = useState(false);
 
   // Base indicators from API (not custom calculated)
   const BASE_INDICATORS = ['volume', 'turnover', 'amplitude', 'change_pct', 'change_amount', 'turnover_rate'];
@@ -258,6 +260,7 @@ export default function StockViewer() {
       setError(null);
       setIsOutdated(false);
       setLastDataDate(null);
+      setIsOutdatedModalDismissed(false); // Reset dismissed state for new dataset
 
       try {
         const res = await fetch(`/api/dataset/${encodeURIComponent(selectedDataset)}`);
@@ -271,17 +274,15 @@ export default function StockViewer() {
 
         setDatasetData(data);
 
-        // Check if data is outdated (older than 1 day)
-        if (data.candles && data.candles.length > 0) {
-          const lastCandle = data.candles[data.candles.length - 1];
-          // Parse YYYY-MM-DD format
-          const lastDate = new Date(lastCandle.time + 'T00:00:00Z'); // Add time to treat as UTC
+        // Check if data is outdated based on lastUpdate time (older than 1 day)
+        if (data.meta.lastUpdate) {
+          const lastUpdateDate = new Date(data.meta.lastUpdate);
           const now = new Date();
-          const daysDiff = (now.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24);
+          const daysDiff = (now.getTime() - lastUpdateDate.getTime()) / (1000 * 60 * 60 * 24);
 
           if (daysDiff > 1) {
             setIsOutdated(true);
-            setLastDataDate(lastDate.toLocaleDateString());
+            setLastDataDate(lastUpdateDate.toLocaleDateString());
           }
         }
       } catch (err: any) {
@@ -576,21 +577,6 @@ export default function StockViewer() {
           )}
         </div>
 
-        {isOutdated && lastDataDate && (
-          <div className="flex items-center gap-2 px-3 py-2 bg-yellow-100 border border-yellow-400 text-yellow-800 rounded">
-            <span className="text-sm whitespace-nowrap">
-              ⚠️ Data is outdated. Last update: {lastDataDate}
-            </span>
-            <button
-              onClick={handleUpdateData}
-              disabled={isUpdating}
-              className="px-3 py-1 bg-yellow-600 text-white rounded hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed text-sm whitespace-nowrap"
-            >
-              {isUpdating ? 'Updating...' : 'Update Now'}
-            </button>
-          </div>
-        )}
-
         <div className="flex items-center gap-2 ml-auto">
           <button
             onClick={() => setIsAddDatasetModalOpen(true)}
@@ -732,6 +718,47 @@ export default function StockViewer() {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Outdated Data Warning Notification */}
+      {isOutdated && lastDataDate && !isOutdatedModalDismissed && (
+        <div className="fixed top-20 right-4 z-50 w-96 bg-white rounded-lg shadow-2xl border-l-4 border-yellow-500 animate-slide-in">
+          <div className="p-4">
+            <div className="flex items-start gap-3">
+              <div className="text-2xl flex-shrink-0">⚠️</div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between mb-2">
+                  <h3 className="font-bold text-yellow-800 text-sm">Data is Outdated</h3>
+                  <button
+                    onClick={() => setIsOutdatedModalDismissed(true)}
+                    className="text-gray-400 hover:text-gray-600 flex-shrink-0 ml-2"
+                    title="Dismiss"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <p className="text-gray-700 text-sm mb-1">
+                  <span className="font-semibold">{datasetData?.meta.name}</span>
+                </p>
+                <p className="text-gray-600 text-xs mb-3">
+                  Last update: <span className="font-medium">{lastDataDate}</span>
+                </p>
+                <button
+                  onClick={() => {
+                    handleUpdateData();
+                    setIsOutdatedModalDismissed(true);
+                  }}
+                  disabled={isUpdating}
+                  className="w-full px-3 py-2 bg-yellow-600 text-white text-sm rounded hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isUpdating ? 'Updating...' : 'Update Now'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

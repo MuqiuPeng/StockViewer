@@ -827,9 +827,9 @@ export default function StrategyEditorModal({
 
           <div>
             <label className="block text-sm font-medium mb-1">Python Code</label>
-            <div className="border rounded" style={{ height: '400px' }}>
+            <div className="border rounded" style={{ height: '600px' }}>
               <Editor
-                height="400px"
+                height="600px"
                 defaultLanguage="python"
                 value={pythonCode}
                 onChange={(value) => setPythonCode(value || '')}

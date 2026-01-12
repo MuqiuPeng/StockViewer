@@ -10,6 +10,9 @@ interface Indicator {
   description: string;
   pythonCode: string;
   outputColumn: string;
+  isGroup?: boolean;
+  groupName?: string;
+  expectedOutputs?: string[];
   createdAt: string;
   updatedAt?: string;
 }
@@ -134,6 +137,17 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
     setSelectedIndicatorId(null);
   };
 
+  const formatOutputColumn = (indicator: Indicator): string => {
+    if (indicator.isGroup && indicator.groupName && indicator.expectedOutputs) {
+      // For group indicators, show all columns in format "groupName:output1, groupName:output2, ..."
+      return indicator.expectedOutputs
+        .map(output => `${indicator.groupName}:${output}`)
+        .join(', ');
+    }
+    // For single indicators, just show the output column name
+    return indicator.outputColumn;
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -192,7 +206,7 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
                 <tr key={indicator.id} className="hover:bg-gray-50">
                   <td className="border p-2 font-medium">{indicator.name}</td>
                   <td className="border p-2">{indicator.description}</td>
-                  <td className="border p-2 font-mono text-sm">{indicator.outputColumn}</td>
+                  <td className="border p-2 font-mono text-sm">{formatOutputColumn(indicator)}</td>
                   <td className="border p-2">
                     <div className="flex gap-2">
                       <button

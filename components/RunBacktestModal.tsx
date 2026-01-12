@@ -48,6 +48,18 @@ interface RunBacktestModalProps {
   datasets?: DatasetInfo[];
   groups?: StockGroup[];
   isLoading?: boolean;
+  initialValues?: {
+    strategyId?: string;
+    targetType?: 'single' | 'portfolio' | 'group';
+    initialCash?: number;
+    commission?: number;
+    startDate?: string;
+    endDate?: string;
+    parameters?: Record<string, any>;
+    datasetName?: string;
+    symbols?: string[];
+    groupId?: string;
+  };
 }
 
 export default function RunBacktestModal({
@@ -59,6 +71,7 @@ export default function RunBacktestModal({
   datasets = [],
   groups = [],
   isLoading = false,
+  initialValues,
 }: RunBacktestModalProps) {
   const [mode, setMode] = useState<'single' | 'group' | 'portfolio'>('single');
   const [selectedStrategyId, setSelectedStrategyId] = useState<string>('');
@@ -74,13 +87,59 @@ export default function RunBacktestModal({
 
   useEffect(() => {
     if (isOpen) {
-      setSelectedDataset(currentDataset || (datasets.length > 0 ? datasets[0].name : ''));
-      setSelectedGroupId(groups.length > 0 ? groups[0].id : '');
-      if (strategies.length > 0 && !selectedStrategyId) {
-        setSelectedStrategyId(strategies[0].id);
+      // Use initial values if provided, otherwise use defaults
+      if (initialValues) {
+        if (initialValues.strategyId) {
+          setSelectedStrategyId(initialValues.strategyId);
+        }
+        if (initialValues.targetType) {
+          setMode(initialValues.targetType);
+        }
+        if (initialValues.initialCash !== undefined) {
+          setInitialCash(String(initialValues.initialCash));
+        }
+        if (initialValues.commission !== undefined) {
+          setCommission(String(initialValues.commission));
+        }
+        if (initialValues.startDate) {
+          setStartDate(initialValues.startDate);
+        }
+        if (initialValues.endDate) {
+          setEndDate(initialValues.endDate);
+        }
+        if (initialValues.datasetName) {
+          setSelectedDataset(initialValues.datasetName);
+        }
+        if (initialValues.symbols) {
+          setSelectedSymbols(initialValues.symbols);
+        }
+        if (initialValues.groupId) {
+          setSelectedGroupId(initialValues.groupId);
+        }
+        if (initialValues.parameters) {
+          const paramValues: Record<string, string> = {};
+          Object.entries(initialValues.parameters).forEach(([key, value]) => {
+            paramValues[key] = String(value || '');
+          });
+          setParameters(paramValues);
+        }
+      } else {
+        // Reset to defaults when opening without initialValues
+        setInitialCash('100000');
+        setCommission('0.001');
+        setStartDate('');
+        setEndDate('');
+        setMode('single');
+        setSelectedDataset(currentDataset || (datasets.length > 0 ? datasets[0].name : ''));
+        setSelectedGroupId(groups.length > 0 ? groups[0].id : '');
+        setSelectedSymbols([]);
+        if (strategies.length > 0) {
+          setSelectedStrategyId(strategies[0].id);
+        }
+        setParameters({});
       }
     }
-  }, [isOpen, currentDataset, strategies, datasets, groups, selectedStrategyId]);
+  }, [isOpen, currentDataset, strategies, datasets, groups, initialValues]);
 
   useEffect(() => {
     if (selectedStrategyId) {
@@ -181,7 +240,7 @@ export default function RunBacktestModal({
         className="absolute inset-0 bg-black bg-opacity-50"
         onClick={onClose}
       />
-      <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-7xl">
+      <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-7xl max-h-[85vh] flex flex-col">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold">Run Backtest</h2>
           <button
@@ -192,7 +251,7 @@ export default function RunBacktestModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto flex-1">
           <div>
             <label className="block text-sm font-medium mb-1">Strategy</label>
             <select
@@ -533,23 +592,24 @@ export default function RunBacktestModal({
             </div>
           )}
 
-          <div className="flex justify-end gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 border rounded hover:bg-gray-100"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isLoading || !selectedStrategyId}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-            >
-              {isLoading ? 'Running...' : 'Run Backtest'}
-            </button>
-          </div>
         </form>
+
+        <div className="flex justify-end gap-2 mt-4 pt-4 border-t">
+          <button
+            type="button"
+            onClick={onClose}
+            className="px-4 py-2 border rounded hover:bg-gray-100"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={isLoading || !selectedStrategyId}
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+          >
+            {isLoading ? 'Running...' : 'Run Backtest'}
+          </button>
+        </div>
       </div>
     </div>
   );

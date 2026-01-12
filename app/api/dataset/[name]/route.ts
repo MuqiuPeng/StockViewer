@@ -22,7 +22,15 @@ export async function GET(
     }
 
     const dataset = await loadDataset(metadata.filename);
-    return NextResponse.json(dataset);
+
+    // Include lastUpdate from metadata in the response
+    return NextResponse.json({
+      ...dataset,
+      meta: {
+        ...dataset.meta,
+        lastUpdate: metadata.lastUpdate,
+      }
+    });
   } catch (error) {
     console.error('Error loading dataset:', error);
     return NextResponse.json(

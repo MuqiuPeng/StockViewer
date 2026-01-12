@@ -111,7 +111,7 @@ export default function ApplyIndicatorModal({
     setProgress({ current: 0, total: stocksToApply.length });
 
     try {
-      const response = await fetch('/api/apply-indicator', {
+      const response = await fetch('/api/apply-indicator-stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -120,22 +120,63 @@ export default function ApplyIndicatorModal({
         }),
       });
 
-      const data = await response.json();
-
       if (!response.ok) {
-        setError(data.message || 'Failed to apply indicator');
+        setError('Failed to apply indicator');
         setIsApplying(false);
         return;
       }
 
-      setResults(data.results);
-      setProgress({ current: stocksToApply.length, total: stocksToApply.length });
+      // Read the stream
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      const resultsMap: Record<string, ApplyResult> = {};
 
-      // Call onSuccess callback if provided and there were successful applications
-      if (onSuccess && data.results) {
-        const hasSuccess = Object.values(data.results).some((r: any) => r.success);
-        if (hasSuccess) {
-          onSuccess();
+      if (!reader) {
+        setError('Failed to read response stream');
+        setIsApplying(false);
+        return;
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+
+              if (data.type === 'total') {
+                setProgress({ current: 0, total: data.total });
+              } else if (data.type === 'progress') {
+                setProgress({ current: data.current, total: data.total });
+              } else if (data.type === 'result') {
+                resultsMap[data.filename] = data.result;
+                setResults({ ...resultsMap });
+                setProgress({ current: data.current || Object.keys(resultsMap).length, total: data.total || stocksToApply.length });
+              } else if (data.type === 'complete') {
+                setResults(data.results);
+                setProgress({ current: stocksToApply.length, total: stocksToApply.length });
+
+                // Call onSuccess callback if there were successful applications
+                if (onSuccess && data.results) {
+                  const hasSuccess = Object.values(data.results).some((r: any) => r.success);
+                  if (hasSuccess) {
+                    onSuccess();
+                  }
+                }
+              } else if (data.type === 'error') {
+                setError(data.message || data.error || 'Failed to apply indicator');
+              }
+            } catch (parseErr) {
+              console.error('Failed to parse SSE data:', parseErr);
+            }
+          }
         }
       }
     } catch (err) {

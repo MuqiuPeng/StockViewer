@@ -2,6 +2,7 @@ import Papa from 'papaparse';
 import { readFile, writeFile } from 'fs/promises';
 import { getCsvFileStats } from './datasets';
 import { cleanDateColumn } from './date-cleaner';
+import { loadMetadata, saveMetadata } from './dataset-metadata';
 
 export async function addIndicatorGroupColumns(
   filename: string,
@@ -146,4 +147,110 @@ export async function addIndicatorColumn(
       },
     });
   });
+}
+
+/**
+ * Rename all columns with a group indicator prefix across all datasets
+ * E.g., rename all "aaa:xxx" columns to "bbb:xxx"
+ */
+export async function renameGroupIndicatorColumns(
+  oldGroupName: string,
+  newGroupName: string
+): Promise<{ updatedCount: number; errors: string[] }> {
+  const datasets = await loadMetadata();
+  const oldPrefix = `${oldGroupName}:`;
+  const newPrefix = `${newGroupName}:`;
+  const errors: string[] = [];
+  let updatedCount = 0;
+
+  for (const dataset of datasets) {
+    try {
+      // Check if this dataset has columns with the old group prefix
+      const columnsToRename = (dataset.columns || []).filter(col => col.startsWith(oldPrefix));
+
+      if (columnsToRename.length === 0) {
+        continue; // Skip datasets without the group indicator
+      }
+
+      const fileStats = await getCsvFileStats(dataset.filename);
+      if (!fileStats.exists) {
+        errors.push(`CSV file not found: ${dataset.filename}`);
+        continue;
+      }
+
+      const fileContent = await readFile(fileStats.path, 'utf-8');
+
+      await new Promise<void>((resolve, reject) => {
+        Papa.parse(fileContent, {
+          header: true,
+          skipEmptyLines: true,
+          complete: async (results) => {
+            try {
+              const rows = results.data as Record<string, any>[];
+              const headers = results.meta.fields || [];
+
+              // Create a mapping of old column names to new column names
+              const columnMapping: Record<string, string> = {};
+              for (const header of headers) {
+                if (header.startsWith(oldPrefix)) {
+                  const suffix = header.slice(oldPrefix.length);
+                  columnMapping[header] = `${newPrefix}${suffix}`;
+                }
+              }
+
+              // Rename columns in each row
+              const renamedRows = rows.map(row => {
+                const newRow: Record<string, any> = {};
+                for (const [key, value] of Object.entries(row)) {
+                  const newKey = columnMapping[key] || key;
+                  newRow[newKey] = value;
+                }
+                return newRow;
+              });
+
+              // Clean date column if all dates are at midnight (T00:00:00.000)
+              const datesCleaned = cleanDateColumn(renamedRows, 'date');
+              if (datesCleaned) {
+                console.log(`Cleaned date column: stripped T00:00:00.000 from all dates`);
+              }
+
+              // Generate updated CSV
+              const updatedCsv = Papa.unparse(renamedRows);
+
+              // Write back to file
+              await writeFile(fileStats.path, updatedCsv, 'utf-8');
+
+              // Update dataset metadata columns
+              if (dataset.columns) {
+                dataset.columns = dataset.columns.map(col => {
+                  if (col.startsWith(oldPrefix)) {
+                    const suffix = col.slice(oldPrefix.length);
+                    return `${newPrefix}${suffix}`;
+                  }
+                  return col;
+                });
+              }
+
+              updatedCount++;
+              resolve();
+            } catch (error) {
+              reject(error);
+            }
+          },
+          error: (error: Error) => {
+            reject(new Error(`CSV parsing error: ${error.message}`));
+          },
+        });
+      });
+    } catch (error) {
+      errors.push(`Failed to update ${dataset.filename}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Save updated metadata
+  if (updatedCount > 0) {
+    await saveMetadata(datasets);
+  }
+
+  return { updatedCount, errors };
 }
