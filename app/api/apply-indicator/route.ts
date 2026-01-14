@@ -125,11 +125,19 @@ export async function POST(request: Request) {
             continue;
           }
 
+          // Filter to only include expected outputs (ignore extra returned keys)
+          const filteredValues: Record<string, (number | null)[]> = {};
+          for (const key of expectedKeys) {
+            if (key in valuesDict) {
+              filteredValues[key] = valuesDict[key];
+            }
+          }
+
           // Add group columns to CSV
           await addIndicatorGroupColumns(
             filename,
             indicator.groupName!,
-            valuesDict
+            filteredValues
           );
 
           results[filename] = {

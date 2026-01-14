@@ -38,7 +38,7 @@ export default function DataPanel({
 }: DataPanelProps) {
   if (!crosshairTime) {
     return (
-      <div className="data-panel p-3 bg-gray-50 border border-gray-200 rounded text-sm text-gray-500 h-full flex items-center justify-center">
+      <div className="data-panel p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-sm text-gray-500 dark:text-gray-400 h-full flex items-center justify-center">
         Hover over the chart to see data values
       </div>
     );
@@ -49,7 +49,7 @@ export default function DataPanel({
 
   if (candleIndex === -1) {
     return (
-      <div className="data-panel p-3 bg-gray-50 border border-gray-200 rounded text-sm text-gray-500 h-full flex items-center justify-center">
+      <div className="data-panel p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded text-sm text-gray-500 dark:text-gray-400 h-full flex items-center justify-center">
         No data available for selected time
       </div>
     );
@@ -135,8 +135,8 @@ export default function DataPanel({
   };
 
   return (
-    <div className="data-panel p-3 bg-gray-50 border border-gray-200 rounded h-full flex flex-col">
-      <div className="text-xs font-semibold text-gray-600 mb-2">
+    <div className="data-panel p-3 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded h-full flex flex-col">
+      <div className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-2">
         {date.toLocaleDateString('en-US', {
           year: 'numeric',
           month: '2-digit',
@@ -147,8 +147,8 @@ export default function DataPanel({
       
       <div className="grid grid-cols-2 gap-2 mb-3">
         <div>
-          <div className="text-xs text-gray-500">Open</div>
-          <div className="text-sm font-medium flex items-center gap-2">
+          <div className="text-xs text-gray-500 dark:text-gray-400">Open</div>
+          <div className="text-sm font-medium flex items-center gap-2 dark:text-white">
             <span>{candle.open.toFixed(2)}</span>
             {openChange && (
               <span className={`text-xs font-semibold ${openChange.color}`}>
@@ -158,9 +158,9 @@ export default function DataPanel({
           </div>
         </div>
         <div>
-          <div className="text-xs text-gray-500">High</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">High</div>
           <div className="text-sm font-medium flex items-center gap-2">
-            <span className="text-green-600">{candle.high.toFixed(2)}</span>
+            <span className="text-green-600 dark:text-green-400">{candle.high.toFixed(2)}</span>
             {highChange && (
               <span className={`text-xs font-semibold ${highChange.color}`}>
                 {highChange.sign}{highChange.value.toFixed(2)}%
@@ -169,9 +169,9 @@ export default function DataPanel({
           </div>
         </div>
         <div>
-          <div className="text-xs text-gray-500">Low</div>
+          <div className="text-xs text-gray-500 dark:text-gray-400">Low</div>
           <div className="text-sm font-medium flex items-center gap-2">
-            <span className="text-red-600">{candle.low.toFixed(2)}</span>
+            <span className="text-red-600 dark:text-red-400">{candle.low.toFixed(2)}</span>
             {lowChange && (
               <span className={`text-xs font-semibold ${lowChange.color}`}>
                 {lowChange.sign}{lowChange.value.toFixed(2)}%
@@ -180,8 +180,8 @@ export default function DataPanel({
           </div>
         </div>
         <div>
-          <div className="text-xs text-gray-500">Close</div>
-          <div className="text-sm font-medium flex items-center gap-2">
+          <div className="text-xs text-gray-500 dark:text-gray-400">Close</div>
+          <div className="text-sm font-medium flex items-center gap-2 dark:text-white">
             <span>{candle.close.toFixed(2)}</span>
             {closeChange && (
               <span className={`text-xs font-semibold ${closeChange.color}`}>
@@ -193,13 +193,13 @@ export default function DataPanel({
       </div>
 
       {indicatorValues.length > 0 && (
-        <div className="border-t border-gray-300 pt-2 mt-2 flex-1 flex flex-col min-h-0">
-          <div className="text-xs font-semibold text-gray-600 mb-2">Indicators</div>
+        <div className="border-t border-gray-300 dark:border-gray-600 pt-2 mt-2 flex-1 flex flex-col min-h-0">
+          <div className="text-xs font-semibold text-gray-600 dark:text-gray-300 mb-2">Indicators</div>
           <div className="space-y-1 flex-1 overflow-y-auto min-h-0">
             {/* Sub-graph 1 indicators */}
             {indicators1.length > 0 && (
               <div className="mb-2">
-                <div className="text-xs text-gray-500 mb-1">Indicator Chart 1</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Indicator Chart 1</div>
                 {indicators1.map((ind) => (
                   <div
                     key={ind.name}
@@ -210,9 +210,9 @@ export default function DataPanel({
                         className="w-3 h-3 rounded"
                         style={{ backgroundColor: ind.color }}
                       />
-                      <span className="text-gray-700 font-medium">{ind.name}</span>
+                      <span className="text-gray-700 dark:text-gray-200 font-medium">{ind.name}</span>
                     </div>
-                    <span className="font-medium text-gray-900">
+                    <span className="font-medium text-gray-900 dark:text-white">
                       {ind.value !== null ? formatNumber(ind.value) : 'N/A'}
                     </span>
                   </div>
@@ -222,13 +222,13 @@ export default function DataPanel({
 
             {/* Separator between sub-graph 1 and 2 */}
             {indicators1.length > 0 && indicators2.length > 0 && (
-              <div className="border-t-2 border-gray-300 my-2"></div>
+              <div className="border-t-2 border-gray-300 dark:border-gray-600 my-2"></div>
             )}
 
             {/* Sub-graph 2 indicators */}
             {indicators2.length > 0 && (
               <div className="mb-2">
-                <div className="text-xs text-gray-500 mb-1">Indicator Chart 2</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Indicator Chart 2</div>
                 {indicators2.map((ind) => (
                   <div
                     key={ind.name}
@@ -239,9 +239,9 @@ export default function DataPanel({
                         className="w-3 h-3 rounded"
                         style={{ backgroundColor: ind.color }}
                       />
-                      <span className="text-gray-700 font-medium">{ind.name}</span>
+                      <span className="text-gray-700 dark:text-gray-200 font-medium">{ind.name}</span>
                     </div>
-                    <span className="font-medium text-gray-900">
+                    <span className="font-medium text-gray-900 dark:text-white">
                       {ind.value !== null ? formatNumber(ind.value) : 'N/A'}
                     </span>
                   </div>
@@ -251,13 +251,13 @@ export default function DataPanel({
 
             {/* Separator between enabled and unselected */}
             {(indicators1.length > 0 || indicators2.length > 0) && unselectedIndicators.length > 0 && (
-              <div className="border-t-2 border-gray-300 my-2"></div>
+              <div className="border-t-2 border-gray-300 dark:border-gray-600 my-2"></div>
             )}
 
             {/* Unselected indicators */}
             {unselectedIndicators.length > 0 && (
               <div>
-                <div className="text-xs text-gray-500 mb-1">Not Selected</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Not Selected</div>
                 {unselectedIndicators.map((ind) => (
                   <div
                     key={ind.name}
@@ -268,9 +268,9 @@ export default function DataPanel({
                         className="w-3 h-3 rounded"
                         style={{ backgroundColor: ind.color }}
                       />
-                      <span className="text-gray-500">{ind.name}</span>
+                      <span className="text-gray-500 dark:text-gray-400">{ind.name}</span>
                     </div>
-                    <span className="text-gray-600">
+                    <span className="text-gray-600 dark:text-gray-400">
                       {ind.value !== null ? formatNumber(ind.value) : 'N/A'}
                     </span>
                   </div>

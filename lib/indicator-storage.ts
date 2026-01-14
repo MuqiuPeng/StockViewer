@@ -10,7 +10,8 @@ export interface Indicator {
   outputColumn: string;           // For single indicators (or group name for groups)
   createdAt: string;
   updatedAt?: string;
-  dependencies: string[];
+  dependencies: string[];         // Indicator IDs this depends on
+  dependencyColumns?: string[];   // Specific columns used, e.g., ["KDJ:K", "SMA_20"]
 
   // NEW FIELDS for indicator groups
   isGroup?: boolean;              // true for MyTT group indicators

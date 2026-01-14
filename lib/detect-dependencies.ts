@@ -1,15 +1,22 @@
 import { Indicator } from './indicator-storage';
 
+export interface DependencyResult {
+  dependencies: string[];         // Indicator IDs
+  dependencyColumns: string[];    // Specific column names used
+}
+
 /**
  * Detect which other indicators are referenced in the Python code
- * by looking for column names from other indicators
+ * by looking for column names from other indicators.
+ * Returns both indicator IDs and specific column names used.
  */
 export function detectDependencies(
   pythonCode: string,
   allIndicators: Indicator[],
   currentIndicatorId?: string
-): string[] {
+): DependencyResult {
   const dependencies: string[] = [];
+  const dependencyColumns: string[] = [];
 
   for (const indicator of allIndicators) {
     // Skip self-reference
@@ -17,9 +24,9 @@ export function detectDependencies(
       continue;
     }
 
-    // For group indicators, check for references to any of the group:name columns
+    // For group indicators, check for references to each specific column
     if (indicator.isGroup && indicator.expectedOutputs) {
-      let groupReferenced = false;
+      const referencedColumns: string[] = [];
 
       for (const outputName of indicator.expectedOutputs) {
         const fullColumnName = `${indicator.groupName}:${outputName}`;
@@ -34,30 +41,23 @@ export function detectDependencies(
         const isReferenced = patterns.some(pattern => pattern.test(pythonCode));
 
         if (isReferenced) {
-          groupReferenced = true;
-          break;  // One match is enough for the whole group
+          referencedColumns.push(fullColumnName);
         }
       }
 
-      if (groupReferenced) {
+      // If any columns from this group are referenced, add as dependency
+      if (referencedColumns.length > 0) {
         dependencies.push(indicator.id);
+        dependencyColumns.push(...referencedColumns);
       }
     } else {
-      // Single indicator (existing logic)
+      // Single indicator
       const outputColumn = indicator.outputColumn;
-
-      // Look for references to this indicator's output column in the Python code
-      // Common patterns:
-      // - data['column_name']
-      // - data["column_name"]
-      // - data.column_name (less common but possible)
-      // - 'column_name' or "column_name" anywhere in the code
 
       const patterns = [
         new RegExp(`data\\['${escapeRegex(outputColumn)}'\\]`, 'g'),
         new RegExp(`data\\["${escapeRegex(outputColumn)}"\\]`, 'g'),
         new RegExp(`data\\.${escapeRegex(outputColumn)}\\b`, 'g'),
-        // Also check for string literals (in case of dynamic access)
         new RegExp(`['"]${escapeRegex(outputColumn)}['"]`, 'g'),
       ];
 
@@ -65,11 +65,12 @@ export function detectDependencies(
 
       if (isReferenced) {
         dependencies.push(indicator.id);
+        dependencyColumns.push(outputColumn);
       }
     }
   }
 
-  return dependencies;
+  return { dependencies, dependencyColumns };
 }
 
 /**

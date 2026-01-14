@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server';
 import { getIndicatorById, updateIndicator, deleteIndicator, loadIndicators, saveIndicators } from '@/lib/indicator-storage';
 import { validatePythonCode } from '@/lib/indicator-validator';
-import { findDependentIndicators, getCascadeDeleteList } from '@/lib/indicator-dependencies';
+import { findDependentIndicators, getCascadeDeleteList, findIndicatorsDependingOnColumns } from '@/lib/indicator-dependencies';
 import { detectDependencies } from '@/lib/detect-dependencies';
-import { renameGroupIndicatorColumns } from '@/lib/csv-updater';
+import { renameGroupIndicatorColumns, removeGroupIndicatorColumns, cleanupOrphanedGroupColumns } from '@/lib/csv-updater';
 
 export const runtime = 'nodejs';
 
@@ -106,7 +106,9 @@ export async function PUT(
     // Re-detect dependencies if Python code is being updated
     if (pythonCode !== undefined) {
       const allIndicators = await loadIndicators();
-      updates.dependencies = detectDependencies(pythonCode, allIndicators, params.id);
+      const { dependencies, dependencyColumns } = detectDependencies(pythonCode, allIndicators, params.id);
+      updates.dependencies = dependencies;
+      updates.dependencyColumns = dependencyColumns;
     }
 
     // Check if group name is changing for a group indicator
@@ -128,7 +130,75 @@ export async function PUT(
       console.log(`Updated ${renameResult.updatedCount} datasets with renamed columns`);
     }
 
+    // Check if expectedOutputs are being removed from a group indicator
+    const currentGroupName = groupName !== undefined ? groupName : existingIndicator.groupName;
+    if (
+      existingIndicator.isGroup &&
+      existingIndicator.expectedOutputs &&
+      expectedOutputs !== undefined &&
+      currentGroupName
+    ) {
+      const newOutputs = expectedOutputs.filter((output: string) => output.trim() !== '');
+      const removedOutputs = existingIndicator.expectedOutputs.filter(
+        (output: string) => !newOutputs.includes(output)
+      );
+
+      if (removedOutputs.length > 0) {
+        // Build full column names being removed
+        const removedColumnNames = removedOutputs.map(output => `${currentGroupName}:${output}`);
+
+        // Check if any other indicators depend on these columns
+        const allIndicators = await loadIndicators();
+        const columnDependents = findIndicatorsDependingOnColumns(removedColumnNames, allIndicators);
+
+        // Check if force removal is requested
+        const url = new URL(request.url);
+        const forceRemove = url.searchParams.get('force') === 'true';
+
+        if (columnDependents.size > 0 && !forceRemove) {
+          // Build detailed error message
+          const dependentInfo: { column: string; indicators: { id: string; name: string }[] }[] = [];
+          columnDependents.forEach((indicators, column) => {
+            dependentInfo.push({
+              column,
+              indicators: indicators.map(ind => ({ id: ind.id, name: ind.name })),
+            });
+          });
+
+          return NextResponse.json(
+            {
+              error: 'Columns have dependent indicators',
+              message: 'Some columns you are trying to remove are used by other indicators',
+              dependentColumns: dependentInfo,
+            },
+            { status: 400 }
+          );
+        }
+
+        console.log(`Removing ${removedOutputs.length} columns from group indicator "${currentGroupName}": ${removedOutputs.join(', ')}`);
+        const removeResult = await removeGroupIndicatorColumns(currentGroupName, removedOutputs);
+
+        if (removeResult.errors.length > 0) {
+          console.error('Some datasets failed to update:', removeResult.errors);
+        }
+
+        console.log(`Updated ${removeResult.updatedCount} datasets with removed columns`);
+      }
+    }
+
     const indicator = await updateIndicator(params.id, updates);
+
+    // Clean up any orphaned columns for group indicators
+    // This handles cases where columns exist in CSV but aren't in expectedOutputs
+    if (indicator.isGroup && indicator.groupName && indicator.expectedOutputs) {
+      const orphanedCleanup = await cleanupOrphanedGroupColumns(
+        indicator.groupName,
+        indicator.expectedOutputs
+      );
+      if (orphanedCleanup.removedColumns.length > 0) {
+        console.log(`Cleaned up orphaned columns: ${orphanedCleanup.removedColumns.join(', ')}`);
+      }
+    }
 
     return NextResponse.json({
       success: true,

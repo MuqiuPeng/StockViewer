@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import ChartPanel from './ChartPanel';
 import IndicatorSelector from './IndicatorSelector';
 import AddDatasetModal from './AddDatasetModal';
@@ -23,9 +23,7 @@ interface DatasetInfo {
 
 // Helper function to format dataset display name
 function formatDatasetDisplay(dataset: DatasetInfo): string {
-  const sourceConfig = getDataSourceConfig(dataset.dataSource || 'stock_zh_a_hist');
-  const sourceName = sourceConfig?.name || dataset.dataSource;
-  return `${dataset.code} - ${sourceName}`;
+  return `${dataset.code} - ${dataset.name}`;
 }
 
 interface CandleData {
@@ -61,6 +59,7 @@ interface StockGroup {
   datasetNames: string[];
   createdAt: string;
   updatedAt?: string;
+  isDataSource?: boolean;
 }
 
 export default function StockViewer() {
@@ -83,6 +82,15 @@ export default function StockViewer() {
   const [crosshairTime, setCrosshairTime] = useState<string | null>(null);
   const [showAddToGroupModal, setShowAddToGroupModal] = useState(false);
   const [isOutdatedModalDismissed, setIsOutdatedModalDismissed] = useState(false);
+  const [keyboardNavMode, setKeyboardNavMode] = useState(false);
+  const [selectedCandleIndex, setSelectedCandleIndex] = useState<number | null>(null);
+  const [preservedVisibleRange, setPreservedVisibleRange] = useState<{ width: number } | null>(null);
+  const [preservedDateRange, setPreservedDateRange] = useState<{ from: string; to: string } | null>(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
+  const [keyboardZoomTrigger, setKeyboardZoomTrigger] = useState(0);
+  const keyboardNavDateRef = useRef<string | null>(null); // Store target date for keyboard nav
+  const [isArrowKeyNav, setIsArrowKeyNav] = useState(false); // Track if navigation is from arrow keys
 
   // Base indicators from API (not custom calculated)
   const BASE_INDICATORS = ['volume', 'turnover', 'amplitude', 'change_pct', 'change_amount', 'turnover_rate'];
@@ -93,14 +101,29 @@ export default function StockViewer() {
     '#00BCD4', '#FFEB3B', '#795548', '#607D8B', '#E91E63',
   ];
 
+  // Persistent color assignments - once assigned, colors don't change
+  const persistentColorMapRef = useRef<Map<string, string>>(new Map());
+  const nextColorIndexRef = useRef<number>(0);
+
   // Calculate shared color map for all indicators across both charts
+  // Colors are assigned persistently - once an indicator gets a color, it keeps it
   const indicatorColorMap = useMemo(() => {
     const allEnabled = new Set([...enabledIndicators1, ...enabledIndicators2]);
-    const sorted = Array.from(allEnabled).sort();
+    const persistentMap = persistentColorMapRef.current;
+
+    // Assign colors to any new indicators that don't have one yet
+    for (const ind of allEnabled) {
+      if (!persistentMap.has(ind)) {
+        persistentMap.set(ind, INDICATOR_COLORS[nextColorIndexRef.current % INDICATOR_COLORS.length]);
+        nextColorIndexRef.current++;
+      }
+    }
+
+    // Return a new Map with only the currently enabled indicators
     const colorMap = new Map<string, string>();
-    sorted.forEach((ind, idx) => {
-      colorMap.set(ind, INDICATOR_COLORS[idx % INDICATOR_COLORS.length]);
-    });
+    for (const ind of allEnabled) {
+      colorMap.set(ind, persistentMap.get(ind)!);
+    }
     return colorMap;
   }, [enabledIndicators1, enabledIndicators2]);
 
@@ -108,9 +131,9 @@ export default function StockViewer() {
   const availableGroups = useMemo(() => {
     const groupList: Array<{ id: string; name: string; type: 'group' | 'datasource' }> = [];
 
-    // Add custom groups
-    groups.forEach(group => {
-      groupList.push({ id: group.id, name: group.name, type: 'group' });
+    // Add only custom groups (not data source groups, those are added separately below)
+    groups.filter(g => !g.isDataSource).forEach(group => {
+      groupList.push({ id: `group_${group.id}`, name: group.name, type: 'group' });
     });
 
     // Add data sources with friendly names
@@ -132,28 +155,38 @@ export default function StockViewer() {
     });
   }, [groups, datasets]);
 
-  // Filter datasets by selected group
+  // Filter datasets by selected group and sort by symbol
   const filteredDatasets = useMemo(() => {
-    if (!selectedGroup) return datasets;
-    
-    const group = availableGroups.find(g => g.id === selectedGroup);
-    if (!group) return datasets;
-    
-    if (group.type === 'group') {
-      // Custom group - get datasets from group
-      const customGroup = groups.find(g => g.id === selectedGroup);
-      if (!customGroup) return [];
-      
-      return datasets.filter(ds => {
-        const datasetKey = ds.filename || ds.name;
-        return customGroup.datasetNames.includes(datasetKey);
-      });
+    let result: DatasetInfo[];
+
+    if (!selectedGroup) {
+      result = datasets;
     } else {
-      // Data source - filter by dataSource
-      // Extract technical source name from group ID (format: "datasource_{source}")
-      const technicalSourceName = group.id.replace('datasource_', '');
-      return datasets.filter(ds => (ds.dataSource || 'stock_zh_a_hist') === technicalSourceName);
+      const group = availableGroups.find(g => g.id === selectedGroup);
+      if (!group) {
+        result = datasets;
+      } else if (group.type === 'group') {
+        // Custom group - get datasets from group (strip 'group_' prefix to find original group)
+        const originalGroupId = selectedGroup.replace(/^group_/, '');
+        const customGroup = groups.find(g => g.id === originalGroupId);
+        if (!customGroup) {
+          result = [];
+        } else {
+          result = datasets.filter(ds => {
+            const datasetKey = ds.filename || ds.name;
+            return customGroup.datasetNames.includes(datasetKey);
+          });
+        }
+      } else {
+        // Data source - filter by dataSource
+        // Extract technical source name from group ID (format: "datasource_{source}")
+        const technicalSourceName = group.id.replace('datasource_', '');
+        result = datasets.filter(ds => (ds.dataSource || 'stock_zh_a_hist') === technicalSourceName);
+      }
     }
+
+    // Sort by symbol (code)
+    return result.sort((a, b) => a.code.localeCompare(b.code));
   }, [selectedGroup, datasets, groups, availableGroups]);
 
   // Set default group and dataset when groups/datasets load
@@ -198,6 +231,117 @@ export default function StockViewer() {
 
   const currentIndex = filteredDatasets.findIndex(ds => ds.id === selectedDataset);
   const canNavigate = filteredDatasets.length > 1;
+
+  // Keyboard navigation mode
+  useEffect(() => {
+    if (!keyboardNavMode) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only handle if not typing in an input
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      switch (e.key) {
+        case 'ArrowLeft':
+          e.preventDefault();
+          setIsArrowKeyNav(true);
+          // Move to the previous candle
+          setSelectedCandleIndex(prev => {
+            if (prev === null) return datasetData ? datasetData.candles.length - 1 : null;
+            return Math.max(0, prev - 1);
+          });
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          setIsArrowKeyNav(true);
+          // Move to the next candle
+          setSelectedCandleIndex(prev => {
+            if (prev === null) return datasetData ? datasetData.candles.length - 1 : null;
+            const maxIndex = datasetData ? datasetData.candles.length - 1 : 0;
+            return Math.min(maxIndex, prev + 1);
+          });
+          break;
+        case 'ArrowUp':
+          console.log('ArrowUp pressed');
+          e.preventDefault();
+          // Previous dataset in group
+          setSelectedDataset(prevDataset => {
+            const currentIndex = filteredDatasets.findIndex(ds => ds.id === prevDataset);
+            if (currentIndex > 0) {
+              return filteredDatasets[currentIndex - 1].id;
+            } else if (filteredDatasets.length > 0) {
+              return filteredDatasets[filteredDatasets.length - 1].id;
+            }
+            return prevDataset;
+          });
+          break;
+        case 'ArrowDown':
+          console.log('ArrowDown pressed');
+          e.preventDefault();
+          // Next dataset in group
+          setSelectedDataset(prevDataset => {
+            const currentIndex = filteredDatasets.findIndex(ds => ds.id === prevDataset);
+            if (currentIndex < filteredDatasets.length - 1) {
+              return filteredDatasets[currentIndex + 1].id;
+            } else if (filteredDatasets.length > 0) {
+              return filteredDatasets[0].id;
+            }
+            return prevDataset;
+          });
+          break;
+        case '=':
+        case '+':
+          console.log('Zoom in pressed');
+          e.preventDefault();
+          setKeyboardZoomTrigger(prev => prev + 1);
+          break;
+        case '-':
+          console.log('Zoom out pressed');
+          e.preventDefault();
+          setKeyboardZoomTrigger(prev => prev - 1);
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [keyboardNavMode, filteredDatasets, datasetData]);
+
+  // Close settings menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) {
+        setIsSettingsOpen(false);
+      }
+    };
+
+    if (isSettingsOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isSettingsOpen]);
+
+  // Backtick key to toggle keyboard nav mode (always active)
+  useEffect(() => {
+    const handleBacktick = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      if (e.key === '`') {
+        e.preventDefault();
+        setKeyboardNavMode(prev => {
+          if (prev) {
+            setSelectedCandleIndex(null);
+          }
+          return !prev;
+        });
+      }
+    };
+
+    window.addEventListener('keydown', handleBacktick);
+    return () => window.removeEventListener('keydown', handleBacktick);
+  }, []);
 
   // Load datasets list, groups, and defined indicators on mount
   useEffect(() => {
@@ -261,6 +405,7 @@ export default function StockViewer() {
       setIsOutdated(false);
       setLastDataDate(null);
       setIsOutdatedModalDismissed(false); // Reset dismissed state for new dataset
+      // Don't reset selectedCandleIndex - we want to preserve crosshair position
 
       try {
         const res = await fetch(`/api/dataset/${encodeURIComponent(selectedDataset)}`);
@@ -295,6 +440,49 @@ export default function StockViewer() {
 
     loadDatasetData();
   }, [selectedDataset]);
+
+  // Update keyboard nav date ref when crosshair moves in keyboard nav mode
+  useEffect(() => {
+    if (keyboardNavMode && crosshairTime) {
+      keyboardNavDateRef.current = crosshairTime;
+    }
+  }, [keyboardNavMode, crosshairTime]);
+
+  // When dataset changes in keyboard nav mode, find the same date in new dataset
+  useEffect(() => {
+    if (!datasetData || !keyboardNavMode) return;
+
+    const targetDate = keyboardNavDateRef.current;
+
+    // If we have a target date, try to find that date in the new dataset
+    if (targetDate) {
+      const newIndex = datasetData.candles.findIndex(c => c.time === targetDate);
+      if (newIndex !== -1) {
+        // Found exact date
+        setSelectedCandleIndex(newIndex);
+        return;
+      }
+
+      // Try to find the closest date (first date >= target)
+      const closestIndex = datasetData.candles.findIndex(c => c.time >= targetDate);
+      if (closestIndex !== -1) {
+        setSelectedCandleIndex(closestIndex);
+        return;
+      }
+
+      // Date is after all candles, go to the last one
+      setSelectedCandleIndex(datasetData.candles.length - 1);
+      return;
+    }
+
+    // Fallback: clamp index if no target date
+    if (selectedCandleIndex !== null) {
+      const maxIndex = datasetData.candles.length - 1;
+      if (selectedCandleIndex > maxIndex) {
+        setSelectedCandleIndex(maxIndex);
+      }
+    }
+  }, [datasetData, keyboardNavMode]);
 
   const handleToggleIndicator1 = (indicator: string) => {
     setEnabledIndicators1((prev) => {
@@ -397,6 +585,25 @@ export default function StockViewer() {
     }
   };
 
+  // Enter key to trigger update when outdated notification is shown
+  useEffect(() => {
+    if (!isOutdated || !lastDataDate || isOutdatedModalDismissed || isUpdating) return;
+
+    const handleEnter = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleUpdateData();
+        setIsOutdatedModalDismissed(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleEnter);
+    return () => window.removeEventListener('keydown', handleEnter);
+  }, [isOutdated, lastDataDate, isOutdatedModalDismissed, isUpdating]);
+
   const reloadCurrentDataset = async () => {
     if (!selectedDataset) return;
 
@@ -483,11 +690,11 @@ export default function StockViewer() {
   return (
     <div className="stock-dashboard p-4 h-screen flex flex-col overflow-hidden">
       {/* Navigation */}
-      <div className="mb-4 flex items-center gap-2 border-b pb-4">
-        <Link href="/" className="text-blue-600 hover:text-blue-800 font-medium">Home</Link>
+      <div className="mb-4 flex items-center gap-2 border-b border-gray-200 dark:border-gray-700 pb-4">
+        <Link href="/" className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium">Home</Link>
         <span className="text-gray-400">/</span>
-        <span className="text-gray-600">Viewer</span>
-        <div className="ml-auto flex gap-2">
+        <span className="text-gray-600 dark:text-gray-300">Viewer</span>
+        <div className="ml-auto flex gap-2 mr-12">
           <Link
             href="/backtest"
             className="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700"
@@ -504,7 +711,7 @@ export default function StockViewer() {
       </div>
 
       {error && (
-        <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+        <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-400 rounded">
           {error}
         </div>
       )}
@@ -515,7 +722,7 @@ export default function StockViewer() {
           id="group-select"
           value={selectedGroup}
           onChange={(e) => setSelectedGroup(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded"
+          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 dark:text-white"
           disabled={loading || availableGroups.length === 0}
         >
           {!selectedGroup && (
@@ -537,7 +744,7 @@ export default function StockViewer() {
           <button
             onClick={handlePrevious}
             disabled={!canNavigate || loading || !selectedDataset}
-            className="px-3 py-2 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed dark:text-white"
             title="Previous stock"
           >
             ←
@@ -546,7 +753,7 @@ export default function StockViewer() {
             id="dataset-select"
             value={selectedDataset}
             onChange={(e) => setSelectedDataset(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded min-w-[200px]"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded min-w-[200px] bg-white dark:bg-gray-800 dark:text-white"
             disabled={loading || filteredDatasets.length === 0 || !selectedGroup}
           >
             {!selectedDataset && (
@@ -565,44 +772,102 @@ export default function StockViewer() {
           <button
             onClick={handleNext}
             disabled={!canNavigate || loading || !selectedDataset}
-            className="px-3 py-2 border border-gray-300 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed dark:text-white"
             title="Next stock"
           >
             →
           </button>
           {canNavigate && selectedDataset && (
-            <span className="text-sm text-gray-600 whitespace-nowrap">
+            <span className="text-sm text-gray-600 dark:text-gray-300 whitespace-nowrap">
               {currentIndex + 1} / {filteredDatasets.length}
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-2 ml-auto">
+        {/* Loading/Updating indicator */}
+        {(loading || isUpdating) && (
+          <span className="text-sm text-gray-600 dark:text-gray-300 ml-auto">
+            {loading ? 'Loading dataset...' : 'Updating...'}
+          </span>
+        )}
+
+        {/* Settings Menu */}
+        <div className={`relative ${!loading && !isUpdating ? 'ml-auto' : ''}`} ref={settingsRef}>
           <button
-            onClick={() => setIsAddDatasetModalOpen(true)}
-            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 whitespace-nowrap"
+            onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+            className="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400"
+            title="Settings"
           >
-            + Add Dataset
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-600 dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
           </button>
-          <button
-            onClick={() => setIsIndicatorManagerOpen(true)}
-            className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-purple-500 whitespace-nowrap"
-          >
-            Manage Indicators
-          </button>
-          <button
-            onClick={() => setShowAddToGroupModal(true)}
-            disabled={!datasetData}
-            className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            + Add to Group
-          </button>
+
+          {isSettingsOpen && (
+            <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50">
+              <div className="relative group">
+                <button
+                  onClick={() => {
+                    const enabled = !keyboardNavMode;
+                    setKeyboardNavMode(enabled);
+                    if (!enabled) {
+                      setSelectedCandleIndex(null);
+                    }
+                  }}
+                  className={`w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 ${
+                    keyboardNavMode ? 'text-blue-600 dark:text-blue-400 font-medium' : 'text-gray-700 dark:text-gray-200'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${keyboardNavMode ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-500'}`} />
+                  Keyboard Nav
+                  <span className="ml-auto text-xs text-gray-400">`</span>
+                </button>
+                <div className="absolute right-full top-0 mr-2 w-48 p-2 bg-gray-800 text-white text-xs rounded shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                  <div className="font-medium mb-1">Keyboard Navigation</div>
+                  <div className="space-y-0.5 text-gray-300">
+                    <div><span className="text-white">`</span> Toggle on/off</div>
+                    <div><span className="text-white">←→</span> Move candle</div>
+                    <div><span className="text-white">↑↓</span> Switch dataset</div>
+                    <div><span className="text-white">-/=</span> Zoom out/in</div>
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsAddDatasetModalOpen(true);
+                  setIsSettingsOpen(false);
+                }}
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+              >
+                <span className="w-2 h-2 rounded-full bg-green-500" />
+                Add Dataset
+              </button>
+              <button
+                onClick={() => {
+                  setIsIndicatorManagerOpen(true);
+                  setIsSettingsOpen(false);
+                }}
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+              >
+                <span className="w-2 h-2 rounded-full bg-purple-500" />
+                Manage Indicators
+              </button>
+              <button
+                onClick={() => {
+                  setShowAddToGroupModal(true);
+                  setIsSettingsOpen(false);
+                }}
+                disabled={!datasetData}
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <span className="w-2 h-2 rounded-full bg-indigo-500" />
+                Add to Group
+              </button>
+            </div>
+          )}
         </div>
       </div>
-
-      {loading && (
-        <div className="mb-4 text-gray-600">Loading dataset...</div>
-      )}
 
       {datasetData && (
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 flex-1 min-h-0 overflow-hidden">
@@ -649,6 +914,16 @@ export default function StockViewer() {
               enabledIndicators2={enabledIndicators2}
               colorMap={indicatorColorMap}
               onCrosshairMove={setCrosshairTime}
+              keyboardNavMode={keyboardNavMode}
+              selectedCandleIndex={selectedCandleIndex}
+              onSelectedCandleIndexChange={setSelectedCandleIndex}
+              onVisibleRangeChange={(width) => setPreservedVisibleRange({ width })}
+              preservedVisibleRangeWidth={preservedVisibleRange?.width}
+              keyboardZoomTrigger={keyboardZoomTrigger}
+              preservedDateRange={preservedDateRange}
+              onDateRangeChange={setPreservedDateRange}
+              isArrowKeyNav={isArrowKeyNav}
+              onArrowKeyNavHandled={() => setIsArrowKeyNav(false)}
             />
           </div>
         </div>
@@ -673,14 +948,14 @@ export default function StockViewer() {
             className="absolute inset-0 bg-black bg-opacity-50"
             onClick={() => setShowAddToGroupModal(false)}
           />
-          <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4">Add to Group</h2>
-            {groups.length === 0 ? (
-              <div className="text-gray-600 mb-4">
+          <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4 dark:text-white">Add to Group</h2>
+            {groups.filter(g => !g.isDataSource).length === 0 ? (
+              <div className="text-gray-600 dark:text-gray-300 mb-4">
                 <p className="mb-2">No groups available.</p>
-                <p className="text-sm text-gray-500">
+                <p className="text-sm text-gray-500 dark:text-gray-400">
                   Create a group first from the{' '}
-                  <Link href="/datasets" className="text-blue-600 hover:underline">
+                  <Link href="/datasets" className="text-blue-600 dark:text-blue-400 hover:underline">
                     Dataset Management
                   </Link>{' '}
                   page.
@@ -688,22 +963,22 @@ export default function StockViewer() {
               </div>
             ) : (
               <div className="mb-4">
-                <p className="text-sm text-gray-600 mb-3">
+                <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
                   Select a group to add{' '}
                   <span className="font-semibold">{datasetData?.meta.name}</span>:
                 </p>
                 <div className="space-y-2 max-h-96 overflow-y-auto">
-                  {groups.map((group) => (
+                  {groups.filter(g => !g.isDataSource).map((group) => (
                     <button
                       key={group.id}
                       onClick={() => handleAddToGroup(group.id)}
-                      className="w-full text-left p-3 border border-gray-300 rounded hover:bg-gray-50 hover:border-indigo-400 transition-colors"
+                      className="w-full text-left p-3 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-indigo-400 dark:hover:border-indigo-500 transition-colors"
                     >
-                      <div className="font-semibold text-gray-800">{group.name}</div>
+                      <div className="font-semibold text-gray-800 dark:text-white">{group.name}</div>
                       {group.description && (
-                        <div className="text-sm text-gray-600 mt-1">{group.description}</div>
+                        <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">{group.description}</div>
                       )}
-                      <div className="text-xs text-gray-500 mt-1">
+                      <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                         {group.datasetNames.length} dataset(s)
                       </div>
                     </button>
@@ -714,7 +989,7 @@ export default function StockViewer() {
             <div className="flex justify-end">
               <button
                 onClick={() => setShowAddToGroupModal(false)}
-                className="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200"
+                className="px-4 py-2 text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
               >
                 Close
               </button>
@@ -725,16 +1000,16 @@ export default function StockViewer() {
 
       {/* Outdated Data Warning Notification */}
       {isOutdated && lastDataDate && !isOutdatedModalDismissed && (
-        <div className="fixed top-20 right-4 z-50 w-96 bg-white rounded-lg shadow-2xl border-l-4 border-yellow-500 animate-slide-in">
+        <div className="fixed top-20 right-4 z-50 w-96 bg-white dark:bg-gray-800 rounded-lg shadow-2xl border-l-4 border-yellow-500 animate-slide-in">
           <div className="p-4">
             <div className="flex items-start gap-3">
               <div className="text-2xl flex-shrink-0">⚠️</div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between mb-2">
-                  <h3 className="font-bold text-yellow-800 text-sm">Data is Outdated</h3>
+                  <h3 className="font-bold text-yellow-800 dark:text-yellow-400 text-sm">Data is Outdated</h3>
                   <button
                     onClick={() => setIsOutdatedModalDismissed(true)}
-                    className="text-gray-400 hover:text-gray-600 flex-shrink-0 ml-2"
+                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex-shrink-0 ml-2"
                     title="Dismiss"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -742,10 +1017,10 @@ export default function StockViewer() {
                     </svg>
                   </button>
                 </div>
-                <p className="text-gray-700 text-sm mb-1">
+                <p className="text-gray-700 dark:text-gray-200 text-sm mb-1">
                   <span className="font-semibold">{datasetData?.meta.name}</span>
                 </p>
-                <p className="text-gray-600 text-xs mb-3">
+                <p className="text-gray-600 dark:text-gray-400 text-xs mb-3">
                   Last update: <span className="font-medium">{lastDataDate}</span>
                 </p>
                 <button

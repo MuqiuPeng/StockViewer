@@ -254,3 +254,202 @@ export async function renameGroupIndicatorColumns(
 
   return { updatedCount, errors };
 }
+
+/**
+ * Remove specific columns from a group indicator across all datasets
+ * Used when expectedOutputs are removed from a group indicator
+ */
+export async function removeGroupIndicatorColumns(
+  groupName: string,
+  columnsToRemove: string[]
+): Promise<{ updatedCount: number; errors: string[] }> {
+  const datasets = await loadMetadata();
+  const errors: string[] = [];
+  let updatedCount = 0;
+
+  // Build full column names to remove (e.g., "groupName:output1")
+  const fullColumnNames = columnsToRemove.map(col => `${groupName}:${col}`);
+
+  for (const dataset of datasets) {
+    try {
+      const fileStats = await getCsvFileStats(dataset.filename);
+      if (!fileStats.exists) {
+        continue; // Skip non-existent files silently
+      }
+
+      const fileContent = await readFile(fileStats.path, 'utf-8');
+
+      const updated = await new Promise<boolean>((resolve, reject) => {
+        Papa.parse(fileContent, {
+          header: true,
+          skipEmptyLines: true,
+          complete: async (results) => {
+            try {
+              const rows = results.data as Record<string, any>[];
+              const headers = results.meta.fields || [];
+
+              // Check if this CSV has any of the columns to remove (check actual CSV headers)
+              const matchingColumns = headers.filter(col =>
+                fullColumnNames.includes(col)
+              );
+
+              if (matchingColumns.length === 0) {
+                resolve(false); // No columns to remove in this file
+                return;
+              }
+
+              // Remove the specified columns from each row
+              const updatedRows = rows.map(row => {
+                const newRow: Record<string, any> = {};
+                for (const [key, value] of Object.entries(row)) {
+                  if (!fullColumnNames.includes(key)) {
+                    newRow[key] = value;
+                  }
+                }
+                return newRow;
+              });
+
+              // Clean date column if all dates are at midnight (T00:00:00.000)
+              const datesCleaned = cleanDateColumn(updatedRows, 'date');
+              if (datesCleaned) {
+                console.log(`Cleaned date column: stripped T00:00:00.000 from all dates`);
+              }
+
+              // Generate updated CSV
+              const updatedCsv = Papa.unparse(updatedRows);
+
+              // Write back to file
+              await writeFile(fileStats.path, updatedCsv, 'utf-8');
+
+              // Update dataset metadata columns if present
+              if (dataset.columns) {
+                dataset.columns = dataset.columns.filter(col =>
+                  !fullColumnNames.includes(col)
+                );
+              }
+
+              resolve(true);
+            } catch (error) {
+              reject(error);
+            }
+          },
+          error: (error: Error) => {
+            reject(new Error(`CSV parsing error: ${error.message}`));
+          },
+        });
+      });
+
+      if (updated) {
+        updatedCount++;
+      }
+    } catch (error) {
+      errors.push(`Failed to update ${dataset.filename}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Save updated metadata
+  if (updatedCount > 0) {
+    await saveMetadata(datasets);
+  }
+
+  return { updatedCount, errors };
+}
+
+/**
+ * Clean up orphaned columns for a group indicator across all datasets
+ * Removes columns that match the group prefix but aren't in the expected outputs
+ */
+export async function cleanupOrphanedGroupColumns(
+  groupName: string,
+  expectedOutputs: string[]
+): Promise<{ removedColumns: string[]; errors: string[] }> {
+  const datasets = await loadMetadata();
+  const errors: string[] = [];
+  const removedColumns: string[] = [];
+  const prefix = `${groupName}:`;
+
+  // Build set of valid column names
+  const validColumns = new Set(expectedOutputs.map(output => `${groupName}:${output}`));
+
+  for (const dataset of datasets) {
+    try {
+      const fileStats = await getCsvFileStats(dataset.filename);
+      if (!fileStats.exists) {
+        continue;
+      }
+
+      const fileContent = await readFile(fileStats.path, 'utf-8');
+
+      const result = await new Promise<{ updated: boolean; removed: string[] }>((resolve, reject) => {
+        Papa.parse(fileContent, {
+          header: true,
+          skipEmptyLines: true,
+          complete: async (results) => {
+            try {
+              const rows = results.data as Record<string, any>[];
+              const headers = results.meta.fields || [];
+
+              // Find orphaned columns (match prefix but not in valid set)
+              const orphanedColumns = headers.filter(
+                col => col.startsWith(prefix) && !validColumns.has(col)
+              );
+
+              if (orphanedColumns.length === 0) {
+                resolve({ updated: false, removed: [] });
+                return;
+              }
+
+              // Remove orphaned columns from each row
+              const updatedRows = rows.map(row => {
+                const newRow: Record<string, any> = {};
+                for (const [key, value] of Object.entries(row)) {
+                  if (!orphanedColumns.includes(key)) {
+                    newRow[key] = value;
+                  }
+                }
+                return newRow;
+              });
+
+              // Clean date column if all dates are at midnight
+              const datesCleaned = cleanDateColumn(updatedRows, 'date');
+              if (datesCleaned) {
+                console.log(`Cleaned date column: stripped T00:00:00.000 from all dates`);
+              }
+
+              // Generate updated CSV
+              const updatedCsv = Papa.unparse(updatedRows);
+
+              // Write back to file
+              await writeFile(fileStats.path, updatedCsv, 'utf-8');
+
+              // Update dataset metadata columns if present
+              if (dataset.columns) {
+                dataset.columns = dataset.columns.filter(col => !orphanedColumns.includes(col));
+              }
+
+              resolve({ updated: true, removed: orphanedColumns });
+            } catch (error) {
+              reject(error);
+            }
+          },
+          error: (error: Error) => {
+            reject(new Error(`CSV parsing error: ${error.message}`));
+          },
+        });
+      });
+
+      if (result.updated) {
+        removedColumns.push(...result.removed);
+      }
+    } catch (error) {
+      errors.push(`Failed to update ${dataset.filename}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Save updated metadata if any columns were removed
+  if (removedColumns.length > 0) {
+    await saveMetadata(datasets);
+  }
+
+  return { removedColumns, errors };
+}

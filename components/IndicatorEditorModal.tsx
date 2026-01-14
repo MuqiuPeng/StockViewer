@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
+import { useTheme } from './ThemeProvider';
 
 interface Indicator {
   id: string;
@@ -70,6 +71,7 @@ export default function IndicatorEditorModal({
   onSuccess,
   indicator,
 }: IndicatorEditorModalProps) {
+  const { theme } = useTheme();
   const [indicatorType, setIndicatorType] = useState<'custom' | 'mytt_group'>('custom');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -275,6 +277,42 @@ export default function IndicatorEditorModal({
       const data = await response.json();
 
       if (!response.ok) {
+        // Check if this is a "columns have dependents" error
+        if (data.error === 'Columns have dependent indicators' && data.dependentColumns) {
+          // Build confirmation message
+          const dependentInfo = data.dependentColumns as { column: string; indicators: { id: string; name: string }[] }[];
+          const lines = dependentInfo.map(({ column, indicators }) => {
+            const indicatorNames = indicators.map(ind => ind.name).join(', ');
+            return `  • ${column} is used by: ${indicatorNames}`;
+          });
+
+          const confirmMessage = `The following columns are used by other indicators:\n${lines.join('\n')}\n\nDo you want to remove them anyway? This may break the dependent indicators.`;
+
+          if (confirm(confirmMessage)) {
+            // Retry with force=true
+            const forceResponse = await fetch(`${url}?force=true`, {
+              method,
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(requestBody),
+            });
+
+            const forceData = await forceResponse.json();
+
+            if (!forceResponse.ok) {
+              setError(forceData.message || 'Failed to save indicator');
+              setIsLoading(false);
+              return;
+            }
+
+            setIsLoading(false);
+            onSuccess();
+            return;
+          } else {
+            setIsLoading(false);
+            return;
+          }
+        }
+
         setError(data.message || 'Failed to save indicator');
         setIsLoading(false);
         return;
@@ -431,33 +469,33 @@ export default function IndicatorEditorModal({
         onClick={onClose}
       />
 
-      <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-6xl max-h-[90vh] overflow-y-auto">
-        <h2 className="text-xl font-bold mb-4">
+      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+        <h2 className="text-xl font-bold mb-4 dark:text-white">
           {indicator ? 'Edit Indicator' : 'Create New Indicator'}
         </h2>
 
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label htmlFor="indicatorType" className="block text-sm font-medium mb-2">
+            <label htmlFor="indicatorType" className="block text-sm font-medium mb-2 dark:text-white">
               Indicator Type <span className="text-red-500">*</span>
             </label>
             <select
               id="indicatorType"
               value={indicatorType}
               onChange={(e) => setIndicatorType(e.target.value as 'custom' | 'mytt_group')}
-              className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               disabled={isLoading || !!indicator}
             >
               <option value="custom">Custom Python (Single Indicator)</option>
               <option value="mytt_group">MyTT Library Group (Multiple Indicators)</option>
             </select>
             {indicator && (
-              <p className="text-xs text-gray-500 mt-1">Type cannot be changed after creation</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Type cannot be changed after creation</p>
             )}
           </div>
 
           <div className="mb-4">
-            <label htmlFor="name" className="block text-sm font-medium mb-2">
+            <label htmlFor="name" className="block text-sm font-medium mb-2 dark:text-white">
               Name <span className="text-red-500">*</span>
             </label>
             <input
@@ -465,7 +503,7 @@ export default function IndicatorEditorModal({
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="e.g., SMA_20"
               disabled={isLoading}
               required
@@ -473,14 +511,14 @@ export default function IndicatorEditorModal({
           </div>
 
           <div className="mb-4">
-            <label htmlFor="description" className="block text-sm font-medium mb-2">
+            <label htmlFor="description" className="block text-sm font-medium mb-2 dark:text-white">
               Description <span className="text-red-500">*</span>
             </label>
             <textarea
               id="description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="e.g., 20-day Simple Moving Average"
               rows={2}
               disabled={isLoading}
@@ -489,16 +527,16 @@ export default function IndicatorEditorModal({
           </div>
 
           {/* External Datasets Selector */}
-          <div className="mb-4 border rounded p-4 bg-gray-50">
-            <h3 className="font-medium mb-2">External Datasets (Optional)</h3>
-            <p className="text-xs text-gray-500 mb-3">
+          <div className="mb-4 border dark:border-gray-600 rounded p-4 bg-gray-50 dark:bg-gray-700">
+            <h3 className="font-medium mb-2 dark:text-white">External Datasets (Optional)</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
               Include additional datasets (e.g., market indices, reference stocks) in your indicator.
             </p>
 
             {/* Help Box */}
-            <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded">
+            <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded">
               <div className="flex items-start justify-between mb-1">
-                <div className="text-xs font-medium text-blue-800">💡 How to use:</div>
+                <div className="text-xs font-medium text-blue-800 dark:text-blue-300">💡 How to use:</div>
                 <button
                   type="button"
                   onClick={() => {
@@ -542,9 +580,9 @@ export default function IndicatorEditorModal({
                   📝 Insert Template
                 </button>
               </div>
-              <div className="text-xs text-blue-700 space-y-1">
+              <div className="text-xs text-blue-700 dark:text-blue-300 space-y-1">
                 <div>1. Click &quot;+ Add External Dataset&quot; below</div>
-                <div>2. Choose a parameter name (e.g., <code className="bg-blue-100 px-1">index</code>)</div>
+                <div>2. Choose a parameter name (e.g., <code className="bg-blue-100 dark:bg-blue-800 px-1">index</code>)</div>
                 <div>3. Select group and dataset</div>
                 <div>4. Click &quot;Insert Template&quot; to see example code</div>
               </div>
@@ -556,9 +594,9 @@ export default function IndicatorEditorModal({
               const selectedGroup = groups.find(g => g.id === config.groupId);
 
               return (
-                <div key={paramName} className="mb-3 p-3 border rounded bg-white">
+                <div key={paramName} className="mb-3 p-3 border dark:border-gray-600 rounded bg-white dark:bg-gray-800">
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-medium">Parameter Name:</label>
+                    <label className="text-sm font-medium dark:text-white">Parameter Name:</label>
                     <div className="flex gap-2">
                       {isEditing ? (
                         <>
@@ -634,13 +672,13 @@ export default function IndicatorEditorModal({
                         });
                       }
                     }}
-                    className="w-full px-2 py-1 border rounded text-sm mb-2"
+                    className="w-full px-2 py-1 border dark:border-gray-600 rounded text-sm mb-2 bg-white dark:bg-gray-700 dark:text-white"
                     placeholder="e.g., index_data"
                     disabled={!isEditing}
                   />
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-xs text-gray-600">Group:</label>
+                      <label className="text-xs text-gray-600 dark:text-gray-400">Group:</label>
                       <select
                         value={config.groupId}
                         onChange={(e) => {
@@ -652,7 +690,7 @@ export default function IndicatorEditorModal({
                             });
                           }
                         }}
-                        className="w-full px-2 py-1 border rounded text-sm"
+                        className="w-full px-2 py-1 border dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 dark:text-white"
                         disabled={!isEditing}
                       >
                         <option value="">Select group</option>
@@ -662,7 +700,7 @@ export default function IndicatorEditorModal({
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs text-gray-600">Dataset:</label>
+                      <label className="text-xs text-gray-600 dark:text-gray-400">Dataset:</label>
                       <select
                         value={config.datasetName}
                         onChange={(e) => {
@@ -673,7 +711,7 @@ export default function IndicatorEditorModal({
                             });
                           }
                         }}
-                        className="w-full px-2 py-1 border rounded text-sm"
+                        className="w-full px-2 py-1 border dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 dark:text-white"
                         disabled={!isEditing || !config.groupId}
                       >
                         <option value="">Select dataset</option>
@@ -709,7 +747,7 @@ export default function IndicatorEditorModal({
 
           {indicatorType === 'custom' ? (
             <div className="mb-4">
-              <label htmlFor="outputColumn" className="block text-sm font-medium mb-2">
+              <label htmlFor="outputColumn" className="block text-sm font-medium mb-2 dark:text-white">
                 Output Column Name
               </label>
               <input
@@ -717,7 +755,7 @@ export default function IndicatorEditorModal({
                 type="text"
                 value={outputColumn}
                 onChange={(e) => setOutputColumn(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="Auto-filled from name"
                 disabled={isLoading}
               />
@@ -725,7 +763,7 @@ export default function IndicatorEditorModal({
           ) : (
             <>
               <div className="mb-4">
-                <label htmlFor="groupName" className="block text-sm font-medium mb-2">
+                <label htmlFor="groupName" className="block text-sm font-medium mb-2 dark:text-white">
                   Group Name <span className="text-red-500">*</span>
                 </label>
                 <input
@@ -733,7 +771,7 @@ export default function IndicatorEditorModal({
                   type="text"
                   value={groupName}
                   onChange={(e) => setGroupName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., MACD, KDJ, BOLL"
                   disabled={isLoading}
                   required
@@ -741,10 +779,10 @@ export default function IndicatorEditorModal({
               </div>
 
               <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">
+                <label className="block text-sm font-medium mb-2 dark:text-white">
                   Expected Outputs <span className="text-red-500">*</span>
                 </label>
-                <div className="text-xs text-gray-500 mb-2">
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-2">
                   List the indicator names your calculate function will return in the dict
                 </div>
                 {expectedOutputs.map((output, idx) => (
@@ -758,7 +796,7 @@ export default function IndicatorEditorModal({
                         setExpectedOutputs(newOutputs);
                       }}
                       placeholder={idx === 0 ? "e.g., DIF" : idx === 1 ? "e.g., DEA" : "e.g., MACD"}
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                       disabled={isLoading}
                     />
                     {expectedOutputs.length > 1 && (
@@ -776,7 +814,7 @@ export default function IndicatorEditorModal({
                 <button
                   type="button"
                   onClick={() => setExpectedOutputs([...expectedOutputs, ''])}
-                  className="px-3 py-2 bg-gray-200 rounded text-sm hover:bg-gray-300"
+                  className="px-3 py-2 bg-gray-200 dark:bg-gray-600 dark:text-white rounded text-sm hover:bg-gray-300 dark:hover:bg-gray-500"
                   disabled={isLoading}
                 >
                   + Add Output
@@ -786,7 +824,7 @@ export default function IndicatorEditorModal({
           )}
 
           <div className="mb-4">
-            <label className="block text-sm font-medium mb-2">
+            <label className="block text-sm font-medium mb-2 dark:text-white">
               Python Code <span className="text-red-500">*</span>
             </label>
 
@@ -797,7 +835,7 @@ export default function IndicatorEditorModal({
                 className={`px-3 py-1 rounded ${
                   activeTab === 'text'
                     ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 text-gray-700'
+                    : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200'
                 }`}
               >
                 Text Editor
@@ -808,7 +846,7 @@ export default function IndicatorEditorModal({
                 className={`px-3 py-1 rounded ${
                   activeTab === 'upload'
                     ? 'bg-blue-600 text-white'
-                    : 'bg-gray-200 text-gray-700'
+                    : 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200'
                 }`}
               >
                 Upload File
@@ -834,7 +872,7 @@ export default function IndicatorEditorModal({
 
             {activeTab === 'text' ? (
               <div className="relative">
-                <div className="border border-gray-300 rounded overflow-hidden">
+                <div className="border border-gray-300 dark:border-gray-600 rounded overflow-hidden">
                   <Editor
                     height="600px"
                     defaultLanguage="python"
@@ -844,7 +882,7 @@ export default function IndicatorEditorModal({
                       setEditorInstance(editor);
                       setMonacoInstance(monaco);
                     }}
-                    theme="vs-light"
+                    theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
                     options={{
                       minimap: { enabled: true },
                       fontSize: 13,
@@ -874,39 +912,39 @@ export default function IndicatorEditorModal({
                   <button
                     type="button"
                     onClick={() => setShowSyntaxHelp(!showSyntaxHelp)}
-                    className="text-xs text-blue-600 hover:text-blue-700 underline"
+                    className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline"
                   >
                     {showSyntaxHelp ? '▼ Hide' : '▶ Show'} Python Syntax Help
                   </button>
 
                   {showSyntaxHelp && (
-                    <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded text-xs space-y-2">
+                    <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded text-xs space-y-2 dark:text-blue-200">
                       <div>
                         <strong>Available in namespace:</strong>
-                        <code className="block mt-1 bg-white p-1 rounded">pd (pandas), np (numpy), data (DataFrame), MyTT (library)</code>
+                        <code className="block mt-1 bg-white dark:bg-gray-800 p-1 rounded dark:text-gray-200">pd (pandas), np (numpy), data (DataFrame), MyTT (library)</code>
                       </div>
                       <div>
                         <strong>Data columns:</strong>
-                        <code className="block mt-1 bg-white p-1 rounded">date, open, high, low, close, volume, turnover, amplitude, change_pct, etc.</code>
+                        <code className="block mt-1 bg-white dark:bg-gray-800 p-1 rounded dark:text-gray-200">date, open, high, low, close, volume, turnover, amplitude, change_pct, etc.</code>
                       </div>
                       <div>
                         <strong>Single indicator return:</strong>
-                        <code className="block mt-1 bg-white p-1 rounded">return data['close'].rolling(20).mean()</code>
+                        <code className="block mt-1 bg-white dark:bg-gray-800 p-1 rounded dark:text-gray-200">return data['close'].rolling(20).mean()</code>
                       </div>
                       <div>
                         <strong>Group indicator return:</strong>
-                        <code className="block mt-1 bg-white p-1 rounded">return {'{'}  'DIF': dif_values, 'DEA': dea_values {'}'}</code>
+                        <code className="block mt-1 bg-white dark:bg-gray-800 p-1 rounded dark:text-gray-200">return {'{'}  'DIF': dif_values, 'DEA': dea_values {'}'}</code>
                       </div>
                       <div>
                         <strong>Common functions:</strong>
-                        <code className="block mt-1 bg-white p-1 rounded">rolling(), shift(), diff(), mean(), std(), min(), max()</code>
+                        <code className="block mt-1 bg-white dark:bg-gray-800 p-1 rounded dark:text-gray-200">rolling(), shift(), diff(), mean(), std(), min(), max()</code>
                       </div>
                     </div>
                   )}
                 </div>
               </div>
             ) : (
-              <div className="border-2 border-dashed border-gray-300 rounded p-4 text-center">
+              <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded p-4 text-center">
                 <input
                   type="file"
                   accept=".py"
@@ -916,12 +954,12 @@ export default function IndicatorEditorModal({
                 />
                 <label
                   htmlFor="file-upload"
-                  className="cursor-pointer text-blue-600 hover:text-blue-700"
+                  className="cursor-pointer text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
                 >
                   Click to upload .py file
                 </label>
                 {pythonCode && (
-                  <p className="mt-2 text-sm text-green-600">
+                  <p className="mt-2 text-sm text-green-600 dark:text-green-400">
                     ✓ File uploaded. Switch to Text Editor tab to view.
                   </p>
                 )}
@@ -930,7 +968,7 @@ export default function IndicatorEditorModal({
           </div>
 
           {syntaxWarnings.length > 0 && (
-            <div className="mb-4 p-3 bg-yellow-50 border border-yellow-300 text-yellow-800 rounded text-sm">
+            <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-600 text-yellow-800 dark:text-yellow-400 rounded text-sm">
               <div className="font-semibold mb-1">⚠️ Syntax Warnings:</div>
               <ul className="list-disc list-inside space-y-1">
                 {syntaxWarnings.map((warning, idx) => (
@@ -941,27 +979,27 @@ export default function IndicatorEditorModal({
           )}
 
           {error && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded text-sm">
+            <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-400 rounded text-sm">
               <div className="font-semibold mb-2">{error}</div>
               {errorDetails?.details?.warnings && errorDetails.details.warnings.length > 0 && (
-                <div className="mt-2 p-2 bg-yellow-50 border border-yellow-300 rounded">
-                  <div className="font-semibold text-yellow-800 text-xs mb-1">⚠️ Warnings:</div>
+                <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-600 rounded">
+                  <div className="font-semibold text-yellow-800 dark:text-yellow-400 text-xs mb-1">⚠️ Warnings:</div>
                   {errorDetails.details.warnings.map((warning: string, i: number) => (
-                    <div key={i} className="text-xs text-yellow-700">
+                    <div key={i} className="text-xs text-yellow-700 dark:text-yellow-400">
                       • {warning}
                     </div>
                   ))}
                 </div>
               )}
               {errorDetails?.details?.code_line && (
-                <div className="mt-2 p-2 bg-red-50 border border-red-300 rounded font-mono text-xs">
+                <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/30 border border-red-300 dark:border-red-600 rounded font-mono text-xs">
                   Code: {errorDetails.details.code_line}
                 </div>
               )}
               {errorDetails?.details?.hints && errorDetails.details.hints.length > 0 && (
                 <div className="mt-2 space-y-1">
                   {errorDetails.details.hints.map((hint: string, i: number) => (
-                    <div key={i} className="text-xs text-blue-700">
+                    <div key={i} className="text-xs text-blue-700 dark:text-blue-400">
                       💡 {hint}
                     </div>
                   ))}
@@ -969,10 +1007,10 @@ export default function IndicatorEditorModal({
               )}
               {errorDetails?.details?.traceback && (
                 <details className="mt-2">
-                  <summary className="cursor-pointer text-gray-600 hover:text-gray-800 text-xs">
+                  <summary className="cursor-pointer text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 text-xs">
                     Show full error details
                   </summary>
-                  <pre className="mt-1 p-2 bg-gray-50 border border-gray-300 rounded overflow-x-auto max-h-40 text-xs">
+                  <pre className="mt-1 p-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded overflow-x-auto max-h-40 text-xs dark:text-gray-200">
                     {errorDetails.details.traceback}
                   </pre>
                 </details>
@@ -981,7 +1019,7 @@ export default function IndicatorEditorModal({
           )}
 
           {validationMessage && (
-            <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded text-sm">
+            <div className="mb-4 p-3 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-600 text-green-700 dark:text-green-400 rounded text-sm">
               {validationMessage}
             </div>
           )}
@@ -1001,7 +1039,7 @@ export default function IndicatorEditorModal({
                 type="button"
                 onClick={onClose}
                 disabled={isLoading}
-                className="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-50"
+                className="px-4 py-2 text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50"
               >
                 Cancel
               </button>

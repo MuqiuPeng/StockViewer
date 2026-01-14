@@ -140,25 +140,17 @@ export default function BacktestHistorySidebar({
       }`}
     >
       {/* Header */}
-      <div className="p-4 border-b border-gray-700">
+      <div className="p-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-white">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
             Backtest History
           </h2>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={onClose}
-              className="px-3 py-1.5 text-sm bg-gray-700 text-white rounded hover:bg-gray-600"
-            >
-              ← Close
-            </button>
-            <button
-              onClick={onClose}
-              className="text-gray-400 hover:text-gray-200 text-xl"
-            >
-              ✕
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 text-xl"
+          >
+            ✕
+          </button>
         </div>
 
         {/* Batch Mode Toggle */}
@@ -171,7 +163,7 @@ export default function BacktestHistorySidebar({
             className={`px-3 py-1.5 text-sm rounded ${
               batchMode
                 ? 'bg-blue-600 text-white'
-                : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'
             }`}
           >
             {batchMode ? '✓ Batch Mode' : 'Batch Select'}
@@ -180,8 +172,8 @@ export default function BacktestHistorySidebar({
 
         {/* Batch Actions */}
         {batchMode && selectedIds.size > 0 && (
-          <div className="mb-3 p-2 bg-blue-900 rounded">
-            <div className="text-xs text-blue-200 mb-2">
+          <div className="mb-3 p-2 bg-blue-100 dark:bg-blue-900 rounded">
+            <div className="text-xs text-blue-700 dark:text-blue-200 mb-2">
               {selectedIds.size} selected
             </div>
             <div className="flex gap-2 flex-wrap">
@@ -217,10 +209,10 @@ export default function BacktestHistorySidebar({
             placeholder="Search..."
             value={filter.search}
             onChange={(e) => setFilter({ ...filter, search: e.target.value })}
-            className="w-full px-3 py-2 border border-gray-600 rounded bg-gray-700 text-white placeholder-gray-400"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
           />
           <div className="flex items-center justify-between">
-            <label className="flex items-center text-sm text-gray-300">
+            <label className="flex items-center text-sm text-gray-700 dark:text-gray-300">
               <input
                 type="checkbox"
                 checked={filter.starred}
@@ -232,7 +224,7 @@ export default function BacktestHistorySidebar({
             {batchMode && filteredEntries.length > 0 && (
               <button
                 onClick={toggleSelectAll}
-                className="text-xs text-blue-400 hover:text-blue-300"
+                className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
               >
                 {selectedIds.size === filteredEntries.length ? 'Deselect All' : 'Select All'}
               </button>
@@ -254,7 +246,7 @@ export default function BacktestHistorySidebar({
             <div
               key={entry.id}
               className={`p-4 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer ${
-                selectedIds.has(entry.id) ? 'bg-blue-900' : ''
+                selectedIds.has(entry.id) ? 'bg-blue-100 dark:bg-blue-900' : ''
               }`}
               onClick={() => {
                 if (batchMode) {
@@ -278,10 +270,10 @@ export default function BacktestHistorySidebar({
                   </div>
                 )}
                 <div className="flex-1">
-                  <div className="font-medium text-white">
+                  <div className="font-medium text-gray-900 dark:text-white">
                     {entry.strategyName}
                   </div>
-                  <div className="text-xs text-gray-300 mt-0.5">
+                  <div className="text-xs text-gray-600 dark:text-gray-300 mt-0.5">
                     {entry.target.type === 'single' && entry.target.datasetName && (
                       <div>📊 {entry.target.datasetName}</div>
                     )}
@@ -292,16 +284,16 @@ export default function BacktestHistorySidebar({
                       <div>📁 Group: {entry.target.groupName}</div>
                     )}
                   </div>
-                  <div className="text-xs text-gray-400 mt-0.5">
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                     {new Date(entry.createdAt).toLocaleString()}
                   </div>
-                  <div className="text-sm mt-1 text-gray-200">
+                  <div className="text-sm mt-1 text-gray-700 dark:text-gray-200">
                     Return:{' '}
                     <span
                       className={
                         entry.summary.totalReturnPct >= 0
-                          ? 'text-green-400'
-                          : 'text-red-400'
+                          ? 'text-green-600 dark:text-green-400'
+                          : 'text-red-600 dark:text-red-400'
                       }
                     >
                       {entry.summary.totalReturnPct.toFixed(2)}%
@@ -312,7 +304,7 @@ export default function BacktestHistorySidebar({
                       {entry.tags.map((tag) => (
                         <span
                           key={tag}
-                          className="text-xs bg-blue-900 text-blue-200 px-2 py-0.5 rounded"
+                          className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200 px-2 py-0.5 rounded"
                         >
                           {tag}
                         </span>

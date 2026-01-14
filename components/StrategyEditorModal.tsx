@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
+import { useTheme } from './ThemeProvider';
 
 interface Strategy {
   id: string;
@@ -211,6 +212,7 @@ export default function StrategyEditorModal({
   onSuccess,
   strategy,
 }: StrategyEditorModalProps) {
+  const { theme } = useTheme();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [pythonCode, setPythonCode] = useState('');
@@ -376,41 +378,41 @@ export default function StrategyEditorModal({
         className="absolute inset-0 bg-black bg-opacity-50"
         onClick={onClose}
       />
-      <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-6xl max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold">
+          <h2 className="text-2xl font-bold dark:text-white">
             {strategy ? 'Edit Strategy' : 'Create New Strategy'}
           </h2>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 text-2xl"
+            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl"
           >
             ×
           </button>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+          <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-400 rounded">
             <div className="font-semibold mb-2">{error}</div>
             {errorDetails?.details?.warnings && errorDetails.details.warnings.length > 0 && (
-              <div className="mt-2 p-2 bg-yellow-50 border border-yellow-300 rounded">
-                <div className="font-semibold text-yellow-800 text-xs mb-1">⚠️ Warnings:</div>
+              <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-600 rounded">
+                <div className="font-semibold text-yellow-800 dark:text-yellow-400 text-xs mb-1">⚠️ Warnings:</div>
                 {errorDetails.details.warnings.map((warning: string, i: number) => (
-                  <div key={i} className="text-xs text-yellow-700">
+                  <div key={i} className="text-xs text-yellow-700 dark:text-yellow-400">
                     • {warning}
                   </div>
                 ))}
               </div>
             )}
             {errorDetails?.details?.code_line && (
-              <div className="mt-2 p-2 bg-red-50 border border-red-300 rounded text-sm font-mono">
+              <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-600 rounded text-sm font-mono">
                 Code: {errorDetails.details.code_line}
               </div>
             )}
             {errorDetails?.details?.hints && errorDetails.details.hints.length > 0 && (
               <div className="mt-2 space-y-1">
                 {errorDetails.details.hints.map((hint: string, i: number) => (
-                  <div key={i} className="text-sm text-blue-700">
+                  <div key={i} className="text-sm text-blue-700 dark:text-blue-400">
                     💡 {hint}
                   </div>
                 ))}
@@ -418,10 +420,10 @@ export default function StrategyEditorModal({
             )}
             {errorDetails?.details?.traceback && (
               <details className="mt-2 text-xs">
-                <summary className="cursor-pointer text-gray-600 hover:text-gray-800">
+                <summary className="cursor-pointer text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
                   Show full error details
                 </summary>
-                <pre className="mt-1 p-2 bg-gray-50 border border-gray-300 rounded overflow-x-auto max-h-40">
+                <pre className="mt-1 p-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded overflow-x-auto max-h-40 dark:text-gray-300">
                   {errorDetails.details.traceback}
                 </pre>
               </details>
@@ -430,16 +432,16 @@ export default function StrategyEditorModal({
         )}
 
         {validationSuccess && (
-          <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 rounded">
+          <div className="mb-4 p-3 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-600 text-green-700 dark:text-green-400 rounded">
             {validationSuccess}
           </div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-2">Strategy Type</label>
+            <label className="block text-sm font-medium mb-2 dark:text-white">Strategy Type</label>
             <div className="flex space-x-4">
-              <label className="flex items-center cursor-pointer">
+              <label className="flex items-center cursor-pointer dark:text-white">
                 <input
                   type="radio"
                   value="single"
@@ -450,7 +452,7 @@ export default function StrategyEditorModal({
                 />
                 <span>Single Stock</span>
               </label>
-              <label className="flex items-center cursor-pointer">
+              <label className="flex items-center cursor-pointer dark:text-white">
                 <input
                   type="radio"
                   value="portfolio"
@@ -463,45 +465,45 @@ export default function StrategyEditorModal({
               </label>
             </div>
             {!!strategy && (
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 Strategy type cannot be changed after creation
               </p>
             )}
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Name</label>
+            <label className="block text-sm font-medium mb-1 dark:text-white">Name</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 border rounded"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
               required
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">Description</label>
+            <label className="block text-sm font-medium mb-1 dark:text-white">Description</label>
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3 py-2 border rounded"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
               rows={3}
               required
             />
           </div>
 
           {/* External Datasets Selector */}
-          <div className="border rounded p-4 bg-gray-50">
-            <h3 className="font-medium mb-2">External Datasets (Optional)</h3>
-            <p className="text-xs text-gray-500 mb-3">
+          <div className="border border-gray-300 dark:border-gray-600 rounded p-4 bg-gray-50 dark:bg-gray-700">
+            <h3 className="font-medium mb-2 dark:text-white">External Datasets (Optional)</h3>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
               Include additional datasets (e.g., market indices, reference stocks) in your strategy.
             </p>
 
             {/* Help Box */}
-            <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded">
+            <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-600 rounded">
               <div className="flex items-start justify-between mb-1">
-                <div className="text-xs font-medium text-blue-800">💡 How to use:</div>
+                <div className="text-xs font-medium text-blue-800 dark:text-blue-300">💡 How to use:</div>
                 <button
                   type="button"
                   onClick={() => {
@@ -592,9 +594,9 @@ export default function StrategyEditorModal({
                   📝 Insert Template
                 </button>
               </div>
-              <div className="text-xs text-blue-700 space-y-1">
+              <div className="text-xs text-blue-700 dark:text-blue-300 space-y-1">
                 <div>1. Click &quot;+ Add External Dataset&quot; below</div>
-                <div>2. Choose a parameter name (e.g., <code className="bg-blue-100 px-1">index</code>)</div>
+                <div>2. Choose a parameter name (e.g., <code className="bg-blue-100 dark:bg-blue-800 px-1">index</code>)</div>
                 <div>3. Select group and dataset</div>
                 <div>4. Click &quot;Insert Template&quot; to see example code</div>
               </div>
@@ -606,9 +608,9 @@ export default function StrategyEditorModal({
               const selectedGroup = groups.find(g => g.id === config.groupId);
 
               return (
-                <div key={paramName} className="mb-3 p-3 border rounded bg-white">
+                <div key={paramName} className="mb-3 p-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800">
                   <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-medium">Parameter Name:</label>
+                    <label className="text-sm font-medium dark:text-white">Parameter Name:</label>
                     <div className="flex gap-2">
                       {isEditing ? (
                         <>
@@ -684,13 +686,13 @@ export default function StrategyEditorModal({
                         });
                       }
                     }}
-                    className="w-full px-2 py-1 border rounded text-sm mb-2"
+                    className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm mb-2 bg-white dark:bg-gray-700 dark:text-white"
                     placeholder="e.g., index_data"
                     disabled={!isEditing}
                   />
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="text-xs text-gray-600">Group:</label>
+                      <label className="text-xs text-gray-600 dark:text-gray-400">Group:</label>
                       <select
                         value={config.groupId}
                         onChange={(e) => {
@@ -702,7 +704,7 @@ export default function StrategyEditorModal({
                             });
                           }
                         }}
-                        className="w-full px-2 py-1 border rounded text-sm"
+                        className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 dark:text-white"
                         disabled={!isEditing}
                       >
                         <option value="">Select group</option>
@@ -712,7 +714,7 @@ export default function StrategyEditorModal({
                       </select>
                     </div>
                     <div>
-                      <label className="text-xs text-gray-600">Dataset:</label>
+                      <label className="text-xs text-gray-600 dark:text-gray-400">Dataset:</label>
                       <select
                         value={config.datasetName}
                         onChange={(e) => {
@@ -723,7 +725,7 @@ export default function StrategyEditorModal({
                             });
                           }
                         }}
-                        className="w-full px-2 py-1 border rounded text-sm"
+                        className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 dark:text-white"
                         disabled={!isEditing || !config.groupId}
                       >
                         <option value="">Select dataset</option>
@@ -758,12 +760,12 @@ export default function StrategyEditorModal({
           </div>
 
           {strategyType === 'portfolio' && (
-            <div className="border rounded p-4 bg-gray-50">
-              <h3 className="font-medium mb-3">Portfolio Constraints</h3>
+            <div className="border border-gray-300 dark:border-gray-600 rounded p-4 bg-gray-50 dark:bg-gray-700">
+              <h3 className="font-medium mb-3 dark:text-white">Portfolio Constraints</h3>
 
               <div className="space-y-3">
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label className="block text-sm font-medium mb-1 dark:text-white">
                     Max Concurrent Positions
                   </label>
                   <input
@@ -773,17 +775,17 @@ export default function StrategyEditorModal({
                       ...constraints,
                       maxPositions: parseInt(e.target.value) || 0
                     })}
-                    className="w-full px-3 py-2 border rounded"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 dark:text-white"
                     min="1"
                     max="50"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Maximum number of stocks to hold simultaneously
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label className="block text-sm font-medium mb-1 dark:text-white">
                     Reserve Cash (%)
                   </label>
                   <input
@@ -793,17 +795,17 @@ export default function StrategyEditorModal({
                       ...constraints,
                       reserveCash: parseInt(e.target.value) || 0
                     })}
-                    className="w-full px-3 py-2 border rounded"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 dark:text-white"
                     min="0"
                     max="100"
                   />
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     Percentage of capital to keep as cash reserve
                   </p>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">
+                  <label className="block text-sm font-medium mb-1 dark:text-white">
                     Position Sizing
                   </label>
                   <select
@@ -812,12 +814,12 @@ export default function StrategyEditorModal({
                       ...constraints,
                       positionSizing: e.target.value as 'equal' | 'custom'
                     })}
-                    className="w-full px-3 py-2 border rounded"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 dark:text-white"
                   >
                     <option value="equal">Equal Weight</option>
                     <option value="custom">Custom (Strategy Controlled)</option>
                   </select>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     How to distribute capital across positions
                   </p>
                 </div>
@@ -826,22 +828,22 @@ export default function StrategyEditorModal({
           )}
 
           <div>
-            <label className="block text-sm font-medium mb-1">Python Code</label>
-            <div className="border rounded" style={{ height: '600px' }}>
+            <label className="block text-sm font-medium mb-1 dark:text-white">Python Code</label>
+            <div className="border border-gray-300 dark:border-gray-600 rounded" style={{ height: '600px' }}>
               <Editor
                 height="600px"
                 defaultLanguage="python"
                 value={pythonCode}
                 onChange={(value) => setPythonCode(value || '')}
-                theme="vs-light"
+                theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
                 options={{
                   minimap: { enabled: false },
                   fontSize: 14,
                 }}
               />
             </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Strategy must define: <code>def calculate(data, parameters)</code> returning list of signals
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Strategy must define: <code className="dark:text-gray-300">def calculate(data, parameters)</code> returning list of signals
             </p>
           </div>
 
@@ -858,7 +860,7 @@ export default function StrategyEditorModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="px-4 py-2 border rounded hover:bg-gray-100"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white"
               >
                 Cancel
               </button>

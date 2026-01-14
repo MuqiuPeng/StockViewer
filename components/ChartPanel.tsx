@@ -1,7 +1,9 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createChart, IChartApi, ISeriesApi, ColorType } from 'lightweight-charts';
+import ConstantLineModal from './ConstantLineModal';
+import { useTheme } from './ThemeProvider';
 
 interface CandleData {
   time: string; // YYYY-MM-DD format to avoid timezone issues
@@ -23,6 +25,16 @@ interface ChartPanelProps {
   enabledIndicators2: Set<string>;
   colorMap: Map<string, string>;
   onCrosshairMove?: (time: string | null) => void;
+  keyboardNavMode?: boolean;
+  selectedCandleIndex?: number | null;
+  onSelectedCandleIndexChange?: (index: number) => void;
+  onVisibleRangeChange?: (width: number) => void;
+  preservedVisibleRangeWidth?: number | null;
+  keyboardZoomTrigger?: number; // Increment to zoom in, decrement to zoom out
+  preservedDateRange?: { from: string; to: string } | null; // Date range to restore
+  onDateRangeChange?: (range: { from: string; to: string }) => void; // Report visible date range
+  isArrowKeyNav?: boolean; // True when navigation is from arrow keys
+  onArrowKeyNavHandled?: () => void; // Callback to reset arrow key nav flag
 }
 
 // Predefined color palette for indicators
@@ -51,7 +63,15 @@ const commonTimeScaleOptions = {
   barSpacing: 8,
   lockVisibleTimeRangeOnResize: true,
   borderColor: '#d1d4dc',
+  shiftVisibleRangeOnNewBar: false,
+  rightBarStaysOnScroll: false,
 };
+
+interface ConstantLine {
+  value: number;
+  color: string;
+  label: string;
+}
 
 export default function ChartPanel({
   candles,
@@ -60,7 +80,18 @@ export default function ChartPanel({
   enabledIndicators2,
   colorMap,
   onCrosshairMove,
+  keyboardNavMode = false,
+  selectedCandleIndex = null,
+  onSelectedCandleIndexChange,
+  onVisibleRangeChange,
+  preservedVisibleRangeWidth,
+  keyboardZoomTrigger = 0,
+  preservedDateRange,
+  onDateRangeChange,
+  isArrowKeyNav,
+  onArrowKeyNavHandled,
 }: ChartPanelProps) {
+  const { theme } = useTheme();
   const candlestickContainerRef = useRef<HTMLDivElement>(null);
   const indicator1ContainerRef = useRef<HTMLDivElement>(null);
   const indicator2ContainerRef = useRef<HTMLDivElement>(null);
@@ -72,6 +103,22 @@ export default function ChartPanel({
   const indicator2SeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
   const syncUnsubscribe1Ref = useRef<(() => void) | null>(null);
   const syncUnsubscribe2Ref = useRef<(() => void) | null>(null);
+  const priceLinesRef1 = useRef<any[]>([]);
+  const priceLinesRef2 = useRef<any[]>([]);
+  const selectedCandleIndexRef = useRef<number | null>(selectedCandleIndex);
+  const preservedVisibleRangeWidthRef = useRef<number | null | undefined>(preservedVisibleRangeWidth);
+  const keyboardNavRangeWidthRef = useRef<number | null>(null);
+  const prevZoomTriggerRef = useRef<number>(keyboardZoomTrigger);
+
+  // Keep refs in sync with props
+  selectedCandleIndexRef.current = selectedCandleIndex;
+  preservedVisibleRangeWidthRef.current = preservedVisibleRangeWidth;
+
+  // State for constant lines
+  const [constantLines1, setConstantLines1] = useState<ConstantLine[]>([]);
+  const [constantLines2, setConstantLines2] = useState<ConstantLine[]>([]);
+  const [modalOpen, setModalOpen] = useState<boolean>(false);
+  const [activeChart, setActiveChart] = useState<1 | 2>(1);
 
   // Helper to update chart height based on container
   const updateChartHeight = (chart: IChartApi | null, container: HTMLDivElement | null) => {
@@ -100,6 +147,16 @@ export default function ChartPanel({
         horzLines: { color: '#e0e0e0' },
       },
       timeScale: commonTimeScaleOptions,
+      crosshair: {
+        horzLine: {
+          visible: true,
+          labelVisible: false,
+        },
+        vertLine: {
+          visible: true,
+          labelVisible: true,
+        },
+      },
       rightPriceScale: {
         borderColor: '#d1d4dc',
         scaleMargins: {
@@ -125,10 +182,23 @@ export default function ChartPanel({
       width: indicator1ContainerRef.current.clientWidth,
       height: indicator1ContainerRef.current.clientHeight || 250,
       grid: {
-        vertLines: { color: '#e0e0e0' },
-        horzLines: { color: '#e0e0e0' },
+        vertLines: { visible: false },
+        horzLines: { visible: false },
       },
-      timeScale: commonTimeScaleOptions,
+      timeScale: {
+        ...commonTimeScaleOptions,
+        visible: false,
+      },
+      crosshair: {
+        horzLine: {
+          visible: true,
+          labelVisible: false,
+        },
+        vertLine: {
+          visible: true,
+          labelVisible: false,
+        },
+      },
       rightPriceScale: {
         borderColor: '#d1d4dc',
         scaleMargins: {
@@ -153,10 +223,23 @@ export default function ChartPanel({
       width: indicator2ContainerRef.current.clientWidth,
       height: indicator2ContainerRef.current.clientHeight || 250,
       grid: {
-        vertLines: { color: '#e0e0e0' },
-        horzLines: { color: '#e0e0e0' },
+        vertLines: { visible: false },
+        horzLines: { visible: false },
       },
-      timeScale: commonTimeScaleOptions,
+      timeScale: {
+        ...commonTimeScaleOptions,
+        visible: false,
+      },
+      crosshair: {
+        horzLine: {
+          visible: true,
+          labelVisible: false,
+        },
+        vertLine: {
+          visible: true,
+          labelVisible: false,
+        },
+      },
       rightPriceScale: {
         borderColor: '#d1d4dc',
         scaleMargins: {
@@ -287,6 +370,7 @@ export default function ChartPanel({
       borderVisible: false,
       wickUpColor: '#26a69a',
       wickDownColor: '#ef5350',
+      lastValueVisible: false,
     });
     candlestickSeriesRef.current = candlestickSeries;
 
@@ -298,33 +382,37 @@ export default function ChartPanel({
       }
 
       // Sync crosshair to other charts
-      if (param.time && param.point) {
-        const candleSeries = candlestickSeriesRef.current;
-        if (candleSeries) {
-          // Get the price at this time point
-          const candleData = param.seriesData.get(candleSeries);
-          if (candleData && 'close' in candleData) {
-            // Sync to indicator charts - use any series from those charts
-            const indicator1Series = Array.from(indicator1SeriesRef.current.values())[0];
-            const indicator2Series = Array.from(indicator2SeriesRef.current.values())[0];
+      try {
+        if (param.time && param.point) {
+          const candleSeries = candlestickSeriesRef.current;
+          if (candleSeries) {
+            // Get the price at this time point
+            const candleData = param.seriesData.get(candleSeries);
+            if (candleData && 'close' in candleData) {
+              // Sync to indicator charts - use any series from those charts
+              const indicator1Series = Array.from(indicator1SeriesRef.current.values())[0];
+              const indicator2Series = Array.from(indicator2SeriesRef.current.values())[0];
 
-            if (indicator1Series) {
-              const indicator1Data = param.seriesData.get(indicator1Series);
-              const price1 = indicator1Data && 'value' in indicator1Data ? indicator1Data.value : 0;
-              indicator1Chart.setCrosshairPosition(price1, param.time, indicator1Series);
-            }
+              if (indicator1Series) {
+                const indicator1Data = param.seriesData.get(indicator1Series);
+                const price1 = indicator1Data && 'value' in indicator1Data && indicator1Data.value !== null ? indicator1Data.value : 0;
+                indicator1Chart.setCrosshairPosition(price1, param.time, indicator1Series);
+              }
 
-            if (indicator2Series) {
-              const indicator2Data = param.seriesData.get(indicator2Series);
-              const price2 = indicator2Data && 'value' in indicator2Data ? indicator2Data.value : 0;
-              indicator2Chart.setCrosshairPosition(price2, param.time, indicator2Series);
+              if (indicator2Series) {
+                const indicator2Data = param.seriesData.get(indicator2Series);
+                const price2 = indicator2Data && 'value' in indicator2Data && indicator2Data.value !== null ? indicator2Data.value : 0;
+                indicator2Chart.setCrosshairPosition(price2, param.time, indicator2Series);
+              }
             }
           }
+        } else {
+          // Clear crosshair on other charts
+          indicator1Chart.clearCrosshairPosition();
+          indicator2Chart.clearCrosshairPosition();
         }
-      } else {
-        // Clear crosshair on other charts
-        indicator1Chart.clearCrosshairPosition();
-        indicator2Chart.clearCrosshairPosition();
+      } catch (error) {
+        // Ignore crosshair sync errors
       }
     });
 
@@ -334,24 +422,28 @@ export default function ChartPanel({
       }
 
       // Sync crosshair to other charts
-      if (param.time && param.point) {
-        const candleSeries = candlestickSeriesRef.current;
-        const indicator2Series = Array.from(indicator2SeriesRef.current.values())[0];
+      try {
+        if (param.time && param.point) {
+          const candleSeries = candlestickSeriesRef.current;
+          const indicator2Series = Array.from(indicator2SeriesRef.current.values())[0];
 
-        if (candleSeries) {
-          const candleData = param.seriesData.get(candleSeries);
-          const price = candleData && 'close' in candleData ? candleData.close : 0;
-          candlestickChart.setCrosshairPosition(price, param.time, candleSeries);
-        }
+          if (candleSeries) {
+            const candleData = param.seriesData.get(candleSeries);
+            const price = candleData && 'close' in candleData ? candleData.close : 0;
+            candlestickChart.setCrosshairPosition(price, param.time, candleSeries);
+          }
 
-        if (indicator2Series) {
-          const indicator2Data = param.seriesData.get(indicator2Series);
-          const price2 = indicator2Data && 'value' in indicator2Data ? indicator2Data.value : 0;
-          indicator2Chart.setCrosshairPosition(price2, param.time, indicator2Series);
+          if (indicator2Series) {
+            const indicator2Data = param.seriesData.get(indicator2Series);
+            const price2 = indicator2Data && 'value' in indicator2Data && indicator2Data.value !== null ? indicator2Data.value : 0;
+            indicator2Chart.setCrosshairPosition(price2, param.time, indicator2Series);
+          }
+        } else {
+          candlestickChart.clearCrosshairPosition();
+          indicator2Chart.clearCrosshairPosition();
         }
-      } else {
-        candlestickChart.clearCrosshairPosition();
-        indicator2Chart.clearCrosshairPosition();
+      } catch (error) {
+        // Ignore crosshair sync errors
       }
     });
 
@@ -361,24 +453,28 @@ export default function ChartPanel({
       }
 
       // Sync crosshair to other charts
-      if (param.time && param.point) {
-        const candleSeries = candlestickSeriesRef.current;
-        const indicator1Series = Array.from(indicator1SeriesRef.current.values())[0];
+      try {
+        if (param.time && param.point) {
+          const candleSeries = candlestickSeriesRef.current;
+          const indicator1Series = Array.from(indicator1SeriesRef.current.values())[0];
 
-        if (candleSeries) {
-          const candleData = param.seriesData.get(candleSeries);
-          const price = candleData && 'close' in candleData ? candleData.close : 0;
-          candlestickChart.setCrosshairPosition(price, param.time, candleSeries);
-        }
+          if (candleSeries) {
+            const candleData = param.seriesData.get(candleSeries);
+            const price = candleData && 'close' in candleData ? candleData.close : 0;
+            candlestickChart.setCrosshairPosition(price, param.time, candleSeries);
+          }
 
-        if (indicator1Series) {
-          const indicator1Data = param.seriesData.get(indicator1Series);
-          const price1 = indicator1Data && 'value' in indicator1Data ? indicator1Data.value : 0;
-          indicator1Chart.setCrosshairPosition(price1, param.time, indicator1Series);
+          if (indicator1Series) {
+            const indicator1Data = param.seriesData.get(indicator1Series);
+            const price1 = indicator1Data && 'value' in indicator1Data && indicator1Data.value !== null ? indicator1Data.value : 0;
+            indicator1Chart.setCrosshairPosition(price1, param.time, indicator1Series);
+          }
+        } else {
+          candlestickChart.clearCrosshairPosition();
+          indicator1Chart.clearCrosshairPosition();
         }
-      } else {
-        candlestickChart.clearCrosshairPosition();
-        indicator1Chart.clearCrosshairPosition();
+      } catch (error) {
+        // Ignore crosshair sync errors
       }
     });
 
@@ -459,8 +555,94 @@ export default function ChartPanel({
     };
   }, []);
 
+  // Update chart colors when theme changes
+  useEffect(() => {
+    const isDark = theme === 'dark';
+    const bgColor = isDark ? '#1f2937' : 'white';
+    const textColor = isDark ? '#e5e7eb' : 'black';
+    const gridColor = isDark ? '#374151' : '#e0e0e0';
+    const borderColor = isDark ? '#4b5563' : '#d1d4dc';
+
+    const themeOptions = {
+      layout: {
+        background: { type: ColorType.Solid, color: bgColor },
+        textColor: textColor,
+      },
+      grid: {
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
+      },
+      rightPriceScale: {
+        borderColor: borderColor,
+      },
+      timeScale: {
+        borderColor: borderColor,
+      },
+    };
+
+    const indicatorThemeOptions = {
+      layout: {
+        background: { type: ColorType.Solid, color: bgColor },
+        textColor: textColor,
+      },
+      grid: {
+        vertLines: { visible: false },
+        horzLines: { visible: false },
+      },
+      rightPriceScale: {
+        borderColor: borderColor,
+      },
+      timeScale: {
+        borderColor: borderColor,
+      },
+    };
+
+    if (candlestickChartRef.current) {
+      candlestickChartRef.current.applyOptions(themeOptions);
+    }
+    if (indicator1ChartRef.current) {
+      indicator1ChartRef.current.applyOptions(indicatorThemeOptions);
+    }
+    if (indicator2ChartRef.current) {
+      indicator2ChartRef.current.applyOptions(indicatorThemeOptions);
+    }
+  }, [theme]);
+
+  // Report visible range width and date range changes to parent
+  useEffect(() => {
+    const chart = candlestickChartRef.current;
+    if (!chart) return;
+
+    const handleRangeChange = () => {
+      const range = chart.timeScale().getVisibleLogicalRange();
+      if (range) {
+        if (onVisibleRangeChange) {
+          const width = range.to - range.from;
+          onVisibleRangeChange(width);
+        }
+
+        // Report date range
+        if (onDateRangeChange && candles.length > 0) {
+          const fromIndex = Math.max(0, Math.floor(range.from));
+          const toIndex = Math.min(candles.length - 1, Math.ceil(range.to));
+          if (fromIndex < candles.length && toIndex >= 0) {
+            onDateRangeChange({
+              from: candles[fromIndex].time,
+              to: candles[toIndex].time,
+            });
+          }
+        }
+      }
+    };
+
+    chart.timeScale().subscribeVisibleLogicalRangeChange(handleRangeChange);
+    return () => {
+      chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleRangeChange);
+    };
+  }, [onVisibleRangeChange, onDateRangeChange, candles]);
+
   // Update candlestick data
-  // Critical order: setData -> fitContent -> setup sync -> immediate align
+  // Critical order: setData -> restore/fit range -> setup sync -> immediate align
   useEffect(() => {
     const candlestickChart = candlestickChartRef.current;
     const indicator1Chart = indicator1ChartRef.current;
@@ -472,8 +654,61 @@ export default function ChartPanel({
       // Step 1: Set data for main chart
       candlestickSeriesRef.current.setData(candles as any);
 
-      // Step 2: Fit content on main chart only
-      candlestickChart.timeScale().fitContent();
+      // Step 2: Restore visible range based on preserved date range, or fit content
+      let rangeRestored = false;
+
+      // Try to restore by date range first (for switching datasets)
+      if (preservedDateRange) {
+        // Find indices for the preserved dates
+        const fromIndex = candles.findIndex(c => c.time >= preservedDateRange.from);
+        const toIndex = candles.findIndex(c => c.time > preservedDateRange.to);
+
+        if (fromIndex !== -1) {
+          const actualToIndex = toIndex === -1 ? candles.length - 1 : toIndex - 1;
+          try {
+            candlestickChart.timeScale().setVisibleLogicalRange({
+              from: fromIndex,
+              to: actualToIndex + 1 // Add 1 to include the last candle
+            });
+            rangeRestored = true;
+          } catch (error) {
+            console.warn('Failed to restore date range:', error);
+          }
+        }
+      }
+
+      // Fall back to width-based restoration (for keyboard nav mode)
+      if (!rangeRestored) {
+        const savedWidth = preservedVisibleRangeWidthRef.current;
+        if (savedWidth && selectedCandleIndexRef.current !== null) {
+          // Restore the preserved zoom level centered on the selected candle
+          const centerIndex = Math.min(selectedCandleIndexRef.current, candles.length - 1);
+          const halfWidth = savedWidth / 2;
+          const newFrom = centerIndex - halfWidth;
+          const newTo = centerIndex + halfWidth;
+          try {
+            candlestickChart.timeScale().setVisibleLogicalRange({ from: newFrom, to: newTo });
+            rangeRestored = true;
+          } catch (error) {
+            console.warn('Failed to restore visible range:', error);
+          }
+        } else if (savedWidth) {
+          // Restore zoom level at the end of data
+          const newTo = candles.length - 1;
+          const newFrom = newTo - savedWidth;
+          try {
+            candlestickChart.timeScale().setVisibleLogicalRange({ from: newFrom, to: newTo });
+            rangeRestored = true;
+          } catch (error) {
+            console.warn('Failed to restore visible range:', error);
+          }
+        }
+      }
+
+      // If no range was restored, fit content
+      if (!rangeRestored) {
+        candlestickChart.timeScale().fitContent();
+      }
 
       // Step 3: Set up one-way sync if not already set up
       const syncTimeScaleOneWay = (source: IChartApi, target: IChartApi) => {
@@ -562,6 +797,8 @@ export default function ChartPanel({
           color: color,
           lineWidth: 2,
           priceFormat: priceFormat,
+          priceLineVisible: false,
+          lastValueVisible: false,
         });
         currentSeries.set(indicator, lineSeries);
 
@@ -656,6 +893,8 @@ export default function ChartPanel({
           color: color,
           lineWidth: 2,
           priceFormat: priceFormat,
+          priceLineVisible: false,
+          lastValueVisible: false,
         });
         currentSeries.set(indicator, lineSeries);
 
@@ -749,6 +988,263 @@ export default function ChartPanel({
     });
   }, [enabledIndicators1.size, enabledIndicators2.size]);
 
+
+  // Update constant lines on indicator chart 1
+  useEffect(() => {
+    const chart = indicator1ChartRef.current;
+    if (!chart) return;
+
+    // Get the first series to create price lines on
+    const series = Array.from(indicator1SeriesRef.current.values())[0];
+    if (!series) return;
+
+    // Remove old price lines
+    priceLinesRef1.current.forEach(priceLine => {
+      try {
+        series.removePriceLine(priceLine);
+      } catch (error) {
+        console.warn('Failed to remove price line:', error);
+      }
+    });
+    priceLinesRef1.current = [];
+
+    // Create price lines for each constant line
+    constantLines1.forEach(line => {
+      try {
+        const priceLine = series.createPriceLine({
+          price: line.value,
+          color: '#808080', // Gray
+          lineWidth: 1,
+          lineStyle: 1, // Dotted line
+          axisLabelVisible: true,
+          title: line.label,
+        });
+        priceLinesRef1.current.push(priceLine);
+      } catch (error) {
+        console.warn('Failed to create price line:', error);
+      }
+    });
+  }, [constantLines1]);
+
+  // Update constant lines on indicator chart 2
+  useEffect(() => {
+    const chart = indicator2ChartRef.current;
+    if (!chart) return;
+
+    // Get the first series to create price lines on
+    const series = Array.from(indicator2SeriesRef.current.values())[0];
+    if (!series) return;
+
+    // Remove old price lines
+    priceLinesRef2.current.forEach(priceLine => {
+      try {
+        series.removePriceLine(priceLine);
+      } catch (error) {
+        console.warn('Failed to remove price line:', error);
+      }
+    });
+    priceLinesRef2.current = [];
+
+    // Create price lines for each constant line
+    constantLines2.forEach(line => {
+      try {
+        const priceLine = series.createPriceLine({
+          price: line.value,
+          color: '#808080', // Gray
+          lineWidth: 1,
+          lineStyle: 1, // Dotted line
+          axisLabelVisible: true,
+          title: line.label,
+        });
+        priceLinesRef2.current.push(priceLine);
+      } catch (error) {
+        console.warn('Failed to create price line:', error);
+      }
+    });
+  }, [constantLines2]);
+
+  // Track previous keyboardNavMode to detect when it's just enabled
+  const prevKeyboardNavModeRef = useRef(false);
+
+  // Initialize crosshair when keyboard nav mode is turned on
+  useEffect(() => {
+    const justEnabled = keyboardNavMode && !prevKeyboardNavModeRef.current;
+    prevKeyboardNavModeRef.current = keyboardNavMode;
+
+    if (!keyboardNavMode) {
+      // Reset the stored range width when keyboard nav is disabled
+      keyboardNavRangeWidthRef.current = null;
+      return;
+    }
+
+    // Only initialize when keyboard nav is first enabled AND we have data
+    if (!justEnabled) return;
+    if (!candlestickChartRef.current || candles.length === 0) return;
+
+    const chart = candlestickChartRef.current;
+    const series = candlestickSeriesRef.current;
+
+    if (!series) return;
+
+    // Use setTimeout to ensure chart is fully rendered after state updates
+    setTimeout(() => {
+      const timeScale = chart.timeScale();
+      const visibleRange = timeScale.getVisibleLogicalRange();
+
+      if (!visibleRange) return;
+
+      // Store the range width for consistent navigation
+      keyboardNavRangeWidthRef.current = visibleRange.to - visibleRange.from;
+
+      // Initialize to center of visible range
+      const middleIndex = Math.floor((visibleRange.from + visibleRange.to) / 2);
+      const targetIndex = Math.max(0, Math.min(candles.length - 1, middleIndex));
+
+      // Set the selected candle index
+      if (onSelectedCandleIndexChange) {
+        onSelectedCandleIndexChange(targetIndex);
+      }
+
+      // Show crosshair immediately at the target
+      const selectedCandle = candles[targetIndex];
+      chart.setCrosshairPosition(selectedCandle.close, selectedCandle.time, series);
+
+      // Notify parent of crosshair move
+      if (onCrosshairMove) {
+        onCrosshairMove(selectedCandle.time);
+      }
+
+      // Sync crosshair to indicator charts
+      try {
+        if (indicator1ChartRef.current) {
+          const indicator1Series = Array.from(indicator1SeriesRef.current.values())[0];
+          if (indicator1Series) {
+            indicator1ChartRef.current.setCrosshairPosition(0, selectedCandle.time, indicator1Series);
+          }
+        }
+      } catch (error) {
+        // Ignore - indicator chart may not be ready
+      }
+      try {
+        if (indicator2ChartRef.current) {
+          const indicator2Series = Array.from(indicator2SeriesRef.current.values())[0];
+          if (indicator2Series) {
+            indicator2ChartRef.current.setCrosshairPosition(0, selectedCandle.time, indicator2Series);
+          }
+        }
+      } catch (error) {
+        // Ignore - indicator chart may not be ready
+      }
+    }, 50);
+  }, [keyboardNavMode, candles, onSelectedCandleIndexChange, onCrosshairMove]);
+
+  // Handle selected candle index changes (arrow key navigation)
+  // Keep the selected candle always at the center of the chart
+  useEffect(() => {
+    if (!keyboardNavMode || selectedCandleIndex === null) return;
+    if (!candlestickChartRef.current || candles.length === 0) return;
+
+    const chart = candlestickChartRef.current;
+    const series = candlestickSeriesRef.current;
+    if (!series) return;
+
+    // Get the candle at the selected index
+    if (selectedCandleIndex >= 0 && selectedCandleIndex < candles.length) {
+      const selectedCandle = candles[selectedCandleIndex];
+
+      // Validate candle data
+      if (!selectedCandle || !selectedCandle.time) return;
+
+      // Only scroll to center when using arrow keys
+      if (isArrowKeyNav) {
+        const rangeWidth = keyboardNavRangeWidthRef.current;
+        if (rangeWidth) {
+          const timeScale = chart.timeScale();
+          const newFrom = selectedCandleIndex - rangeWidth / 2;
+          const newTo = selectedCandleIndex + rangeWidth / 2;
+          try {
+            timeScale.setVisibleLogicalRange({ from: newFrom, to: newTo });
+          } catch (error) {
+            console.warn('Failed to scroll chart:', error);
+          }
+        }
+        // Reset the flag after handling
+        if (onArrowKeyNavHandled) {
+          onArrowKeyNavHandled();
+        }
+      }
+
+      // Set crosshair at the selected candle
+      chart.setCrosshairPosition(selectedCandle.close, selectedCandle.time, series);
+
+      // Notify parent of crosshair move
+      if (onCrosshairMove) {
+        onCrosshairMove(selectedCandle.time);
+      }
+
+      // Sync crosshair to indicator charts
+      try {
+        if (indicator1ChartRef.current) {
+          const indicator1Series = Array.from(indicator1SeriesRef.current.values())[0];
+          if (indicator1Series) {
+            indicator1ChartRef.current.setCrosshairPosition(0, selectedCandle.time, indicator1Series);
+          }
+        }
+      } catch (error) {
+        // Ignore - indicator chart may not be ready
+      }
+
+      try {
+        if (indicator2ChartRef.current) {
+          const indicator2Series = Array.from(indicator2SeriesRef.current.values())[0];
+          if (indicator2Series) {
+            indicator2ChartRef.current.setCrosshairPosition(0, selectedCandle.time, indicator2Series);
+          }
+        }
+      } catch (error) {
+        // Ignore - indicator chart may not be ready
+      }
+    }
+  }, [selectedCandleIndex, keyboardNavMode, candles, onCrosshairMove, isArrowKeyNav, onArrowKeyNavHandled]);
+
+  // Handle keyboard zoom (- to zoom out, = to zoom in)
+  useEffect(() => {
+    if (!keyboardNavMode || keyboardZoomTrigger === prevZoomTriggerRef.current) return;
+
+    const zoomDirection = keyboardZoomTrigger > prevZoomTriggerRef.current ? 1 : -1;
+    prevZoomTriggerRef.current = keyboardZoomTrigger;
+
+    if (keyboardNavRangeWidthRef.current === null) return;
+
+    const zoomFactor = 0.8; // 20% zoom per step
+    const currentWidth = keyboardNavRangeWidthRef.current;
+    const minWidth = 10; // Minimum visible bars
+    const maxWidth = candles.length; // Maximum visible bars
+
+    let newWidth: number;
+    if (zoomDirection > 0) {
+      // Zoom in: decrease width
+      newWidth = Math.max(minWidth, currentWidth * zoomFactor);
+    } else {
+      // Zoom out: increase width
+      newWidth = Math.min(maxWidth, currentWidth / zoomFactor);
+    }
+
+    keyboardNavRangeWidthRef.current = newWidth;
+
+    // Apply the new zoom level centered on selected candle
+    if (candlestickChartRef.current && selectedCandleIndex !== null) {
+      const timeScale = candlestickChartRef.current.timeScale();
+      const newFrom = selectedCandleIndex - newWidth / 2;
+      const newTo = selectedCandleIndex + newWidth / 2;
+      try {
+        timeScale.setVisibleLogicalRange({ from: newFrom, to: newTo });
+      } catch (error) {
+        console.warn('Failed to zoom chart:', error);
+      }
+    }
+  }, [keyboardZoomTrigger, keyboardNavMode, candles.length, selectedCandleIndex]);
+
   // Calculate flex ratios based on visible charts
   const hasIndicators1 = enabledIndicators1.size > 0;
   const hasIndicators2 = enabledIndicators2.size > 0;
@@ -785,40 +1281,117 @@ export default function ChartPanel({
     >
       <div
         className="candlestick-chart-container min-h-0"
-        style={{ flex: candlestickFlex, display: 'flex' }}
+        style={{ flex: candlestickFlex, display: 'flex', position: 'relative' }}
       >
         <div
           ref={candlestickContainerRef}
           className="w-full h-full"
           style={{ position: 'relative', overscrollBehavior: 'contain' }}
         />
+        {/* Overlay to block mouse events when keyboard nav is on */}
+        {keyboardNavMode && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 10,
+              cursor: 'default',
+            }}
+          />
+        )}
       </div>
       <div
         className="indicator-chart-container min-h-0"
         style={{
           flex: indicator1Flex,
-          display: hasIndicators1 ? 'flex' : 'none'
+          display: hasIndicators1 ? 'flex' : 'none',
+          position: 'relative'
         }}
       >
         <div
           ref={indicator1ContainerRef}
           className="w-full h-full indicator-chart-disabled"
-          style={{ position: 'relative', overscrollBehavior: 'contain' }}
+          style={{ position: 'relative', overscrollBehavior: 'contain', cursor: 'pointer' }}
+          onClick={(e) => {
+            // Only open modal on direct click, not during drag/scroll
+            if (!keyboardNavMode && (e.target === indicator1ContainerRef.current ||
+                indicator1ContainerRef.current?.contains(e.target as Node))) {
+              setActiveChart(1);
+              setModalOpen(true);
+            }
+          }}
+          title="Click to add constant lines"
         />
+        {/* Overlay to block mouse events when keyboard nav is on */}
+        {keyboardNavMode && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 10,
+              cursor: 'default',
+            }}
+          />
+        )}
       </div>
       <div
         className="indicator-chart-container min-h-0"
         style={{
           flex: indicator2Flex,
-          display: hasIndicators2 ? 'flex' : 'none'
+          display: hasIndicators2 ? 'flex' : 'none',
+          position: 'relative'
         }}
       >
         <div
           ref={indicator2ContainerRef}
           className="w-full h-full indicator-chart-disabled"
-          style={{ position: 'relative', overscrollBehavior: 'contain' }}
+          style={{ position: 'relative', overscrollBehavior: 'contain', cursor: 'pointer' }}
+          onClick={(e) => {
+            // Only open modal on direct click, not during drag/scroll
+            if (!keyboardNavMode && (e.target === indicator2ContainerRef.current ||
+                indicator2ContainerRef.current?.contains(e.target as Node))) {
+              setActiveChart(2);
+              setModalOpen(true);
+            }
+          }}
+          title="Click to add constant lines"
         />
+        {/* Overlay to block mouse events when keyboard nav is on */}
+        {keyboardNavMode && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 10,
+              cursor: 'default',
+            }}
+          />
+        )}
       </div>
+
+      {/* Constant Line Modal */}
+      <ConstantLineModal
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
+        chartTitle={activeChart === 1 ? 'Indicator Chart 1' : 'Indicator Chart 2'}
+        lines={activeChart === 1 ? constantLines1 : constantLines2}
+        onSave={(lines) => {
+          if (activeChart === 1) {
+            setConstantLines1(lines);
+          } else {
+            setConstantLines2(lines);
+          }
+        }}
+      />
     </div>
   );
 }

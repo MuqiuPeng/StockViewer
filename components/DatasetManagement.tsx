@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import AddDatasetModal from './AddDatasetModal';
 import GroupManager from './GroupManager';
 import Link from 'next/link';
@@ -34,6 +34,7 @@ interface StockGroup {
   datasetNames: string[];
   createdAt: string;
   updatedAt?: string;
+  isDataSource?: boolean;
 }
 
 export default function DatasetManagement() {
@@ -50,10 +51,27 @@ export default function DatasetManagement() {
   const [showEditNameModal, setShowEditNameModal] = useState(false);
   const [editingDataset, setEditingDataset] = useState<DatasetInfo | null>(null);
   const [newName, setNewName] = useState('');
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [searchGroup, setSearchGroup] = useState('');
+  const [searchSymbol, setSearchSymbol] = useState('');
+  const [searchName, setSearchName] = useState('');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadDatasets();
     loadGroups();
+  }, []);
+
+  // Close settings menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (settingsRef.current && !settingsRef.current.contains(event.target as Node)) {
+        setIsSettingsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const loadGroups = async () => {
@@ -329,6 +347,18 @@ export default function DatasetManagement() {
     setNewName('');
   };
 
+  const toggleGroupCollapse = (groupKey: string) => {
+    setCollapsedGroups(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(groupKey)) {
+        newSet.delete(groupKey);
+      } else {
+        newSet.add(groupKey);
+      }
+      return newSet;
+    });
+  };
+
   // Helper to get display name for a group
   const getGroupDisplayName = (groupKey: string, groupType: 'group' | 'datasource'): string => {
     if (groupType === 'group') {
@@ -340,18 +370,39 @@ export default function DatasetManagement() {
     }
   };
 
+  // Search filters
+  const groupFilter = searchGroup.trim().toLowerCase();
+  const symbolFilter = searchSymbol.trim().toLowerCase();
+  const nameFilter = searchName.trim().toLowerCase();
+
+  // Check if dataset matches symbol and name filters
+  const datasetMatchesSearch = (ds: DatasetInfo) => {
+    const matchesSymbol = !symbolFilter || ds.code.toLowerCase().includes(symbolFilter);
+    const matchesName = !nameFilter || ds.name.toLowerCase().includes(nameFilter);
+    return matchesSymbol && matchesName;
+  };
+
+  // Check if group name matches group filter
+  const groupNameMatchesSearch = (groupName: string) =>
+    !groupFilter || groupName.toLowerCase().includes(groupFilter);
+
   // Group datasets: first by custom groups, then by data source
   // Datasets can appear in both custom groups AND their data source groups
   const groupedDatasets: Record<string, { type: 'group' | 'datasource'; datasets: DatasetInfo[] }> = {};
-  
+
+  // Filter out data source groups (they are auto-generated and shown separately)
+  const customGroups = groups.filter(g => !g.isDataSource);
+
   // First, add datasets that belong to custom groups (datasets can appear in multiple groups)
-  groups.forEach(group => {
+  customGroups.forEach(group => {
+    if (!groupNameMatchesSearch(group.name)) return;
+
     if (!groupedDatasets[group.name]) {
       groupedDatasets[group.name] = { type: 'group', datasets: [] };
     }
     group.datasetNames.forEach(datasetName => {
       const dataset = datasets.find(d => d.filename === datasetName || d.name === datasetName);
-      if (dataset) {
+      if (dataset && datasetMatchesSearch(dataset)) {
         groupedDatasets[group.name].datasets.push(dataset);
       }
     });
@@ -360,27 +411,40 @@ export default function DatasetManagement() {
   // Then, add ALL datasets grouped by data source (datasets remain in their data source groups)
   datasets.forEach(ds => {
     const source = ds.dataSource || 'stock_zh_a_hist';
+    const sourceConfig = getDataSourceConfig(source);
+    const sourceName = sourceConfig?.name || source;
+
+    if (!groupNameMatchesSearch(sourceName)) return;
+    if (!datasetMatchesSearch(ds)) return;
+
     if (!groupedDatasets[source]) {
       groupedDatasets[source] = { type: 'datasource', datasets: [] };
     }
     groupedDatasets[source].datasets.push(ds);
   });
 
-  // Sort: custom groups first, then data sources
-  const sortedGroups = Object.entries(groupedDatasets).sort(([aKey, aVal], [bKey, bVal]) => {
-    if (aVal.type === 'group' && bVal.type === 'datasource') return -1;
-    if (aVal.type === 'datasource' && bVal.type === 'group') return 1;
-    return aKey.localeCompare(bKey);
+  // Sort datasets within each group by symbol (code)
+  Object.values(groupedDatasets).forEach(groupData => {
+    groupData.datasets.sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
   });
 
+  // Sort: custom groups first, then data sources; filter out empty groups
+  const sortedGroups = Object.entries(groupedDatasets)
+    .filter(([, groupData]) => groupData.datasets.length > 0)
+    .sort(([aKey, aVal], [bKey, bVal]) => {
+      if (aVal.type === 'group' && bVal.type === 'datasource') return -1;
+      if (aVal.type === 'datasource' && bVal.type === 'group') return 1;
+      return aKey.localeCompare(bKey);
+    });
+
   return (
-    <div className="p-4">
+    <div className="p-4 h-screen flex flex-col">
       {/* Navigation */}
-      <div className="mb-4 flex items-center gap-2 border-b pb-4">
-        <Link href="/" className="text-blue-600 hover:text-blue-800 font-medium">Home</Link>
+      <div className="mb-4 flex items-center gap-2 border-b border-gray-200 dark:border-gray-700 pb-4">
+        <Link href="/" className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium">Home</Link>
         <span className="text-gray-400">/</span>
-        <span className="text-gray-600">Datasets</span>
-        <div className="ml-auto flex gap-2">
+        <span className="text-gray-600 dark:text-gray-300">Datasets</span>
+        <div className="ml-auto flex gap-2 mr-12">
           <Link
             href="/viewer"
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
@@ -396,34 +460,57 @@ export default function DatasetManagement() {
         </div>
       </div>
 
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold mb-2">Dataset Management</h1>
-        <p className="text-gray-600">Manage your stock datasets</p>
-      </div>
-
       {error && (
         <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
           {error}
         </div>
       )}
 
-      <div className="mb-4 flex gap-2 flex-wrap">
-        <button
-          onClick={() => setIsAddDatasetModalOpen(true)}
-          className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-        >
-          + Add New Dataset
-        </button>
-        <button
-          onClick={() => setIsGroupManagerOpen(true)}
-          className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700"
-        >
-          📁 Manage Groups
-        </button>
+      <div className="mb-4 flex gap-2 flex-wrap items-center">
+        <input
+          type="text"
+          placeholder="Group..."
+          value={searchGroup}
+          onChange={(e) => setSearchGroup(e.target.value)}
+          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 w-48 bg-white dark:bg-gray-800 dark:text-white"
+        />
+        <input
+          type="text"
+          placeholder="Symbol..."
+          value={searchSymbol}
+          onChange={(e) => setSearchSymbol(e.target.value)}
+          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 w-48 bg-white dark:bg-gray-800 dark:text-white"
+        />
+        <input
+          type="text"
+          placeholder="Name..."
+          value={searchName}
+          onChange={(e) => setSearchName(e.target.value)}
+          className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 w-56 bg-white dark:bg-gray-800 dark:text-white"
+        />
+
+        {(() => {
+          const hasExpandedGroup = sortedGroups.some(([key]) => !collapsedGroups.has(key));
+          return (
+            <button
+              onClick={() => {
+                if (hasExpandedGroup) {
+                  setCollapsedGroups(new Set(sortedGroups.map(([key]) => key)));
+                } else {
+                  setCollapsedGroups(new Set());
+                }
+              }}
+              className="px-3 py-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+              title={hasExpandedGroup ? "Collapse All" : "Expand All"}
+            >
+              {hasExpandedGroup ? '▲ Collapse' : '▼ Expand'}
+            </button>
+          );
+        })()}
 
         {selectedDatasets.size > 0 && (
           <>
-            <div className="border-l border-gray-300 mx-2"></div>
+            <div className="border-l border-gray-300 mx-2 h-8"></div>
             <span className="px-3 py-2 bg-blue-100 text-blue-800 rounded font-medium">
               {selectedDatasets.size} selected
             </span>
@@ -447,44 +534,91 @@ export default function DatasetManagement() {
             </button>
           </>
         )}
+
+        {/* Settings Menu */}
+        <div className="relative ml-auto" ref={settingsRef}>
+          <button
+            onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+            className="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400"
+            title="Settings"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-gray-600 dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+          </button>
+
+          {isSettingsOpen && (
+            <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-2 z-50">
+              <button
+                onClick={() => {
+                  setIsAddDatasetModalOpen(true);
+                  setIsSettingsOpen(false);
+                }}
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+              >
+                <span className="w-2 h-2 rounded-full bg-green-500" />
+                Add Dataset
+              </button>
+              <button
+                onClick={() => {
+                  setIsGroupManagerOpen(true);
+                  setIsSettingsOpen(false);
+                }}
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+              >
+                <span className="w-2 h-2 rounded-full bg-purple-500" />
+                Manage Groups
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
-      {loading ? (
-        <div className="text-center py-8 text-gray-600">Loading datasets...</div>
-      ) : datasets.length === 0 ? (
-        <div className="text-center py-8 text-gray-500">
-          <p className="mb-4">No datasets found.</p>
-          <button
-            onClick={() => setIsAddDatasetModalOpen(true)}
-            className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-          >
-            Add Your First Dataset
-          </button>
-        </div>
-      ) : (
-        <div className="space-y-6">
-          {sortedGroups.map(([groupKey, groupData]) => (
-            <div key={groupKey} className="border rounded-lg p-4">
-              <div className="flex items-center gap-2 mb-4">
-                <h2 className="text-xl font-semibold text-gray-800">
+      <div className="flex-1 overflow-y-auto">
+        {loading ? (
+          <div className="text-center py-8 text-gray-600 dark:text-gray-400">Loading datasets...</div>
+        ) : datasets.length === 0 ? (
+          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+            <p className="mb-4">No datasets found.</p>
+            <button
+              onClick={() => setIsAddDatasetModalOpen(true)}
+              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+            >
+              Add Your First Dataset
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {sortedGroups.map(([groupKey, groupData]) => (
+            <div key={groupKey} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800">
+              <div
+                className="flex items-center gap-2 cursor-pointer select-none"
+                onClick={() => toggleGroupCollapse(groupKey)}
+              >
+                <span className={`transition-transform dark:text-gray-300 ${collapsedGroups.has(groupKey) ? '' : 'rotate-90'}`}>
+                  ▶
+                </span>
+                <h2 className="text-xl font-semibold text-gray-800 dark:text-white">
                   {groupData.type === 'group' ? '📁 ' : ''}{getGroupDisplayName(groupKey, groupData.type)} ({groupData.datasets.length} datasets)
                 </h2>
                 {groupData.type === 'datasource' && (
-                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded">
+                  <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
                     Data Source
                   </span>
                 )}
                 {groupData.type === 'group' && (
-                  <span className="text-xs text-purple-600 bg-purple-100 px-2 py-1 rounded">
+                  <span className="text-xs text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900 px-2 py-1 rounded">
                     Custom Group
                   </span>
                 )}
               </div>
-              <div className="overflow-x-auto">
+              {!collapsedGroups.has(groupKey) && (
+              <div className="overflow-x-auto mt-4">
                 <table className="w-full border-collapse">
                   <thead>
-                    <tr className="bg-gray-100">
-                      <th className="border p-2 text-center w-12">
+                    <tr className="bg-gray-100 dark:bg-gray-700">
+                      <th className="border border-gray-200 dark:border-gray-600 p-2 text-center w-12 dark:text-white">
                         <input
                           type="checkbox"
                           checked={groupData.datasets.every(ds => selectedDatasets.has(ds.filename))}
@@ -492,23 +626,23 @@ export default function DatasetManagement() {
                           className="cursor-pointer"
                         />
                       </th>
-                      <th className="border p-2 text-left">Code</th>
-                      <th className="border p-2 text-left">Name</th>
-                      <th className="border p-2 text-left">Data Source</th>
-                      <th className="border p-2 text-left">Start Date</th>
-                      <th className="border p-2 text-left">End Date</th>
-                      <th className="border p-2 text-left">Last Update</th>
-                      <th className="border p-2 text-left">Rows</th>
-                      <th className="border p-2 text-left">Indicators</th>
-                      <th className="border p-2 text-left">Actions</th>
+                      <th className="border border-gray-200 dark:border-gray-600 p-2 text-left dark:text-white">Code</th>
+                      <th className="border border-gray-200 dark:border-gray-600 p-2 text-left dark:text-white">Name</th>
+                      <th className="border border-gray-200 dark:border-gray-600 p-2 text-left dark:text-white">Data Source</th>
+                      <th className="border border-gray-200 dark:border-gray-600 p-2 text-left dark:text-white">Start Date</th>
+                      <th className="border border-gray-200 dark:border-gray-600 p-2 text-left dark:text-white">End Date</th>
+                      <th className="border border-gray-200 dark:border-gray-600 p-2 text-left dark:text-white">Last Update</th>
+                      <th className="border border-gray-200 dark:border-gray-600 p-2 text-left dark:text-white">Rows</th>
+                      <th className="border border-gray-200 dark:border-gray-600 p-2 text-left dark:text-white">Indicators</th>
+                      <th className="border border-gray-200 dark:border-gray-600 p-2 text-left dark:text-white">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {groupData.datasets
-                      .sort((a, b) => a.name.localeCompare(b.name))
+                      .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
                       .map((dataset) => (
-                        <tr key={dataset.name} className="hover:bg-gray-50">
-                          <td className="border p-2 text-center">
+                        <tr key={dataset.name} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                          <td className="border border-gray-200 dark:border-gray-600 p-2 text-center dark:text-white">
                             <input
                               type="checkbox"
                               checked={selectedDatasets.has(dataset.filename)}
@@ -516,27 +650,27 @@ export default function DatasetManagement() {
                               className="cursor-pointer"
                             />
                           </td>
-                          <td className="border p-2 font-mono font-medium">{dataset.code}</td>
-                          <td className="border p-2">{dataset.name}</td>
-                          <td className="border p-2 text-sm">{getGroupDisplayName(dataset.dataSource || 'stock_zh_a_hist', 'datasource')}</td>
-                          <td className="border p-2 text-sm">
+                          <td className="border border-gray-200 dark:border-gray-600 p-2 font-mono font-medium dark:text-white">{dataset.code}</td>
+                          <td className="border border-gray-200 dark:border-gray-600 p-2 dark:text-white">{dataset.name}</td>
+                          <td className="border border-gray-200 dark:border-gray-600 p-2 text-sm dark:text-gray-300">{getGroupDisplayName(dataset.dataSource || 'stock_zh_a_hist', 'datasource')}</td>
+                          <td className="border border-gray-200 dark:border-gray-600 p-2 text-sm dark:text-gray-300">
                             {dataset.firstDate ? dataset.firstDate.split('T')[0] : 'N/A'}
                           </td>
-                          <td className="border p-2 text-sm">
+                          <td className="border border-gray-200 dark:border-gray-600 p-2 text-sm dark:text-gray-300">
                             {dataset.lastDate ? dataset.lastDate.split('T')[0] : 'N/A'}
                           </td>
-                          <td className="border p-2 text-sm text-gray-600">
+                          <td className="border border-gray-200 dark:border-gray-600 p-2 text-sm text-gray-600 dark:text-gray-400">
                             {dataset.lastUpdate
                               ? new Date(dataset.lastUpdate).toLocaleString()
                               : 'N/A'}
                           </td>
-                          <td className="border p-2">{dataset.rowCount.toLocaleString()}</td>
-                          <td className="border p-2">
-                            <span className="text-sm text-gray-600">
+                          <td className="border border-gray-200 dark:border-gray-600 p-2 dark:text-white">{dataset.rowCount.toLocaleString()}</td>
+                          <td className="border border-gray-200 dark:border-gray-600 p-2">
+                            <span className="text-sm text-gray-600 dark:text-gray-400">
                               {dataset.indicators.length} indicators
                             </span>
                           </td>
-                          <td className="border p-2">
+                          <td className="border border-gray-200 dark:border-gray-600 p-2">
                             <div className="flex gap-1 flex-wrap">
                               <button
                                 onClick={() => handleUpdate(dataset.name)}
@@ -570,10 +704,12 @@ export default function DatasetManagement() {
                   </tbody>
                 </table>
               </div>
+              )}
             </div>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </div>
 
       <GroupManager
         isOpen={isGroupManagerOpen}
@@ -597,12 +733,12 @@ export default function DatasetManagement() {
               setTargetDatasetForGroup(null);
             }}
           />
-          <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4">Add to Group</h2>
+          <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4 dark:text-white">Add to Group</h2>
 
-            {groups.length === 0 ? (
+            {customGroups.length === 0 ? (
               <div className="text-center py-4">
-                <p className="text-gray-600 mb-4">No groups available. Create a group first.</p>
+                <p className="text-gray-600 dark:text-gray-400 mb-4">No groups available. Create a group first.</p>
                 <button
                   onClick={() => {
                     setShowAddToGroupModal(false);
@@ -615,22 +751,22 @@ export default function DatasetManagement() {
               </div>
             ) : (
               <div className="space-y-2">
-                <p className="text-sm text-gray-600 mb-3">
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
                   {targetDatasetForGroup === 'batch'
                     ? `Select a group to add ${selectedDatasets.size} dataset(s):`
                     : 'Select a group to add this dataset:'}
                 </p>
-                {groups.map(group => (
+                {customGroups.map(group => (
                   <button
                     key={group.id}
                     onClick={() => handleAddToGroupConfirm(group.id)}
-                    className="w-full text-left px-4 py-3 border rounded hover:bg-gray-50 transition-colors"
+                    className="w-full text-left px-4 py-3 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
                   >
-                    <div className="font-medium">{group.name}</div>
+                    <div className="font-medium dark:text-white">{group.name}</div>
                     {group.description && (
-                      <div className="text-sm text-gray-600">{group.description}</div>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">{group.description}</div>
                     )}
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                       {group.datasetNames.length} dataset(s)
                     </div>
                   </button>
@@ -644,7 +780,7 @@ export default function DatasetManagement() {
                   setShowAddToGroupModal(false);
                   setTargetDatasetForGroup(null);
                 }}
-                className="px-4 py-2 border rounded hover:bg-gray-100"
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white"
               >
                 Cancel
               </button>
@@ -660,14 +796,14 @@ export default function DatasetManagement() {
             className="absolute inset-0 bg-black bg-opacity-50"
             onClick={handleCancelEdit}
           />
-          <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold mb-4">Edit Dataset Name</h2>
+          <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4 dark:text-white">Edit Dataset Name</h2>
 
             <div className="mb-4">
-              <label className="block text-sm font-medium mb-2">
+              <label className="block text-sm font-medium mb-2 dark:text-white">
                 Code: <span className="font-mono">{editingDataset.code}</span>
               </label>
-              <label className="block text-sm font-medium mb-2">
+              <label className="block text-sm font-medium mb-2 dark:text-white">
                 Custom Name
               </label>
               <input
@@ -682,10 +818,10 @@ export default function DatasetManagement() {
                   }
                 }}
                 placeholder="Enter custom name"
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-purple-500"
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-purple-500"
                 autoFocus
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 Leave as code or enter a custom name (e.g., "Ping An Bank")
               </p>
             </div>
@@ -693,7 +829,7 @@ export default function DatasetManagement() {
             <div className="flex justify-end gap-2">
               <button
                 onClick={handleCancelEdit}
-                className="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200"
+                className="px-4 py-2 text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
               >
                 Cancel
               </button>

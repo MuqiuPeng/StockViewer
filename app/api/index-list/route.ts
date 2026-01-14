@@ -68,12 +68,13 @@ export async function GET(request: Request) {
       );
     }
 
-    // Transform to standard format
+    // Transform to standard format and sort by code
     const indices = data.map((item: any) => ({
       code: String(item[labelMapping.code] || item.code || ''),
       name: String(item[labelMapping.name] || item.name || ''),
       source
-    })).filter(item => item.code && item.name);
+    })).filter(item => item.code && item.name)
+      .sort((a, b) => a.code.localeCompare(b.code));
 
     return NextResponse.json({
       success: true,

@@ -1,6 +1,6 @@
 # Stock Viewer
 
-A comprehensive stock analysis platform for Chinese A-share markets with advanced technical indicators, backtesting, and portfolio management capabilities.
+A comprehensive stock analysis platform with support for multiple markets (A-shares, B-shares, Hong Kong, US indices, global indices, ETFs, futures), advanced technical indicators, backtesting, and portfolio management capabilities.
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
 ![Next.js](https://img.shields.io/badge/Next.js-14-black)
@@ -11,20 +11,33 @@ A comprehensive stock analysis platform for Chinese A-share markets with advance
 
 StockViewer is a powerful Next.js application that enables you to:
 
-- 📈 **Analyze** Chinese A-share stocks with professional TradingView charts
+- 📈 **Analyze** stocks from multiple markets with professional TradingView charts
 - 🔧 **Create** custom technical indicators using Python and the MyTT library
 - 🎯 **Backtest** trading strategies with realistic execution simulation
 - 📊 **Manage** stock groups and portfolios for batch analysis
 - 🔬 **Visualize** OHLC data with synchronized charts and real-time pie charts
 - 📚 **Track** backtest history with batch management and comparison tools
 - ✅ **Validate** data quality with automatic error detection
+- 🌙 **Dark mode** support throughout the application
 
 ## Recent Improvements
+
+🌙 **Dark Mode Support**
+- Complete dark theme implementation across all pages and modals
+- Theme toggle with persistence
+- Proper hover effects and shadows in both modes
 
 ✨ **Enhanced Visualizations**
 - Real-time pie charts showing portfolio composition (hover-responsive)
 - Stacked area charts always anchored at 0 for better readability
 - Visual indicators for stock allocation and cash holdings
+- Constant reference lines for charts
+
+🌐 **Multiple Data Sources**
+- Support for A-shares, B-shares, Hong Kong, US indices, global indices
+- ETFs, LOF funds, futures, and cryptocurrency data
+- Multiple timeframes including minute-level data
+- Symbol browser with batch add functionality
 
 🔧 **Batch History Management**
 - Select multiple backtest runs for bulk operations
@@ -48,12 +61,18 @@ StockViewer is a powerful Next.js application that enables you to:
 - TradingView Lightweight Charts integration
 - Real-time crosshair tracking with data panel
 - Color-coded indicators with collapsible selectors
+- Constant reference lines with custom values and labels
+- Keyboard navigation with arrow keys and zoom controls
+- Dark mode support with theme persistence
 
 ### 🔧 Custom Indicators
 - Python-based indicator creation with Monaco editor (VS Code)
 - MyTT library integration (60+ Chinese technical analysis indicators)
 - Automatic dependency detection and topological sorting
 - Group indicators with multiple outputs (e.g., MACD → DIF, DEA, MACD)
+- External dataset support for cross-stock analysis
+- Streaming progress updates when applying to multiple datasets
+- Detailed error reporting with line numbers and tracebacks
 
 ### 🎯 Backtesting Engine
 - **Single stock and portfolio backtesting** with realistic execution
@@ -69,11 +88,15 @@ StockViewer is a powerful Next.js application that enables you to:
 - **Trade hover details**: See nearest trades when hovering on charts
 - **Data validation**: Automatic detection of corrupted or negative price data
 
-### 📈 Data Management
-- Fetch Chinese A-share data from aktools API
+### 📈 Data Sources & Management
+- **Multiple Markets**: A-shares, B-shares, Hong Kong stocks, CDR, US indices, global indices
+- **Additional Assets**: ETFs, LOF funds, futures, cryptocurrency indicators
+- **Multiple Timeframes**: Daily data and minute-level data (1/5/15/30/60 min)
+- **Multiple Providers**: East Money, Sina Finance, Tencent for redundancy
+- Symbol browser with search functionality and batch add support
 - Auto-update detection with one-click refresh
 - Group management for portfolio analysis
-- Dataset organization by data source
+- Dataset organization by data source with custom naming
 
 ## Quick Start
 
@@ -187,9 +210,11 @@ Comprehensive documentation is organized by topic:
 - **Frontend**: Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS
 - **Charts**: TradingView Lightweight Charts
 - **Editor**: Monaco Editor (VS Code engine)
+- **Theming**: Dark/Light mode with system preference detection
 - **Backend**: Next.js API Routes, Node.js
 - **Data Processing**: Python 3.8+, pandas, numpy, MyTT library
-- **Storage**: CSV files, JSON (no database)
+- **Data Sources**: AKShare API (aktools) for multi-market data
+- **Storage**: CSV files, JSON (no database required)
 
 ## Project Structure
 

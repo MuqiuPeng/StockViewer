@@ -18,6 +18,10 @@ body {
   background: white;
 }
 
+.dark body {
+  background: #111827;
+}
+
 /* Ensure chart containers align properly */
 .chart-panel .candlestick-chart-container,
 .chart-panel .indicator-chart-container {

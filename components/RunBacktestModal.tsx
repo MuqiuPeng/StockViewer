@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { getDataSourceConfig } from '@/lib/data-sources';
 
 interface Strategy {
   id: string;
@@ -26,6 +27,13 @@ interface StockGroup {
   name: string;
   description?: string;
   datasetNames: string[];
+}
+
+// Helper to format dataset display as {groupname}-{symbol}-{name}
+function formatDatasetDisplay(ds: DatasetInfo): string {
+  const sourceConfig = getDataSourceConfig(ds.dataSource || 'stock_zh_a_hist');
+  const groupName = sourceConfig?.name || ds.dataSource || '';
+  return `${groupName}-${ds.code}-${ds.name}`;
 }
 
 interface RunBacktestModalProps {
@@ -84,6 +92,8 @@ export default function RunBacktestModal({
   const [selectedStrategy, setSelectedStrategy] = useState<Strategy | null>(null);
   const [startDate, setStartDate] = useState<string>('');
   const [endDate, setEndDate] = useState<string>('');
+  const [portfolioSearch, setPortfolioSearch] = useState<string>('');
+  const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -240,24 +250,24 @@ export default function RunBacktestModal({
         className="absolute inset-0 bg-black bg-opacity-50"
         onClick={onClose}
       />
-      <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-7xl max-h-[85vh] flex flex-col">
+      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-7xl max-h-[85vh] flex flex-col">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold">Run Backtest</h2>
+          <h2 className="text-2xl font-bold dark:text-white">Run Backtest</h2>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 text-2xl"
+            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl"
           >
             ×
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4 overflow-y-auto flex-1">
+        <form ref={formRef} onSubmit={handleSubmit} className="space-y-4 overflow-y-auto flex-1">
           <div>
-            <label className="block text-sm font-medium mb-1">Strategy</label>
+            <label className="block text-sm font-medium mb-1 dark:text-white">Strategy</label>
             <select
               value={selectedStrategyId}
               onChange={(e) => setSelectedStrategyId(e.target.value)}
-              className="w-full px-3 py-2 border rounded"
+              className="w-full px-3 py-2 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
               required
             >
               <option value="">Select a strategy</option>
@@ -269,12 +279,12 @@ export default function RunBacktestModal({
             </select>
             {selectedStrategy && (
               <>
-                <p className="text-xs text-gray-500 mt-1">{selectedStrategy.description}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{selectedStrategy.description}</p>
                 <p className="text-xs font-medium mt-1">
                   {selectedStrategy.strategyType === 'portfolio' ? (
-                    <span className="text-purple-600">Portfolio Strategy - Requires multiple stocks with shared capital</span>
+                    <span className="text-purple-600 dark:text-purple-400">Portfolio Strategy - Requires multiple stocks with shared capital</span>
                   ) : (
-                    <span className="text-blue-600">Single Stock Strategy</span>
+                    <span className="text-blue-600 dark:text-blue-400">Single Stock Strategy</span>
                   )}
                 </p>
               </>
@@ -283,9 +293,9 @@ export default function RunBacktestModal({
 
           {/* Mode Selection */}
           <div>
-            <label className="block text-sm font-medium mb-2">Backtest Target</label>
+            <label className="block text-sm font-medium mb-2 dark:text-white">Backtest Target</label>
             <div className="flex gap-4 mb-3">
-              <label className={`flex items-center ${selectedStrategy?.strategyType === 'portfolio' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+              <label className={`flex items-center dark:text-gray-200 ${selectedStrategy?.strategyType === 'portfolio' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                 <input
                   type="radio"
                   value="single"
@@ -296,7 +306,7 @@ export default function RunBacktestModal({
                 />
                 <span>Single Stock</span>
               </label>
-              <label className={`flex items-center ${selectedStrategy?.strategyType === 'portfolio' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+              <label className={`flex items-center dark:text-gray-200 ${selectedStrategy?.strategyType === 'portfolio' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                 <input
                   type="radio"
                   value="group"
@@ -307,7 +317,7 @@ export default function RunBacktestModal({
                 />
                 <span>Stock Group</span>
               </label>
-              <label className={`flex items-center ${selectedStrategy?.strategyType === 'single' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+              <label className={`flex items-center dark:text-gray-200 ${selectedStrategy?.strategyType === 'single' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                 <input
                   type="radio"
                   value="portfolio"
@@ -320,7 +330,7 @@ export default function RunBacktestModal({
               </label>
             </div>
             {selectedStrategy?.strategyType === 'portfolio' && (
-              <p className="text-xs text-purple-600 mb-2">
+              <p className="text-xs text-purple-600 dark:text-purple-400 mb-2">
                 Portfolio strategies require multiple stocks with shared capital
               </p>
             )}
@@ -329,17 +339,17 @@ export default function RunBacktestModal({
           {/* Single Stock Selection */}
           {mode === 'single' && (
             <div>
-              <label className="block text-sm font-medium mb-1">Dataset</label>
+              <label className="block text-sm font-medium mb-1 dark:text-white">Dataset</label>
               {datasets.length > 0 ? (
                 <select
                   value={selectedDataset}
                   onChange={(e) => setSelectedDataset(e.target.value)}
-                  className="w-full px-3 py-2 border rounded"
+                  className="w-full px-3 py-2 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
                   required
                 >
                   {datasets.map((ds) => (
                     <option key={ds.name} value={ds.filename || ds.name}>
-                      {ds.name} ({ds.rowCount.toLocaleString()} rows)
+                      {formatDatasetDisplay(ds)} ({ds.rowCount.toLocaleString()} rows)
                     </option>
                   ))}
                 </select>
@@ -348,24 +358,24 @@ export default function RunBacktestModal({
                   type="text"
                   value={selectedDataset}
                   onChange={(e) => setSelectedDataset(e.target.value)}
-                  className="w-full px-3 py-2 border rounded"
+                  className="w-full px-3 py-2 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
                   required
                   placeholder="Dataset name (e.g., 000001.csv)"
                 />
               )}
-              <p className="text-xs text-gray-500 mt-1">Select a dataset to test against</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Select a dataset to test against</p>
             </div>
           )}
 
           {/* Group Selection */}
           {mode === 'group' && (
             <div>
-              <label className="block text-sm font-medium mb-1">Stock Group</label>
+              <label className="block text-sm font-medium mb-1 dark:text-white">Stock Group</label>
               {groups.length > 0 ? (
                 <select
                   value={selectedGroupId}
                   onChange={(e) => setSelectedGroupId(e.target.value)}
-                  className="w-full px-3 py-2 border rounded"
+                  className="w-full px-3 py-2 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
                   required
                 >
                   {groups.map((group) => (
@@ -375,11 +385,11 @@ export default function RunBacktestModal({
                   ))}
                 </select>
               ) : (
-                <div className="text-sm text-gray-500 py-2 px-3 border rounded bg-gray-50">
+                <div className="text-sm text-gray-500 dark:text-gray-400 py-2 px-3 border dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-700">
                   No groups available. Create a group first to backtest multiple stocks.
                 </div>
               )}
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 Run backtest on all stocks in the group (separate capital per stock)
               </p>
             </div>
@@ -388,12 +398,12 @@ export default function RunBacktestModal({
           {/* Portfolio Multi-Stock Selection */}
           {mode === 'portfolio' && (
             <div>
-              <label className="block text-sm font-medium mb-2">Select Stocks for Portfolio</label>
+              <label className="block text-sm font-medium mb-2 dark:text-white">Select Stocks for Portfolio</label>
 
               {/* Quick Group Selection */}
               {groups.length > 0 && (
-                <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded">
-                  <label className="block text-xs font-medium text-blue-900 mb-2">Quick Select from Group:</label>
+                <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded">
+                  <label className="block text-xs font-medium text-blue-900 dark:text-blue-300 mb-2">Quick Select from Group:</label>
                   <div className="flex gap-2 flex-wrap">
                     {groups.map((group) => (
                       <button
@@ -406,7 +416,7 @@ export default function RunBacktestModal({
                           });
                           setSelectedSymbols(groupStocks);
                         }}
-                        className="text-xs px-3 py-1.5 bg-white border border-blue-300 rounded hover:bg-blue-100 transition-colors"
+                        className="text-xs px-3 py-1.5 bg-white dark:bg-gray-700 border border-blue-300 dark:border-blue-600 rounded hover:bg-blue-100 dark:hover:bg-gray-600 transition-colors dark:text-white"
                       >
                         📁 {group.name} ({group.datasetNames.length})
                       </button>
@@ -415,28 +425,42 @@ export default function RunBacktestModal({
                 </div>
               )}
 
+              {/* Search Input */}
+              <div className="mb-3">
+                <input
+                  type="text"
+                  value={portfolioSearch}
+                  onChange={(e) => setPortfolioSearch(e.target.value)}
+                  placeholder="Search by code or name..."
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
               {datasets.length > 0 ? (
-                <div className="border rounded bg-white overflow-hidden">
+                <div className="border dark:border-gray-600 rounded bg-white dark:bg-gray-800 overflow-hidden">
                   {/* Table Header */}
-                  <div className="bg-gray-100 border-b px-3 py-2 grid grid-cols-12 gap-2 text-xs font-semibold text-gray-700">
+                  <div className="bg-gray-100 dark:bg-gray-700 border-b dark:border-gray-600 px-3 py-2 grid grid-cols-12 gap-2 text-xs font-semibold text-gray-700 dark:text-gray-200">
                     <div className="col-span-1"></div>
-                    <div className="col-span-2">Stock Name</div>
-                    <div className="col-span-1">Code</div>
+                    <div className="col-span-5">Dataset</div>
                     <div className="col-span-1 text-right">Rows</div>
                     <div className="col-span-2">Date Range</div>
-                    <div className="col-span-5">Indicators</div>
+                    <div className="col-span-3">Indicators</div>
                   </div>
 
                   {/* Stock List */}
-                  <div className="max-h-48 overflow-y-auto">
-                    {datasets.map((ds) => {
-                      const stockCode = ds.code || ds.filename?.split('_')[0] || '';
+                  <div className="max-h-96 overflow-y-auto">
+                    {datasets.filter(ds => {
+                      if (!portfolioSearch) return true;
+                      const search = portfolioSearch.toLowerCase();
+                      const displayName = formatDatasetDisplay(ds).toLowerCase();
+                      return displayName.includes(search) || ds.code?.toLowerCase().includes(search);
+                    }).map((ds) => {
                       const isChecked = selectedSymbols.includes(ds.filename || ds.name);
                       return (
                         <label
                           key={ds.name}
-                          className={`grid grid-cols-12 gap-2 items-center px-3 py-2.5 cursor-pointer border-b border-gray-100 hover:bg-blue-50 transition-colors ${
-                            isChecked ? 'bg-blue-50' : ''
+                          className={`grid grid-cols-12 gap-2 items-center px-3 py-2.5 cursor-pointer border-b border-gray-100 dark:border-gray-700 hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors ${
+                            isChecked ? 'bg-blue-50 dark:bg-blue-900/30' : ''
                           }`}
                         >
                           <div className="col-span-1 flex items-center">
@@ -454,20 +478,13 @@ export default function RunBacktestModal({
                               className="w-4 h-4"
                             />
                           </div>
-                          <div className="col-span-2 font-medium text-gray-900 truncate">
-                            {ds.name}
+                          <div className="col-span-5 font-medium text-gray-900 dark:text-white truncate" title={formatDatasetDisplay(ds)}>
+                            {formatDatasetDisplay(ds)}
                           </div>
-                          <div className="col-span-1">
-                            {stockCode && (
-                              <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-700 rounded font-mono">
-                                {stockCode}
-                              </span>
-                            )}
-                          </div>
-                          <div className="col-span-1 text-right text-sm font-mono text-gray-700">
+                          <div className="col-span-1 text-right text-sm font-mono text-gray-700 dark:text-gray-300">
                             {ds.rowCount?.toLocaleString() || 0}
                           </div>
-                          <div className="col-span-2 text-xs font-mono text-gray-600">
+                          <div className="col-span-2 text-xs font-mono text-gray-600 dark:text-gray-400">
                             {ds.firstDate && ds.lastDate ? (
                               <span>
                                 {new Date(ds.firstDate).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit' })} ~ {new Date(ds.lastDate).toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit' })}
@@ -476,11 +493,11 @@ export default function RunBacktestModal({
                               <span className="text-gray-400">-</span>
                             )}
                           </div>
-                          <div className="col-span-5 text-xs text-gray-600 truncate">
+                          <div className="col-span-3 text-xs text-gray-600 dark:text-gray-400 truncate">
                             {ds.indicators && ds.indicators.length > 0 ? (
                               <span>
-                                {ds.indicators.slice(0, 5).join(', ')}
-                                {ds.indicators.length > 5 ? ` +${ds.indicators.length - 5}` : ''}
+                                {ds.indicators.slice(0, 3).join(', ')}
+                                {ds.indicators.length > 3 ? ` +${ds.indicators.length - 3}` : ''}
                               </span>
                             ) : (
                               <span className="text-gray-400">No indicators</span>
@@ -492,11 +509,11 @@ export default function RunBacktestModal({
                   </div>
                 </div>
               ) : (
-                <div className="text-sm text-gray-500 py-2 px-3 border rounded bg-gray-50">
+                <div className="text-sm text-gray-500 dark:text-gray-400 py-2 px-3 border dark:border-gray-600 rounded bg-gray-50 dark:bg-gray-700">
                   No datasets available. Add stocks first.
                 </div>
               )}
-              <p className="text-xs text-purple-600 mt-2 font-medium">
+              <p className="text-xs text-purple-600 dark:text-purple-400 mt-2 font-medium">
                 Selected: {selectedSymbols.length} stock{selectedSymbols.length !== 1 ? 's' : ''} | Shared capital across all positions
               </p>
               {selectedSymbols.length > 0 && (
@@ -504,14 +521,14 @@ export default function RunBacktestModal({
                   <button
                     type="button"
                     onClick={() => setSelectedSymbols(datasets.map(ds => ds.filename || ds.name))}
-                    className="text-xs px-2 py-1 border rounded hover:bg-gray-100"
+                    className="text-xs px-2 py-1 border dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white"
                   >
                     Select All
                   </button>
                   <button
                     type="button"
                     onClick={() => setSelectedSymbols([])}
-                    className="text-xs px-2 py-1 border rounded hover:bg-gray-100"
+                    className="text-xs px-2 py-1 border dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white"
                   >
                     Clear All
                   </button>
@@ -522,68 +539,68 @@ export default function RunBacktestModal({
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Start Date (Optional)</label>
+              <label className="block text-sm font-medium mb-1 dark:text-white">Start Date (Optional)</label>
               <input
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
-                className="w-full px-3 py-2 border rounded"
+                className="w-full px-3 py-2 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
               />
-              <p className="text-xs text-gray-500 mt-1">Leave empty for earliest</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Leave empty for earliest</p>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">End Date (Optional)</label>
+              <label className="block text-sm font-medium mb-1 dark:text-white">End Date (Optional)</label>
               <input
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
-                className="w-full px-3 py-2 border rounded"
+                className="w-full px-3 py-2 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
               />
-              <p className="text-xs text-gray-500 mt-1">Leave empty for latest</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Leave empty for latest</p>
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Initial Cash</label>
+              <label className="block text-sm font-medium mb-1 dark:text-white">Initial Cash</label>
               <input
                 type="number"
                 value={initialCash}
                 onChange={(e) => setInitialCash(e.target.value)}
-                className="w-full px-3 py-2 border rounded"
+                className="w-full px-3 py-2 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
                 min="0"
                 step="1000"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Commission</label>
+              <label className="block text-sm font-medium mb-1 dark:text-white">Commission</label>
               <input
                 type="number"
                 value={commission}
                 onChange={(e) => setCommission(e.target.value)}
-                className="w-full px-3 py-2 border rounded"
+                className="w-full px-3 py-2 border dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
                 min="0"
                 max="1"
                 step="0.0001"
                 required
               />
-              <p className="text-xs text-gray-500 mt-1">e.g., 0.001 = 0.1%</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">e.g., 0.001 = 0.1%</p>
             </div>
           </div>
 
           {selectedStrategy && Object.keys(parameters).length > 0 && (
             <div>
-              <label className="block text-sm font-medium mb-2">Strategy Parameters</label>
-              <div className="space-y-2 border rounded p-3 bg-gray-50">
+              <label className="block text-sm font-medium mb-2 dark:text-white">Strategy Parameters</label>
+              <div className="space-y-2 border dark:border-gray-600 rounded p-3 bg-gray-50 dark:bg-gray-700">
                 {Object.keys(parameters).map((key) => (
                   <div key={key}>
-                    <label className="block text-xs text-gray-600 mb-1">{key}</label>
+                    <label className="block text-xs text-gray-600 dark:text-gray-400 mb-1">{key}</label>
                     <input
                       type="text"
                       value={parameters[key]}
                       onChange={(e) => setParameters({ ...parameters, [key]: e.target.value })}
-                      className="w-full px-2 py-1 border rounded text-sm"
+                      className="w-full px-2 py-1 border dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-800 dark:text-white"
                       placeholder={String(selectedStrategy.parameters?.[key] || '')}
                     />
                   </div>
@@ -594,16 +611,17 @@ export default function RunBacktestModal({
 
         </form>
 
-        <div className="flex justify-end gap-2 mt-4 pt-4 border-t">
+        <div className="flex justify-end gap-2 mt-4 pt-4 border-t dark:border-gray-600">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 border rounded hover:bg-gray-100"
+            className="px-4 py-2 border dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white"
           >
             Cancel
           </button>
           <button
-            onClick={handleSubmit}
+            type="button"
+            onClick={() => formRef.current?.requestSubmit()}
             disabled={isLoading || !selectedStrategyId}
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
           >

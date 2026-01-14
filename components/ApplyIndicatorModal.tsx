@@ -202,21 +202,21 @@ export default function ApplyIndicatorModal({
         onClick={onClose}
       />
 
-      <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
-        <h2 className="text-xl font-bold mb-4">Apply Indicator to Stocks</h2>
+      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+        <h2 className="text-xl font-bold mb-4 dark:text-white">Apply Indicator to Stocks</h2>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded text-sm">
+          <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-400 rounded text-sm">
             {error}
           </div>
         )}
 
         {isLoading ? (
-          <div className="text-center py-8 text-gray-600">Loading stocks...</div>
+          <div className="text-center py-8 text-gray-600 dark:text-gray-400">Loading stocks...</div>
         ) : (
           <>
             <div className="mb-4">
-              <label className="flex items-center gap-2 text-sm font-medium">
+              <label className="flex items-center gap-2 text-sm font-medium dark:text-white">
                 <input
                   type="checkbox"
                   checked={applyToAll}
@@ -227,16 +227,16 @@ export default function ApplyIndicatorModal({
               </label>
             </div>
 
-            <div className="mb-4 max-h-60 overflow-y-auto border border-gray-300 rounded p-3">
-              <div className="text-sm font-medium mb-2">Select Stocks:</div>
+            <div className="mb-4 max-h-60 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded p-3 bg-white dark:bg-gray-800">
+              <div className="text-sm font-medium mb-2 dark:text-white">Select Stocks:</div>
               {datasets.length === 0 ? (
-                <div className="text-gray-500 text-sm">No stocks available</div>
+                <div className="text-gray-500 dark:text-gray-400 text-sm">No stocks available</div>
               ) : (
                 <div className="space-y-1">
                   {datasets.map((dataset) => (
                     <label
                       key={dataset.filename}
-                      className="flex items-center gap-2 text-sm hover:bg-gray-50 p-1 rounded"
+                      className="flex items-center gap-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 p-1 rounded dark:text-white"
                     >
                       <input
                         type="checkbox"
@@ -245,7 +245,7 @@ export default function ApplyIndicatorModal({
                         disabled={isApplying}
                       />
                       <span>{dataset.name}</span>
-                      <span className="text-gray-500">({dataset.rowCount} rows)</span>
+                      <span className="text-gray-500 dark:text-gray-400">({dataset.rowCount} rows)</span>
                     </label>
                   ))}
                 </div>
@@ -254,10 +254,10 @@ export default function ApplyIndicatorModal({
 
             {progress && (
               <div className="mb-4">
-                <div className="text-sm font-medium mb-1">
+                <div className="text-sm font-medium mb-1 dark:text-white">
                   Progress: {progress.current} / {progress.total}
                 </div>
-                <div className="w-full bg-gray-200 rounded-full h-2">
+                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                   <div
                     className="bg-blue-600 h-2 rounded-full transition-all"
                     style={{
@@ -269,53 +269,53 @@ export default function ApplyIndicatorModal({
             )}
 
             {results && (
-              <div className="mb-4 p-3 border border-gray-300 rounded">
-                <div className="text-sm font-medium mb-2">
+              <div className="mb-4 p-3 border border-gray-300 dark:border-gray-600 rounded">
+                <div className="text-sm font-medium mb-2 dark:text-white">
                   Results: {successCount} succeeded, {failureCount} failed
                 </div>
                 <div className="max-h-40 overflow-y-auto">
-                  <table className="w-full text-sm">
+                  <table className="w-full text-sm dark:text-gray-200">
                     <thead>
-                      <tr className="bg-gray-100">
-                        <th className="border p-1 text-left">Stock</th>
-                        <th className="border p-1 text-left">Status</th>
-                        <th className="border p-1 text-left">Details</th>
+                      <tr className="bg-gray-100 dark:bg-gray-700">
+                        <th className="border dark:border-gray-600 p-1 text-left">Stock</th>
+                        <th className="border dark:border-gray-600 p-1 text-left">Status</th>
+                        <th className="border dark:border-gray-600 p-1 text-left">Details</th>
                       </tr>
                     </thead>
                     <tbody>
                       {Object.entries(results).map(([stock, result]) => (
                         <tr key={stock}>
-                          <td className="border p-1">{stock}</td>
-                          <td className="border p-1">
+                          <td className="border dark:border-gray-600 p-1">{stock}</td>
+                          <td className="border dark:border-gray-600 p-1">
                             {result.success ? (
-                              <span className="text-green-600">✓ Success</span>
+                              <span className="text-green-600 dark:text-green-400">✓ Success</span>
                             ) : (
-                              <span className="text-red-600">✗ Failed</span>
+                              <span className="text-red-600 dark:text-red-400">✗ Failed</span>
                             )}
                           </td>
-                          <td className="border p-1 text-xs">
+                          <td className="border dark:border-gray-600 p-1 text-xs">
                             {result.success ? (
                               `${result.rowsProcessed} rows`
                             ) : (
                               <div>
-                                <div className="font-medium text-red-600">{result.error}</div>
+                                <div className="font-medium text-red-600 dark:text-red-400">{result.error}</div>
                                 {result.details?.warnings && result.details.warnings.length > 0 && (
-                                  <div className="mt-1 p-1 bg-yellow-50 border border-yellow-300 rounded">
-                                    <div className="font-semibold text-yellow-800 text-xs">⚠️ Warnings:</div>
+                                  <div className="mt-1 p-1 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-600 rounded">
+                                    <div className="font-semibold text-yellow-800 dark:text-yellow-400 text-xs">⚠️ Warnings:</div>
                                     {result.details.warnings.map((warning: string, i: number) => (
-                                      <div key={i} className="text-xs text-yellow-700">• {warning}</div>
+                                      <div key={i} className="text-xs text-yellow-700 dark:text-yellow-400">• {warning}</div>
                                     ))}
                                   </div>
                                 )}
                                 {result.details?.hints && (
-                                  <div className="mt-1 text-blue-600">
+                                  <div className="mt-1 text-blue-600 dark:text-blue-400">
                                     {result.details.hints.map((hint: string, i: number) => (
                                       <div key={i}>💡 {hint}</div>
                                     ))}
                                   </div>
                                 )}
                                 {result.details?.code_line && (
-                                  <div className="mt-1 text-gray-600 font-mono">
+                                  <div className="mt-1 text-gray-600 dark:text-gray-400 font-mono">
                                     Code: {result.details.code_line}
                                   </div>
                                 )}
@@ -334,7 +334,7 @@ export default function ApplyIndicatorModal({
               <button
                 onClick={onClose}
                 disabled={isApplying}
-                className="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-50"
+                className="px-4 py-2 text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50"
               >
                 {results ? 'Close' : 'Cancel'}
               </button>

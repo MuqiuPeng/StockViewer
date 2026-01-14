@@ -73,7 +73,7 @@ export async function POST(request: Request) {
 
     // Detect dependencies from Python code
     const allIndicators = await loadIndicators();
-    const dependencies = detectDependencies(pythonCode, allIndicators);
+    const { dependencies, dependencyColumns } = detectDependencies(pythonCode, allIndicators);
 
     // Create indicator
     const indicator = await saveIndicator({
@@ -82,6 +82,7 @@ export async function POST(request: Request) {
       pythonCode,
       outputColumn: isGroup ? groupName : (outputColumn || name),  // Use groupName for groups
       dependencies,
+      dependencyColumns,
       isGroup: isGroup || false,
       groupName: isGroup ? groupName : undefined,
       expectedOutputs: isGroup ? expectedOutputs.filter((output: string) => output.trim() !== '') : undefined,

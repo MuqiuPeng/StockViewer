@@ -38,6 +38,7 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
   const [isLoadingSymbols, setIsLoadingSymbols] = useState(false);
   const [symbolSearch, setSymbolSearch] = useState('');
   const [selectedSymbols, setSelectedSymbols] = useState<Set<string>>(new Set());
+  const [symbolNameMap, setSymbolNameMap] = useState<Map<string, string>>(new Map()); // Map code -> name
 
   if (!isOpen) return null;
 
@@ -113,6 +114,16 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
       } else if (data.futures) {
         items = data.futures;
       }
+
+      // Sort by code/symbol
+      items.sort((a, b) => a.code.localeCompare(b.code));
+
+      // Build code -> name map
+      const nameMap = new Map<string, string>();
+      items.forEach(item => {
+        nameMap.set(item.code, item.name);
+      });
+      setSymbolNameMap(nameMap);
 
       setSymbolList(items);
       setShowSymbolBrowser(true);
@@ -199,12 +210,15 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
       setProgress({ current: i, total: symbols.length });
 
       try {
+        // Get name from symbolNameMap if available (from browse selection)
+        const symbolName = symbolNameMap.get(sym);
+
         const response = await fetch('/api/add-dataset', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ symbol: sym, dataSource }),
+          body: JSON.stringify({ symbol: sym, dataSource, name: symbolName }),
         });
 
         const data = await response.json();
@@ -266,19 +280,19 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
       />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
-        <h2 className="text-xl font-bold mb-4">Add Dataset</h2>
+      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
+        <h2 className="text-xl font-bold mb-4 dark:text-white">Add Dataset</h2>
 
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
-            <label htmlFor="data-source" className="block text-sm font-medium mb-2">
+            <label htmlFor="data-source" className="block text-sm font-medium mb-2 dark:text-white">
               Data Source
             </label>
             <select
               id="data-source"
               value={dataSource}
               onChange={(e) => setDataSource(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               disabled={isLoading}
             >
               {getDataSourceCategories().map((category) => (
@@ -292,14 +306,14 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
               ))}
             </select>
             {currentConfig && (
-              <p className="text-xs text-gray-600 mt-1">
+              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
                 {currentConfig.description}
               </p>
             )}
           </div>
 
           <div className="mb-4">
-            <label htmlFor="dataset-symbol" className="block text-sm font-medium mb-2">
+            <label htmlFor="dataset-symbol" className="block text-sm font-medium mb-2 dark:text-white">
               Symbol(s)
             </label>
             <div className="flex gap-2">
@@ -309,7 +323,7 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
                 value={symbol}
                 onChange={(e) => setSymbol(e.target.value)}
                 placeholder={currentConfig?.exampleSymbol ? `e.g., ${currentConfig.exampleSymbol}` : 'Enter symbol'}
-                className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 disabled={isLoading}
               />
               {canBrowseSymbols() && (
@@ -317,7 +331,7 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
                   type="button"
                   onClick={handleBrowseSymbols}
                   disabled={isLoading || isLoadingSymbols}
-                  className="px-4 py-2 bg-gray-100 text-gray-700 border border-gray-300 rounded hover:bg-gray-200 disabled:opacity-50 flex items-center gap-2"
+                  className="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 flex items-center gap-2"
                 >
                   {isLoadingSymbols ? (
                     <>
@@ -333,17 +347,17 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
                 </button>
               )}
             </div>
-            <p className="text-xs text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               {currentConfig?.symbolFormat || 'Enter symbol(s)'}. Separate multiple symbols with commas. All historical data will be fetched.
             </p>
           </div>
 
           {progress && (
             <div className="mb-4">
-              <div className="text-sm font-medium mb-1">
+              <div className="text-sm font-medium mb-1 dark:text-white">
                 Progress: {progress.current} / {progress.total}
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-2">
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                 <div
                   className="bg-blue-600 h-2 rounded-full transition-all"
                   style={{
@@ -355,31 +369,31 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
           )}
 
           {results.length > 0 && (
-            <div className="mb-4 p-3 border border-gray-300 rounded">
-              <div className="text-sm font-medium mb-2">
+            <div className="mb-4 p-3 border border-gray-300 dark:border-gray-600 rounded">
+              <div className="text-sm font-medium mb-2 dark:text-white">
                 Results: {results.filter(r => r.success).length} succeeded, {results.filter(r => !r.success).length} failed
               </div>
               <div className="max-h-40 overflow-y-auto">
-                <table className="w-full text-sm">
+                <table className="w-full text-sm dark:text-gray-200">
                   <thead>
-                    <tr className="bg-gray-100">
-                      <th className="border p-1 text-left">Symbol</th>
-                      <th className="border p-1 text-left">Status</th>
-                      <th className="border p-1 text-left">Message</th>
+                    <tr className="bg-gray-100 dark:bg-gray-700">
+                      <th className="border dark:border-gray-600 p-1 text-left">Symbol</th>
+                      <th className="border dark:border-gray-600 p-1 text-left">Status</th>
+                      <th className="border dark:border-gray-600 p-1 text-left">Message</th>
                     </tr>
                   </thead>
                   <tbody>
                     {results.map((result, idx) => (
                       <tr key={idx}>
-                        <td className="border p-1 font-mono">{result.symbol}</td>
-                        <td className="border p-1">
+                        <td className="border dark:border-gray-600 p-1 font-mono">{result.symbol}</td>
+                        <td className="border dark:border-gray-600 p-1">
                           {result.success ? (
-                            <span className="text-green-600">✓ Success</span>
+                            <span className="text-green-600 dark:text-green-400">✓ Success</span>
                           ) : (
-                            <span className="text-red-600">✗ Failed</span>
+                            <span className="text-red-600 dark:text-red-400">✗ Failed</span>
                           )}
                         </td>
-                        <td className="border p-1 text-xs">{result.message}</td>
+                        <td className="border dark:border-gray-600 p-1 text-xs">{result.message}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -389,7 +403,7 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
           )}
 
           {error && (
-            <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded text-sm">
+            <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-400 rounded text-sm">
               {error}
             </div>
           )}
@@ -399,7 +413,7 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
               type="button"
               onClick={handleClose}
               disabled={isLoading}
-              className="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200 disabled:opacity-50"
+              className="px-4 py-2 text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50"
             >
               Cancel
             </button>
@@ -433,9 +447,9 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
             />
 
             {/* Browser Modal */}
-            <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[80vh] flex flex-col">
+            <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[80vh] flex flex-col">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold">
+                <h3 className="text-lg font-bold dark:text-white">
                   Select Symbols {selectedSymbols.size > 0 && `(${selectedSymbols.size} selected)`}
                 </h3>
                 <button
@@ -444,7 +458,7 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
                     setSelectedSymbols(new Set());
                     setSymbolSearch('');
                   }}
-                  className="text-gray-500 hover:text-gray-700"
+                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                 >
                   ✕
                 </button>
@@ -457,20 +471,20 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
                   value={symbolSearch}
                   onChange={(e) => setSymbolSearch(e.target.value)}
                   placeholder="Search by code or name..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   autoFocus
                 />
               </div>
 
               {/* Symbol List */}
-              <div className="flex-1 overflow-y-auto border border-gray-300 rounded">
+              <div className="flex-1 overflow-y-auto border border-gray-300 dark:border-gray-600 rounded">
                 {filteredSymbols.length === 0 ? (
-                  <div className="p-4 text-center text-gray-500">
+                  <div className="p-4 text-center text-gray-500 dark:text-gray-400">
                     No symbols found
                   </div>
                 ) : (
-                  <table className="w-full">
-                    <thead className="bg-gray-100 sticky top-0">
+                  <table className="w-full dark:text-gray-200">
+                    <thead className="bg-gray-100 dark:bg-gray-700 sticky top-0">
                       <tr>
                         <th className="px-2 py-2 w-10">
                           <input
@@ -501,7 +515,7 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
                         <tr
                           key={idx}
                           onClick={() => handleToggleSymbol(item.code)}
-                          className="border-b hover:bg-blue-50 cursor-pointer"
+                          className="border-b dark:border-gray-600 hover:bg-blue-50 dark:hover:bg-gray-700 cursor-pointer"
                         >
                           <td className="px-2 py-2">
                             <input
@@ -529,7 +543,7 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
 
               {/* Footer */}
               <div className="mt-4 flex items-center justify-between">
-                <div className="text-sm text-gray-500">
+                <div className="text-sm text-gray-500 dark:text-gray-400">
                   {filteredSymbols.length} symbol(s) available
                 </div>
                 <div className="flex gap-2">
@@ -539,7 +553,7 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
                       setSelectedSymbols(new Set());
                       setSymbolSearch('');
                     }}
-                    className="px-4 py-2 text-gray-700 bg-gray-100 rounded hover:bg-gray-200"
+                    className="px-4 py-2 text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
                   >
                     Cancel
                   </button>

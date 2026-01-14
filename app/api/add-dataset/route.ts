@@ -36,6 +36,7 @@ interface RequestBody {
   symbol: string;
   dataSource?: string;
   customParams?: Record<string, any>;
+  name?: string; // Optional name from browse list
 }
 
 function getDateRange(): { startDate: string; endDate: string } {
@@ -84,7 +85,7 @@ function buildApiUrl(
 export async function POST(request: Request) {
   try {
     const body: RequestBody = await request.json();
-    const { symbol, dataSource = 'stock_zh_a_hist', customParams = {} } = body;
+    const { symbol, dataSource = 'stock_zh_a_hist', customParams = {}, name: providedName } = body;
 
     // Validate symbol
     if (!symbol) {
@@ -240,11 +241,16 @@ export async function POST(request: Request) {
     // Get dataset info (after indicators have been applied)
     const datasetInfo = await getDatasetInfo(filename);
 
-    // Fetch name for the symbol based on data source
-    let stockName = symbol; // Default to symbol if API fails
+    // Determine the name for this dataset
+    let stockName = symbol; // Default to symbol if nothing else works
 
+    // Use provided name from browse list if available
+    if (providedName) {
+      stockName = providedName;
+      console.log(`Using provided name for ${symbol}: ${stockName}`);
+    }
     // Try to get name from stock info API (for A-shares only)
-    if (dataSource.startsWith('stock_zh_a_')) {
+    else if (dataSource.startsWith('stock_zh_a_')) {
       try {
         const infoApiUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/stock_individual_info_em?symbol=${symbol}`;
         const infoResponse = await fetch(infoApiUrl);
@@ -261,9 +267,8 @@ export async function POST(request: Request) {
         console.warn(`Failed to fetch stock name for ${symbol}, using symbol as name:`, err);
       }
     }
-
     // For other data sources, check if the data itself contains a name field
-    if (stockName === symbol && transformedData.length > 0) {
+    else if (transformedData.length > 0) {
       const firstRow = transformedData[0];
       if (firstRow.name) {
         stockName = firstRow.name;

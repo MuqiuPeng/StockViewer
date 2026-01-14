@@ -13,6 +13,28 @@ export function findDependentIndicators(
 }
 
 /**
+ * Find all indicators that depend on specific columns
+ * Returns a map of column name -> indicators that use it
+ */
+export function findIndicatorsDependingOnColumns(
+  columnNames: string[],
+  allIndicators: Indicator[]
+): Map<string, Indicator[]> {
+  const result = new Map<string, Indicator[]>();
+
+  for (const columnName of columnNames) {
+    const dependentIndicators = allIndicators.filter(ind =>
+      ind.dependencyColumns && ind.dependencyColumns.includes(columnName)
+    );
+    if (dependentIndicators.length > 0) {
+      result.set(columnName, dependentIndicators);
+    }
+  }
+
+  return result;
+}
+
+/**
  * Find all indicators that the given indicator depends on (recursively)
  */
 export function findAllDependencies(

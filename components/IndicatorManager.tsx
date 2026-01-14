@@ -159,19 +159,19 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
       />
 
       {/* Modal */}
-      <div className="relative bg-white rounded-lg shadow-xl p-6 w-full max-w-4xl max-h-[80vh] overflow-y-auto">
+      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-4xl max-h-[80vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold">Indicator Manager</h2>
+          <h2 className="text-2xl font-bold dark:text-white">Indicator Manager</h2>
           <button
             onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 text-2xl"
+            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl"
           >
             ×
           </button>
         </div>
 
         {error && (
-          <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
+          <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-400 rounded">
             {error}
           </div>
         )}
@@ -186,28 +186,28 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
         </div>
 
         {loading ? (
-          <div className="text-center py-8 text-gray-600">Loading indicators...</div>
+          <div className="text-center py-8 text-gray-600 dark:text-gray-400">Loading indicators...</div>
         ) : indicators.length === 0 ? (
-          <div className="text-center py-8 text-gray-500">
+          <div className="text-center py-8 text-gray-500 dark:text-gray-400">
             No indicators yet. Create your first indicator to get started!
           </div>
         ) : (
           <table className="w-full border-collapse">
             <thead>
-              <tr className="bg-gray-100">
-                <th className="border p-2 text-left">Name</th>
-                <th className="border p-2 text-left">Description</th>
-                <th className="border p-2 text-left">Output Column</th>
-                <th className="border p-2 text-left">Actions</th>
+              <tr className="bg-gray-100 dark:bg-gray-700">
+                <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Name</th>
+                <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Description</th>
+                <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Output Column</th>
+                <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Actions</th>
               </tr>
             </thead>
             <tbody>
               {indicators.map((indicator) => (
-                <tr key={indicator.id} className="hover:bg-gray-50">
-                  <td className="border p-2 font-medium">{indicator.name}</td>
-                  <td className="border p-2">{indicator.description}</td>
-                  <td className="border p-2 font-mono text-sm">{formatOutputColumn(indicator)}</td>
-                  <td className="border p-2">
+                <tr key={indicator.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                  <td className="border dark:border-gray-600 p-2 font-medium dark:text-white">{indicator.name}</td>
+                  <td className="border dark:border-gray-600 p-2 dark:text-gray-200">{indicator.description}</td>
+                  <td className="border dark:border-gray-600 p-2 font-mono text-sm dark:text-gray-300">{formatOutputColumn(indicator)}</td>
+                  <td className="border dark:border-gray-600 p-2">
                     <div className="flex gap-2">
                       <button
                         onClick={() => handleApply(indicator.id)}
