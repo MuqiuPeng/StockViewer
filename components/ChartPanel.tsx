@@ -18,6 +18,12 @@ interface IndicatorData {
   value: number | null;
 }
 
+interface ConstantLine {
+  value: number;
+  color: string;
+  label: string;
+}
+
 interface ChartPanelProps {
   candles: CandleData[];
   indicators: Record<string, IndicatorData[]>;
@@ -35,6 +41,10 @@ interface ChartPanelProps {
   onDateRangeChange?: (range: { from: string; to: string }) => void; // Report visible date range
   isArrowKeyNav?: boolean; // True when navigation is from arrow keys
   onArrowKeyNavHandled?: () => void; // Callback to reset arrow key nav flag
+  constantLines1?: ConstantLine[];
+  constantLines2?: ConstantLine[];
+  onConstantLines1Change?: (lines: ConstantLine[]) => void;
+  onConstantLines2Change?: (lines: ConstantLine[]) => void;
 }
 
 // Predefined color palette for indicators
@@ -67,12 +77,6 @@ const commonTimeScaleOptions = {
   rightBarStaysOnScroll: false,
 };
 
-interface ConstantLine {
-  value: number;
-  color: string;
-  label: string;
-}
-
 export default function ChartPanel({
   candles,
   indicators,
@@ -90,6 +94,10 @@ export default function ChartPanel({
   onDateRangeChange,
   isArrowKeyNav,
   onArrowKeyNavHandled,
+  constantLines1: propConstantLines1,
+  constantLines2: propConstantLines2,
+  onConstantLines1Change,
+  onConstantLines2Change,
 }: ChartPanelProps) {
   const { theme } = useTheme();
   const candlestickContainerRef = useRef<HTMLDivElement>(null);
@@ -114,11 +122,31 @@ export default function ChartPanel({
   selectedCandleIndexRef.current = selectedCandleIndex;
   preservedVisibleRangeWidthRef.current = preservedVisibleRangeWidth;
 
-  // State for constant lines
-  const [constantLines1, setConstantLines1] = useState<ConstantLine[]>([]);
-  const [constantLines2, setConstantLines2] = useState<ConstantLine[]>([]);
+  // State for constant lines (controlled or uncontrolled)
+  const [internalConstantLines1, setInternalConstantLines1] = useState<ConstantLine[]>([]);
+  const [internalConstantLines2, setInternalConstantLines2] = useState<ConstantLine[]>([]);
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [activeChart, setActiveChart] = useState<1 | 2>(1);
+
+  // Use props if provided, otherwise use internal state
+  const constantLines1 = propConstantLines1 ?? internalConstantLines1;
+  const constantLines2 = propConstantLines2 ?? internalConstantLines2;
+
+  const setConstantLines1 = (lines: ConstantLine[]) => {
+    if (onConstantLines1Change) {
+      onConstantLines1Change(lines);
+    } else {
+      setInternalConstantLines1(lines);
+    }
+  };
+
+  const setConstantLines2 = (lines: ConstantLine[]) => {
+    if (onConstantLines2Change) {
+      onConstantLines2Change(lines);
+    } else {
+      setInternalConstantLines2(lines);
+    }
+  };
 
   // Helper to update chart height based on container
   const updateChartHeight = (chart: IChartApi | null, container: HTMLDivElement | null) => {

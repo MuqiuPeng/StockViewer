@@ -6,9 +6,25 @@ import IndicatorSelector from './IndicatorSelector';
 import AddDatasetModal from './AddDatasetModal';
 import IndicatorManager from './IndicatorManager';
 import DataPanel from './DataPanel';
+import SaveViewSettingModal from './SaveViewSettingModal';
 import { API_CONFIG } from '@/lib/env';
 import { getDataSourceConfig } from '@/lib/data-sources';
 import Link from 'next/link';
+
+interface ConstantLine {
+  value: number;
+  color: string;
+  label: string;
+}
+
+interface ViewSetting {
+  id: string;
+  name: string;
+  enabledIndicators1: string[];
+  enabledIndicators2: string[];
+  constantLines1: ConstantLine[];
+  constantLines2: ConstantLine[];
+}
 
 interface DatasetInfo {
   id: string;
@@ -91,6 +107,13 @@ export default function StockViewer() {
   const [keyboardZoomTrigger, setKeyboardZoomTrigger] = useState(0);
   const keyboardNavDateRef = useRef<string | null>(null); // Store target date for keyboard nav
   const [isArrowKeyNav, setIsArrowKeyNav] = useState(false); // Track if navigation is from arrow keys
+
+  // View settings state
+  const [viewSettings, setViewSettings] = useState<ViewSetting[]>([]);
+  const [selectedViewSetting, setSelectedViewSetting] = useState<string>('');
+  const [constantLines1, setConstantLines1] = useState<ConstantLine[]>([]);
+  const [constantLines2, setConstantLines2] = useState<ConstantLine[]>([]);
+  const [isSaveViewSettingModalOpen, setIsSaveViewSettingModalOpen] = useState(false);
 
   // Base indicators from API (not custom calculated)
   const BASE_INDICATORS = ['volume', 'turnover', 'amplitude', 'change_pct', 'change_amount', 'turnover_rate'];
@@ -393,7 +416,74 @@ export default function StockViewer() {
       .catch((err) => {
         console.error('Failed to load indicators:', err);
       });
+
+    // Load view settings
+    fetch('/api/view-settings')
+      .then((res) => res.json())
+      .then((data) => {
+        if (!data.error && data.settings) {
+          setViewSettings(data.settings);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load view settings:', err);
+      });
   }, []);
+
+  // Load view setting when selection changes
+  useEffect(() => {
+    if (!selectedViewSetting) return;
+
+    const setting = viewSettings.find(s => s.id === selectedViewSetting);
+    if (setting) {
+      setEnabledIndicators1(new Set(setting.enabledIndicators1));
+      setEnabledIndicators2(new Set(setting.enabledIndicators2));
+      setConstantLines1(setting.constantLines1 || []);
+      setConstantLines2(setting.constantLines2 || []);
+    }
+  }, [selectedViewSetting, viewSettings]);
+
+  // Save view setting handler
+  const handleSaveViewSetting = async (name: string, existingId?: string) => {
+    const settingData = {
+      name,
+      enabledIndicators1: Array.from(enabledIndicators1),
+      enabledIndicators2: Array.from(enabledIndicators2),
+      constantLines1,
+      constantLines2,
+    };
+
+    if (existingId) {
+      // Update existing
+      const response = await fetch('/api/view-settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: existingId, ...settingData }),
+      });
+      const data = await response.json();
+      if (data.error) throw new Error(data.message);
+
+      // Refresh settings list
+      const settingsRes = await fetch('/api/view-settings');
+      const settingsData = await settingsRes.json();
+      if (!settingsData.error) {
+        setViewSettings(settingsData.settings);
+      }
+    } else {
+      // Create new
+      const response = await fetch('/api/view-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(settingData),
+      });
+      const data = await response.json();
+      if (data.error) throw new Error(data.message);
+
+      // Add to list and select it
+      setViewSettings(prev => [...prev, data.setting]);
+      setSelectedViewSetting(data.setting.id);
+    }
+  };
 
   // Load dataset data when selection changes
   useEffect(() => {
@@ -786,13 +876,36 @@ export default function StockViewer() {
 
         {/* Loading/Updating indicator */}
         {(loading || isUpdating) && (
-          <span className="text-sm text-gray-600 dark:text-gray-300 ml-auto">
+          <span className="text-sm text-gray-600 dark:text-gray-300">
             {loading ? 'Loading dataset...' : 'Updating...'}
           </span>
         )}
 
+        {/* View Settings - right side */}
+        <div className="flex items-center gap-2 ml-auto">
+          <select
+            value={selectedViewSetting}
+            onChange={(e) => setSelectedViewSetting(e.target.value)}
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 dark:text-white text-sm"
+          >
+            <option value="">View Setting...</option>
+            {viewSettings.map((setting) => (
+              <option key={setting.id} value={setting.id}>
+                {setting.name}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => setIsSaveViewSettingModalOpen(true)}
+            className="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm whitespace-nowrap"
+            title="Save current view settings"
+          >
+            Save View
+          </button>
+        </div>
+
         {/* Settings Menu */}
-        <div className={`relative ${!loading && !isUpdating ? 'ml-auto' : ''}`} ref={settingsRef}>
+        <div className="relative" ref={settingsRef}>
           <button
             onClick={() => setIsSettingsOpen(!isSettingsOpen)}
             className="p-2 rounded hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-400"
@@ -924,6 +1037,10 @@ export default function StockViewer() {
               onDateRangeChange={setPreservedDateRange}
               isArrowKeyNav={isArrowKeyNav}
               onArrowKeyNavHandled={() => setIsArrowKeyNav(false)}
+              constantLines1={constantLines1}
+              constantLines2={constantLines2}
+              onConstantLines1Change={setConstantLines1}
+              onConstantLines2Change={setConstantLines2}
             />
           </div>
         </div>
@@ -939,6 +1056,13 @@ export default function StockViewer() {
         isOpen={isIndicatorManagerOpen}
         onClose={() => setIsIndicatorManagerOpen(false)}
         onRefreshDataset={reloadCurrentDataset}
+      />
+
+      <SaveViewSettingModal
+        isOpen={isSaveViewSettingModalOpen}
+        onClose={() => setIsSaveViewSettingModalOpen(false)}
+        onSave={handleSaveViewSetting}
+        existingSettings={viewSettings}
       />
 
       {/* Add to Group Modal */}
