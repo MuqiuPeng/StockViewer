@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react';
 import AddDatasetModal from './AddDatasetModal';
 import GroupManager from './GroupManager';
-import Link from 'next/link';
 import { getDataSourceConfig } from '@/lib/data-sources';
 
 interface DatasetInfo {
@@ -439,27 +438,6 @@ export default function DatasetManagement() {
 
   return (
     <div className="p-4 h-screen flex flex-col">
-      {/* Navigation */}
-      <div className="mb-4 flex items-center gap-2 border-b border-gray-200 dark:border-gray-700 pb-4">
-        <Link href="/" className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-medium">Home</Link>
-        <span className="text-gray-400">/</span>
-        <span className="text-gray-600 dark:text-gray-300">Datasets</span>
-        <div className="ml-auto flex gap-2 mr-12">
-          <Link
-            href="/viewer"
-            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-          >
-            Viewer
-          </Link>
-          <Link
-            href="/backtest"
-            className="px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700"
-          >
-            Backtest
-          </Link>
-        </div>
-      </div>
-
       {error && (
         <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded">
           {error}

@@ -1,5 +1,3 @@
-import Link from 'next/link';
-
 export default function Home() {
   return (
     <main className="min-h-screen bg-white dark:bg-gray-900">
@@ -11,52 +9,6 @@ export default function Home() {
           <p className="text-gray-500 dark:text-gray-400 max-w-2xl mx-auto">
             Analyze stock charts, create custom indicators, and backtest trading strategies with Python
           </p>
-        </div>
-
-        <div className="grid md:grid-cols-4 gap-6 max-w-6xl mx-auto mb-16">
-          <Link
-            href="/viewer"
-            className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md hover:shadow-lg dark:shadow-none dark:hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] transition-shadow border border-gray-200 dark:border-gray-700 dark:hover:border-gray-500"
-          >
-            <div className="text-4xl mb-4">📊</div>
-            <h2 className="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Viewer</h2>
-            <p className="text-gray-600 dark:text-gray-400">
-              Visualize stock data with interactive charts and apply custom indicators
-            </p>
-          </Link>
-
-          <Link
-            href="/backtest"
-            className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md hover:shadow-lg dark:shadow-none dark:hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] transition-shadow border border-gray-200 dark:border-gray-700 dark:hover:border-gray-500"
-          >
-            <div className="text-4xl mb-4">📈</div>
-            <h2 className="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Backtest</h2>
-            <p className="text-gray-600 dark:text-gray-400">
-              Test your trading strategies on historical data with detailed performance metrics
-            </p>
-          </Link>
-
-          <Link
-            href="/datasets"
-            className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md hover:shadow-lg dark:shadow-none dark:hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] transition-shadow border border-gray-200 dark:border-gray-700 dark:hover:border-gray-500"
-          >
-            <div className="text-4xl mb-4">📁</div>
-            <h2 className="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Datasets</h2>
-            <p className="text-gray-600 dark:text-gray-400">
-              Manage your stock datasets and organize them into groups
-            </p>
-          </Link>
-
-          <Link
-            href="/docs"
-            className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md hover:shadow-lg dark:shadow-none dark:hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] transition-shadow border border-gray-200 dark:border-gray-700 dark:hover:border-gray-500"
-          >
-            <div className="text-4xl mb-4">📖</div>
-            <h2 className="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Docs</h2>
-            <p className="text-gray-600 dark:text-gray-400">
-              Learn how to use all features with comprehensive documentation
-            </p>
-          </Link>
         </div>
 
         <div className="bg-white dark:bg-gray-800 rounded-lg p-8 max-w-5xl mx-auto shadow-md border border-gray-200 dark:border-gray-700">
