@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { createChart, IChartApi, ISeriesApi, ColorType } from 'lightweight-charts';
+import { useTheme } from './ThemeProvider';
 
 interface BacktestMetrics {
   totalReturn: number;
@@ -144,14 +145,13 @@ function PieChart({ data, size = 200 }: { data: Array<{ name: string; value: num
   if (total === 0) {
     return (
       <div className="flex flex-col items-center">
-        <div className="bg-gray-50 rounded-lg p-2">
+        <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
           <svg width={size} height={size} className="mb-3">
             <circle
               cx={size / 2}
               cy={size / 2}
               r={size / 2 - 10}
-              fill="#e5e7eb"
-              stroke="#374151"
+              className="fill-gray-200 dark:fill-gray-700 stroke-gray-700 dark:stroke-gray-400"
               strokeWidth="2"
             />
             <text
@@ -159,7 +159,7 @@ function PieChart({ data, size = 200 }: { data: Array<{ name: string; value: num
               y={size / 2}
               textAnchor="middle"
               dominantBaseline="middle"
-              className="text-xs fill-gray-500"
+              className="text-xs fill-gray-500 dark:fill-gray-400"
             >
               No Value
             </text>
@@ -169,10 +169,9 @@ function PieChart({ data, size = 200 }: { data: Array<{ name: string; value: num
           {data.map((item, index) => (
             <div key={index} className="flex items-center gap-2">
               <div
-                className="w-3 h-3 rounded border-2"
+                className="w-3 h-3 rounded border-2 border-gray-700 dark:border-gray-400"
                 style={{
                   backgroundColor: item.color,
-                  borderColor: '#374151'
                 }}
               ></div>
               <span className="text-gray-700 dark:text-gray-300">
@@ -227,16 +226,15 @@ function PieChart({ data, size = 200 }: { data: Array<{ name: string; value: num
 
   return (
     <div className="flex flex-col items-center">
-      <div className="bg-gray-50 rounded-lg p-2">
+      <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
         <svg width={size} height={size} className="mb-3">
           {slices.map((slice, index) => (
             <g key={index}>
               <path
                 d={slice.path}
                 fill={slice.color}
-                stroke="#374151"
+                className="stroke-gray-700 dark:stroke-gray-400 transition-opacity hover:opacity-90"
                 strokeWidth="2"
-                className="transition-opacity hover:opacity-90"
               />
             </g>
           ))}
@@ -248,10 +246,9 @@ function PieChart({ data, size = 200 }: { data: Array<{ name: string; value: num
           return (
             <div key={index} className="flex items-center gap-2">
               <div
-                className="w-3 h-3 rounded border-2"
+                className="w-3 h-3 rounded border-2 border-gray-700 dark:border-gray-400"
                 style={{
                   backgroundColor: item.color,
-                  borderColor: '#374151'
                 }}
               ></div>
               <span className="text-gray-700 dark:text-gray-300">
@@ -314,6 +311,9 @@ function PortfolioBacktestResults({
 
   // Composition pie chart state - for single stock
   const [singleCompositionData, setSingleCompositionData] = useState<Array<{ name: string; value: number; color: string }>>([]);
+
+  // Theme for dark mode support
+  const { theme } = useTheme();
 
   // Calculate drawdown data
   const drawdownData = useMemo(() => {
@@ -578,21 +578,28 @@ function PortfolioBacktestResults({
       chartInitializedRef.current = false;
     }
 
-    // Create new chart
+    // Create new chart with theme-aware colors
+    const isDarkEquity = theme === 'dark';
+    const bgColorEquity = isDarkEquity ? '#1f2937' : 'white';
+    const textColorEquity = isDarkEquity ? '#e5e7eb' : 'black';
+    const gridColorEquity = isDarkEquity ? '#374151' : '#e0e0e0';
+    const borderColorEquity = isDarkEquity ? '#4b5563' : '#d1d4dc';
+
     const chart = createChart(equityChartRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: 'white' },
-        textColor: 'black',
+        background: { type: ColorType.Solid, color: bgColorEquity },
+        textColor: textColorEquity,
       },
       width: equityChartRef.current.clientWidth,
       height: 400,
       grid: {
-        vertLines: { color: '#e0e0e0' },
-        horzLines: { color: '#e0e0e0' },
+        vertLines: { color: gridColorEquity },
+        horzLines: { color: gridColorEquity },
       },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
+        borderColor: borderColorEquity,
       },
       localization: {
         priceFormatter: (price: number) => {
@@ -600,7 +607,7 @@ function PortfolioBacktestResults({
         },
       },
       rightPriceScale: {
-        borderColor: '#d1d4dc',
+        borderColor: borderColorEquity,
         scaleMargins: {
           top: 0.1,
           bottom: 0.1,
@@ -666,24 +673,31 @@ function PortfolioBacktestResults({
       drawdownChartInitializedRef.current = false;
     }
 
-    // Create new chart
+    // Create new chart with theme-aware colors
+    const isDark = theme === 'dark';
+    const bgColor = isDark ? '#1f2937' : 'white';
+    const textColor = isDark ? '#e5e7eb' : 'black';
+    const gridColor = isDark ? '#374151' : '#e0e0e0';
+    const borderColor = isDark ? '#4b5563' : '#d1d4dc';
+
     const chart = createChart(drawdownChartRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: 'white' },
-        textColor: 'black',
+        background: { type: ColorType.Solid, color: bgColor },
+        textColor: textColor,
       },
       width: drawdownChartRef.current.clientWidth,
       height: 300,
       grid: {
-        vertLines: { color: '#e0e0e0' },
-        horzLines: { color: '#e0e0e0' },
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
       },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
+        borderColor: borderColor,
       },
       rightPriceScale: {
-        borderColor: '#d1d4dc',
+        borderColor: borderColor,
       },
     });
 
@@ -747,24 +761,31 @@ function PortfolioBacktestResults({
       priceChartInitializedRef.current = false;
     }
 
-    // Create new chart
+    // Create new chart with theme-aware colors
+    const isDarkPrice = theme === 'dark';
+    const bgColorPrice = isDarkPrice ? '#1f2937' : 'white';
+    const textColorPrice = isDarkPrice ? '#e5e7eb' : 'black';
+    const gridColorPrice = isDarkPrice ? '#374151' : '#e0e0e0';
+    const borderColorPrice = isDarkPrice ? '#4b5563' : '#d1d4dc';
+
     const chart = createChart(priceChartRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: 'white' },
-        textColor: 'black',
+        background: { type: ColorType.Solid, color: bgColorPrice },
+        textColor: textColorPrice,
       },
       width: priceChartRef.current.clientWidth,
       height: 400,
       grid: {
-        vertLines: { color: '#e0e0e0' },
-        horzLines: { color: '#e0e0e0' },
+        vertLines: { color: gridColorPrice },
+        horzLines: { color: gridColorPrice },
       },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
+        borderColor: borderColorPrice,
       },
       rightPriceScale: {
-        borderColor: '#d1d4dc',
+        borderColor: borderColorPrice,
       },
     });
 
@@ -1023,24 +1044,31 @@ function PortfolioBacktestResults({
       stackedChartInitializedRef.current = false;
     }
 
-    // Create new chart
+    // Create new chart with theme-aware colors
+    const isDarkStacked = theme === 'dark';
+    const bgColorStacked = isDarkStacked ? '#1f2937' : 'white';
+    const textColorStacked = isDarkStacked ? '#e5e7eb' : 'black';
+    const gridColorStacked = isDarkStacked ? '#374151' : '#e0e0e0';
+    const borderColorStacked = isDarkStacked ? '#4b5563' : '#d1d4dc';
+
     const chart = createChart(stackedChartRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: 'white' },
-        textColor: 'black',
+        background: { type: ColorType.Solid, color: bgColorStacked },
+        textColor: textColorStacked,
       },
       width: stackedChartRef.current.clientWidth,
       height: 400,
       grid: {
-        vertLines: { color: '#e0e0e0' },
-        horzLines: { color: '#e0e0e0' },
+        vertLines: { color: gridColorStacked },
+        horzLines: { color: gridColorStacked },
       },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
+        borderColor: borderColorStacked,
       },
       rightPriceScale: {
-        borderColor: '#d1d4dc',
+        borderColor: borderColorStacked,
         scaleMargins: {
           top: 0.1,
           bottom: 0,
@@ -1245,6 +1273,45 @@ function PortfolioBacktestResults({
     };
   }, [portfolioResult.perSymbolEquityCurves, portfolioResult.equityCurve, portfolioResult.symbols, selectedTab, stockNames]);
 
+  // Update all Portfolio charts when theme changes
+  useEffect(() => {
+    const isDark = theme === 'dark';
+    const bgColor = isDark ? '#1f2937' : 'white';
+    const textColor = isDark ? '#e5e7eb' : 'black';
+    const gridColor = isDark ? '#374151' : '#e0e0e0';
+    const borderColor = isDark ? '#4b5563' : '#d1d4dc';
+
+    const themeOptions = {
+      layout: {
+        background: { type: ColorType.Solid, color: bgColor },
+        textColor: textColor,
+      },
+      grid: {
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
+      },
+      rightPriceScale: { borderColor: borderColor },
+      timeScale: { borderColor: borderColor },
+    };
+
+    // Update equity chart
+    if (equityChartApiRef.current && !(equityChartApiRef.current as any)._disposed) {
+      try { equityChartApiRef.current.applyOptions(themeOptions); } catch (e) {}
+    }
+    // Update stacked chart
+    if (stackedChartApiRef.current && !(stackedChartApiRef.current as any)._disposed) {
+      try { stackedChartApiRef.current.applyOptions(themeOptions); } catch (e) {}
+    }
+    // Update drawdown chart
+    if (drawdownChartApiRef.current && !(drawdownChartApiRef.current as any)._disposed) {
+      try { drawdownChartApiRef.current.applyOptions(themeOptions); } catch (e) {}
+    }
+    // Update price chart
+    if (priceChartApiRef.current && !(priceChartApiRef.current as any)._disposed) {
+      try { priceChartApiRef.current.applyOptions(themeOptions); } catch (e) {}
+    }
+  }, [theme]);
+
   const formatNumber = (value: number | null | undefined, decimals: number = 2): string => {
     if (value === null || value === undefined || isNaN(value)) {
       return 'N/A';
@@ -1316,26 +1383,73 @@ function PortfolioBacktestResults({
     setCurrentPage(1);
   }, [tradeFilter, symbolFilter, tradeSortField, tradeSortDirection]);
 
+  // Update chart colors when theme changes
+  useEffect(() => {
+    const isDark = theme === 'dark';
+    const bgColor = isDark ? '#1f2937' : 'white';
+    const textColor = isDark ? '#e5e7eb' : 'black';
+    const gridColor = isDark ? '#374151' : '#e0e0e0';
+    const borderColor = isDark ? '#4b5563' : '#d1d4dc';
+
+    const themeOptions = {
+      layout: {
+        background: { type: ColorType.Solid, color: bgColor },
+        textColor: textColor,
+      },
+      grid: {
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
+      },
+      rightPriceScale: {
+        borderColor: borderColor,
+      },
+      timeScale: {
+        borderColor: borderColor,
+      },
+    };
+
+    if (equityChartApiRef.current && !(equityChartApiRef.current as any)._disposed) {
+      try {
+        equityChartApiRef.current.applyOptions(themeOptions);
+      } catch (e) { /* ignore */ }
+    }
+    if (stackedChartApiRef.current && !(stackedChartApiRef.current as any)._disposed) {
+      try {
+        stackedChartApiRef.current.applyOptions(themeOptions);
+      } catch (e) { /* ignore */ }
+    }
+    if (drawdownChartApiRef.current && !(drawdownChartApiRef.current as any)._disposed) {
+      try {
+        drawdownChartApiRef.current.applyOptions(themeOptions);
+      } catch (e) { /* ignore */ }
+    }
+    if (priceChartApiRef.current && !(priceChartApiRef.current as any)._disposed) {
+      try {
+        priceChartApiRef.current.applyOptions(themeOptions);
+      } catch (e) { /* ignore */ }
+    }
+  }, [theme]);
+
   return (
     <div>
       {/* Header Section */}
       {strategyInfo && (
-        <div className="mb-6 bg-gradient-to-r from-blue-50 to-purple-50 p-6 rounded-lg border border-blue-200">
+        <div className="mb-6 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/30 dark:to-purple-900/30 p-6 rounded-lg border border-blue-200 dark:border-blue-800">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="flex items-center gap-2">
-              <span className="text-gray-600 font-medium">Strategy:</span>{' '}
-              <span className="font-semibold">{strategyInfo.name || 'N/A'}</span>
+              <span className="text-gray-600 dark:text-gray-400 font-medium">Strategy:</span>{' '}
+              <span className="font-semibold text-gray-900 dark:text-white">{strategyInfo.name || 'N/A'}</span>
             </div>
             <div>
-              <span className="text-gray-600 font-medium">Portfolio:</span>{' '}
-              <span className="font-semibold text-gray-800">
+              <span className="text-gray-600 dark:text-gray-400 font-medium">Portfolio:</span>{' '}
+              <span className="font-semibold text-gray-800 dark:text-gray-200">
                 {portfolioResult.symbols.length} stocks with shared capital
               </span>
             </div>
             {strategyInfo.parameters && Object.keys(strategyInfo.parameters).length > 0 && (
               <div>
-                <span className="text-gray-600 font-medium">Parameters:</span>{' '}
-                <span className="text-gray-800">
+                <span className="text-gray-600 dark:text-gray-400 font-medium">Parameters:</span>{' '}
+                <span className="text-gray-800 dark:text-gray-200">
                   {Object.entries(strategyInfo.parameters).map(([key, val]) => `${key}=${val}`).join(', ')}
                 </span>
               </div>
@@ -1346,9 +1460,9 @@ function PortfolioBacktestResults({
 
       {/* Summary Cards */}
       <div className="mb-6 grid grid-cols-1 md:grid-cols-5 gap-4">
-        <div className="relative group bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200 cursor-help">
-          <div className="text-xs text-gray-600 mb-1">Initial Capital</div>
-          <div className="text-2xl font-bold text-blue-900">
+        <div className="relative group bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/40 dark:to-blue-800/40 p-4 rounded-lg border border-blue-200 dark:border-blue-700 cursor-help">
+          <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Initial Capital</div>
+          <div className="text-2xl font-bold text-blue-900 dark:text-blue-300">
             RMB {formatNumber(portfolioResult.metrics.initialValue)}
           </div>
           {/* Tooltip */}
@@ -1361,9 +1475,9 @@ function PortfolioBacktestResults({
             </div>
           </div>
         </div>
-        <div className="relative group bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200 cursor-help">
-          <div className="text-xs text-gray-600 mb-1">Final Value</div>
-          <div className="text-2xl font-bold text-purple-900">
+        <div className="relative group bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/40 dark:to-purple-800/40 p-4 rounded-lg border border-purple-200 dark:border-purple-700 cursor-help">
+          <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Final Value</div>
+          <div className="text-2xl font-bold text-purple-900 dark:text-purple-300">
             RMB {formatNumber(portfolioResult.metrics.finalValue)}
           </div>
           {/* Tooltip */}
@@ -1378,16 +1492,16 @@ function PortfolioBacktestResults({
         </div>
         <div className={`relative group p-4 rounded-lg border cursor-help bg-gradient-to-br ${
           portfolioResult.metrics.totalReturnPct >= 0
-            ? 'from-green-50 to-green-100 border-green-200'
-            : 'from-red-50 to-red-100 border-red-200'
+            ? 'from-green-50 to-green-100 dark:from-green-900/40 dark:to-green-800/40 border-green-200 dark:border-green-700'
+            : 'from-red-50 to-red-100 dark:from-red-900/40 dark:to-red-800/40 border-red-200 dark:border-red-700'
         }`}>
-          <div className="text-xs text-gray-600 mb-1">Total Return</div>
+          <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Total Return</div>
           <div className={`text-2xl font-bold ${
-            portfolioResult.metrics.totalReturnPct >= 0 ? 'text-green-700' : 'text-red-700'
+            portfolioResult.metrics.totalReturnPct >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
           }`}>
             {formatPercent(portfolioResult.metrics.totalReturnPct)}
           </div>
-          <div className="text-xs text-gray-600 mt-1">
+          <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
             RMB {formatNumber(Math.abs(portfolioResult.metrics.totalReturn))}
           </div>
           {/* Tooltip */}
@@ -1401,12 +1515,12 @@ function PortfolioBacktestResults({
             </div>
           </div>
         </div>
-        <div className="relative group bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-lg border border-orange-200 cursor-help">
-          <div className="text-xs text-gray-600 mb-1">Total Trades</div>
-          <div className="text-2xl font-bold text-orange-900">
+        <div className="relative group bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/40 dark:to-orange-800/40 p-4 rounded-lg border border-orange-200 dark:border-orange-700 cursor-help">
+          <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Total Trades</div>
+          <div className="text-2xl font-bold text-orange-900 dark:text-orange-300">
             {portfolioResult.metrics.tradeCount}
           </div>
-          <div className="text-xs text-gray-600 mt-1">
+          <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
             {portfolioResult.metrics.wonTrades || 0}W / {portfolioResult.metrics.lostTrades || 0}L
           </div>
           {/* Tooltip */}
@@ -1419,12 +1533,12 @@ function PortfolioBacktestResults({
             </div>
           </div>
         </div>
-        <div className="relative group bg-gradient-to-br from-teal-50 to-teal-100 p-4 rounded-lg border border-teal-200 cursor-help">
-          <div className="text-xs text-gray-600 mb-1">Stocks</div>
-          <div className="text-2xl font-bold text-teal-900">
+        <div className="relative group bg-gradient-to-br from-teal-50 to-teal-100 dark:from-teal-900/40 dark:to-teal-800/40 p-4 rounded-lg border border-teal-200 dark:border-teal-700 cursor-help">
+          <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Stocks</div>
+          <div className="text-2xl font-bold text-teal-900 dark:text-teal-300">
             {portfolioResult.symbols.length}
           </div>
-          <div className="text-xs text-gray-600 mt-1">
+          <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
             Portfolio
           </div>
           {/* Tooltip */}
@@ -1440,14 +1554,14 @@ function PortfolioBacktestResults({
       </div>
 
       {/* Tabs */}
-      <div className="flex justify-between items-center mb-4 border-b">
+      <div className="flex justify-between items-center mb-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex gap-2">
           <button
             onClick={() => setSelectedTab('metrics')}
             className={`px-6 py-3 font-medium transition-colors ${
               selectedTab === 'metrics'
-                ? 'border-b-2 border-blue-600 text-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
+                ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
             }`}
           >
             Performance Metrics
@@ -1456,8 +1570,8 @@ function PortfolioBacktestResults({
             onClick={() => setSelectedTab('trades')}
             className={`px-6 py-3 font-medium transition-colors ${
               selectedTab === 'trades'
-                ? 'border-b-2 border-blue-600 text-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
+                ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
             }`}
           >
             Trade List ({portfolioResult.tradeMarkers.length})
@@ -1466,8 +1580,8 @@ function PortfolioBacktestResults({
             onClick={() => setSelectedTab('charts')}
             className={`px-6 py-3 font-medium transition-colors ${
               selectedTab === 'charts'
-                ? 'border-b-2 border-blue-600 text-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
+                ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
             }`}
           >
             Charts
@@ -1476,8 +1590,8 @@ function PortfolioBacktestResults({
             onClick={() => setSelectedTab('stocks')}
             className={`px-6 py-3 font-medium transition-colors ${
               selectedTab === 'stocks'
-                ? 'border-b-2 border-blue-600 text-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
+                ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
             }`}
           >
             Per-Stock Analysis
@@ -1490,57 +1604,57 @@ function PortfolioBacktestResults({
         <div>
           {/* Total Equity Curve */}
           <div className="mb-6">
-            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 text-gray-900 dark:text-white">
               <span className="text-green-600">📈</span> Total Portfolio Equity Curve
             </h3>
-            <div className="bg-white p-4 rounded-lg border shadow-sm">
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
               <div ref={equityChartRef} />
             </div>
           </div>
 
           {/* Stacked Area Chart - Portfolio Composition */}
           <div className="mb-6">
-            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 text-gray-900 dark:text-white">
               <span className="text-blue-600">📊</span> Portfolio Composition Over Time
             </h3>
-            <div className="bg-white p-4 rounded-lg border shadow-sm">
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
               <div className="flex gap-4">
                 {/* Chart Section */}
                 <div className="flex-1">
                   <div ref={stackedChartRef} />
 
                   {/* Legend Panel - Below Chart */}
-                  <div className="mt-4 pt-4 border-t">
-                    <div className="text-sm font-semibold mb-3 text-gray-700">Legend (Top to Bottom)</div>
+                  <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    <div className="text-sm font-semibold mb-3 text-gray-700 dark:text-gray-300">Legend (Top to Bottom)</div>
                     <div className="flex flex-wrap gap-4">
                       {/* Stocks (from top to bottom) */}
                       {(portfolioResult.symbols || []).map((symbol, idx) => (
                         <div key={symbol} className="flex items-center gap-2">
                           <div className="w-4 h-4 rounded" style={{ backgroundColor: areaColors[idx % areaColors.length].line }}></div>
-                          <span className="text-sm text-gray-700">{symbol}</span>
+                          <span className="text-sm text-gray-700 dark:text-gray-300">{symbol}</span>
                         </div>
                       ))}
                       {/* Cash (bottom) */}
                       <div className="flex items-center gap-2">
                         <div className="w-4 h-4 rounded" style={{ backgroundColor: cashColor.line }}></div>
-                        <span className="text-sm text-gray-700">Cash</span>
+                        <span className="text-sm text-gray-700 dark:text-gray-300">Cash</span>
                       </div>
                     </div>
-                    <div className="mt-3 text-xs text-gray-500">
+                    <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
                       Each colored area shows the value of that component. The gap between two lines represents one component's value.
                     </div>
                   </div>
                 </div>
 
                 {/* Composition Pie Chart - Beside Chart */}
-                <div className="flex-shrink-0 w-64 flex flex-col justify-center border-l pl-4">
-                  <div className="text-sm font-semibold mb-3 text-gray-700 text-center">
+                <div className="flex-shrink-0 w-64 flex flex-col justify-center border-l border-gray-200 dark:border-gray-700 pl-4">
+                  <div className="text-sm font-semibold mb-3 text-gray-700 dark:text-gray-300 text-center">
                     Portfolio Composition {hoveredTime ? '(Hover Point)' : '(Latest)'}
                   </div>
                   {portfolioCompositionData.length > 0 ? (
                     <PieChart data={portfolioCompositionData} size={240} />
                   ) : (
-                    <div className="text-xs text-gray-500 text-center">Loading composition data...</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 text-center">Loading composition data...</div>
                   )}
                 </div>
               </div>
@@ -1549,24 +1663,24 @@ function PortfolioBacktestResults({
 
           {/* Risk Metrics */}
           <div className="mb-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white p-4 rounded-lg border">
-              <div className="text-sm text-gray-600 mb-1">Max Drawdown</div>
-              <div className="text-2xl font-bold text-red-600">
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+              <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Max Drawdown</div>
+              <div className="text-2xl font-bold text-red-600 dark:text-red-400">
                 {formatPercent(portfolioResult.metrics.maxDrawdownPct)}
               </div>
-              <div className="text-xs text-gray-500 mt-1">
+              <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 RMB {formatNumber(portfolioResult.metrics.maxDrawdown)}
               </div>
             </div>
-            <div className="bg-white p-4 rounded-lg border">
-              <div className="text-sm text-gray-600 mb-1">Sharpe Ratio</div>
-              <div className="text-2xl font-bold text-gray-800">
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+              <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Sharpe Ratio</div>
+              <div className="text-2xl font-bold text-gray-800 dark:text-gray-200">
                 {portfolioResult.metrics.sharpeRatio.toFixed(2)}
               </div>
             </div>
-            <div className="bg-white p-4 rounded-lg border">
-              <div className="text-sm text-gray-600 mb-1">Sortino Ratio</div>
-              <div className="text-2xl font-bold text-gray-800">
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+              <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Sortino Ratio</div>
+              <div className="text-2xl font-bold text-gray-800 dark:text-gray-200">
                 {portfolioResult.metrics.sortinoRatio.toFixed(2)}
               </div>
             </div>
@@ -1574,23 +1688,23 @@ function PortfolioBacktestResults({
 
           {/* Trading Performance */}
           <div className="mb-6">
-            <h3 className="text-lg font-semibold mb-3">Trading Performance</h3>
+            <h3 className="text-lg font-semibold mb-3 text-gray-900 dark:text-white">Trading Performance</h3>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-gray-50 p-4 rounded border">
-                <div className="text-xs text-gray-500 mb-1">Win Rate</div>
-                <div className="text-xl font-semibold">{portfolioResult.metrics.winRate.toFixed(1)}%</div>
+              <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded border border-gray-200 dark:border-gray-700">
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Win Rate</div>
+                <div className="text-xl font-semibold text-gray-900 dark:text-white">{portfolioResult.metrics.winRate.toFixed(1)}%</div>
               </div>
-              <div className="bg-gray-50 p-4 rounded border">
-                <div className="text-xs text-gray-500 mb-1">Profit Factor</div>
-                <div className="text-xl font-semibold">{portfolioResult.metrics.profitFactor.toFixed(2)}</div>
+              <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded border border-gray-200 dark:border-gray-700">
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Profit Factor</div>
+                <div className="text-xl font-semibold text-gray-900 dark:text-white">{portfolioResult.metrics.profitFactor.toFixed(2)}</div>
               </div>
-              <div className="bg-gray-50 p-4 rounded border">
-                <div className="text-xs text-gray-500 mb-1">Avg Win</div>
-                <div className="text-xl font-semibold text-green-600">¥{portfolioResult.metrics.avgWin.toFixed(2)}</div>
+              <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded border border-gray-200 dark:border-gray-700">
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Avg Win</div>
+                <div className="text-xl font-semibold text-green-600 dark:text-green-400">¥{portfolioResult.metrics.avgWin.toFixed(2)}</div>
               </div>
-              <div className="bg-gray-50 p-4 rounded border">
-                <div className="text-xs text-gray-500 mb-1">Avg Loss</div>
-                <div className="text-xl font-semibold text-red-600">¥{portfolioResult.metrics.avgLoss.toFixed(2)}</div>
+              <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded border border-gray-200 dark:border-gray-700">
+                <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Avg Loss</div>
+                <div className="text-xl font-semibold text-red-600 dark:text-red-400">¥{portfolioResult.metrics.avgLoss.toFixed(2)}</div>
               </div>
             </div>
           </div>
@@ -1603,11 +1717,11 @@ function PortfolioBacktestResults({
           {/* Filters */}
           <div className="mb-4 flex gap-4">
             <div>
-              <label className="text-sm text-gray-600 mr-2">Type:</label>
+              <label className="text-sm text-gray-600 dark:text-gray-400 mr-2">Type:</label>
               <select
                 value={tradeFilter}
                 onChange={(e) => setTradeFilter(e.target.value as any)}
-                className="border rounded px-3 py-1"
+                className="border border-gray-300 dark:border-gray-600 rounded px-3 py-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value="all">All</option>
                 <option value="buy">Buy Only</option>
@@ -1615,25 +1729,25 @@ function PortfolioBacktestResults({
               </select>
             </div>
             <div>
-              <label className="text-sm text-gray-600 mr-2">Symbol:</label>
+              <label className="text-sm text-gray-600 dark:text-gray-400 mr-2">Symbol:</label>
               <input
                 type="text"
                 placeholder="Filter by symbol..."
                 value={symbolFilter}
                 onChange={(e) => setSymbolFilter(e.target.value)}
-                className="border rounded px-3 py-1"
+                className="border border-gray-300 dark:border-gray-600 rounded px-3 py-1 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400"
               />
             </div>
           </div>
 
           {/* Trade Table */}
-          <div className="bg-white rounded-lg border overflow-hidden">
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full">
-                <thead className="bg-gray-50 border-b">
+                <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
                   <tr>
                     <th
-                      className="text-left py-3 px-4 font-semibold text-sm cursor-pointer hover:bg-gray-100"
+                      className="text-left py-3 px-4 font-semibold text-sm text-gray-900 dark:text-white cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
                       onClick={() => {
                         if (tradeSortField === 'date') {
                           setTradeSortDirection(tradeSortDirection === 'asc' ? 'desc' : 'asc');
@@ -1645,11 +1759,11 @@ function PortfolioBacktestResults({
                     >
                       Date {tradeSortField === 'date' && (tradeSortDirection === 'asc' ? '↑' : '↓')}
                     </th>
-                    <th className="text-left py-3 px-4 font-semibold text-sm">Symbol</th>
-                    <th className="text-left py-3 px-4 font-semibold text-sm">Type</th>
-                    <th className="text-right py-3 px-4 font-semibold text-sm">Price</th>
+                    <th className="text-left py-3 px-4 font-semibold text-sm text-gray-900 dark:text-white">Symbol</th>
+                    <th className="text-left py-3 px-4 font-semibold text-sm text-gray-900 dark:text-white">Type</th>
+                    <th className="text-right py-3 px-4 font-semibold text-sm text-gray-900 dark:text-white">Price</th>
                     <th
-                      className="text-right py-3 px-4 font-semibold text-sm cursor-pointer hover:bg-gray-100"
+                      className="text-right py-3 px-4 font-semibold text-sm text-gray-900 dark:text-white cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
                       onClick={() => {
                         if (tradeSortField === 'size') {
                           setTradeSortDirection(tradeSortDirection === 'asc' ? 'desc' : 'asc');
@@ -1662,7 +1776,7 @@ function PortfolioBacktestResults({
                       Size {tradeSortField === 'size' && (tradeSortDirection === 'asc' ? '↑' : '↓')}
                     </th>
                     <th
-                      className="text-right py-3 px-4 font-semibold text-sm cursor-pointer hover:bg-gray-100"
+                      className="text-right py-3 px-4 font-semibold text-sm text-gray-900 dark:text-white cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
                       onClick={() => {
                         if (tradeSortField === 'value') {
                           setTradeSortDirection(tradeSortDirection === 'asc' ? 'desc' : 'asc');
@@ -1674,25 +1788,25 @@ function PortfolioBacktestResults({
                     >
                       Value {tradeSortField === 'value' && (tradeSortDirection === 'asc' ? '↑' : '↓')}
                     </th>
-                    <th className="text-right py-3 px-4 font-semibold text-sm">Commission</th>
+                    <th className="text-right py-3 px-4 font-semibold text-sm text-gray-900 dark:text-white">Commission</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paginatedTrades.map((trade, idx) => (
-                    <tr key={idx} className="border-b hover:bg-gray-50">
-                      <td className="py-3 px-4 text-sm font-mono">{trade.execution_date || trade.date}</td>
-                      <td className="py-3 px-4 font-medium">{(trade as any).symbol || 'N/A'}</td>
+                    <tr key={idx} className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <td className="py-3 px-4 text-sm font-mono text-gray-900 dark:text-white">{trade.execution_date || trade.date}</td>
+                      <td className="py-3 px-4 font-medium text-gray-900 dark:text-white">{(trade as any).symbol || 'N/A'}</td>
                       <td className="py-3 px-4">
                         <span className={`inline-block px-2 py-1 text-xs font-semibold rounded ${
-                          trade.type === 'buy' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          trade.type === 'buy' ? 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200' : 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
                         }`}>
                           {trade.type.toUpperCase()}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-right font-mono">¥{trade.price?.toFixed(2)}</td>
-                      <td className="py-3 px-4 text-right font-mono">{trade.size?.toFixed(0)}</td>
-                      <td className="py-3 px-4 text-right font-mono">¥{trade.value?.toFixed(2)}</td>
-                      <td className="py-3 px-4 text-right font-mono text-gray-500">¥{trade.commission?.toFixed(2)}</td>
+                      <td className="py-3 px-4 text-right font-mono text-gray-900 dark:text-white">¥{trade.price?.toFixed(2)}</td>
+                      <td className="py-3 px-4 text-right font-mono text-gray-900 dark:text-white">{trade.size?.toFixed(0)}</td>
+                      <td className="py-3 px-4 text-right font-mono text-gray-900 dark:text-white">¥{trade.value?.toFixed(2)}</td>
+                      <td className="py-3 px-4 text-right font-mono text-gray-500 dark:text-gray-400">¥{trade.commission?.toFixed(2)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1703,7 +1817,7 @@ function PortfolioBacktestResults({
           {/* Pagination Controls */}
           <div className="mt-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600">
+              <span className="text-sm text-gray-600 dark:text-gray-400">
                 Showing {processedTrades.length === 0 ? 0 : (currentPage - 1) * tradesPerPage + 1} to{' '}
                 {Math.min(currentPage * tradesPerPage, processedTrades.length)} of {processedTrades.length} trades
               </span>
@@ -1713,7 +1827,7 @@ function PortfolioBacktestResults({
                   setTradesPerPage(Number(e.target.value));
                   setCurrentPage(1);
                 }}
-                className="border rounded px-2 py-1 text-sm"
+                className="border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
                 <option value={10}>10 per page</option>
                 <option value={25}>25 per page</option>
@@ -1726,31 +1840,31 @@ function PortfolioBacktestResults({
               <button
                 onClick={() => setCurrentPage(1)}
                 disabled={currentPage === 1}
-                className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white"
               >
                 First
               </button>
               <button
                 onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                 disabled={currentPage === 1}
-                className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white"
               >
                 Previous
               </button>
-              <span className="px-3 py-1 text-sm">
+              <span className="px-3 py-1 text-sm text-gray-900 dark:text-white">
                 Page {currentPage} of {totalPages || 1}
               </span>
               <button
                 onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                 disabled={currentPage === totalPages || totalPages === 0}
-                className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white"
               >
                 Next
               </button>
               <button
                 onClick={() => setCurrentPage(totalPages)}
                 disabled={currentPage === totalPages || totalPages === 0}
-                className="px-3 py-1 text-sm border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                className="px-3 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-900 dark:text-white"
               >
                 Last
               </button>
@@ -1763,12 +1877,12 @@ function PortfolioBacktestResults({
       {selectedTab === 'charts' && (
         <div className="space-y-6">
           {/* Stock Selector */}
-          <div className="bg-white p-4 rounded-lg border">
-            <label className="text-sm font-medium text-gray-700 mr-3">Select Stock:</label>
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mr-3">Select Stock:</label>
             <select
               value={selectedStockSymbol}
               onChange={(e) => setSelectedStockSymbol(e.target.value)}
-              className="border rounded px-3 py-2 text-sm"
+              className="border border-gray-300 dark:border-gray-600 rounded px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               {portfolioResult.symbols.map((symbol) => (
                 <option key={symbol} value={symbol}>
@@ -1776,22 +1890,22 @@ function PortfolioBacktestResults({
                 </option>
               ))}
             </select>
-            <span className="ml-3 text-sm text-gray-500">
+            <span className="ml-3 text-sm text-gray-500 dark:text-gray-400">
               {stockTradeMarkers.length} trades for this stock
             </span>
           </div>
 
           {/* Price Chart with Buy/Sell Markers */}
           <div>
-            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 text-gray-900 dark:text-white">
               <span className="text-blue-600">📊</span> {getStockDisplayName(selectedStockSymbol)} - Price Chart with Buy/Sell Signals
             </h3>
-            <div className="bg-white p-4 rounded-lg border shadow-sm">
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
               {isLoadingCandles ? (
-                <div className="text-center py-12 text-gray-500">
+                <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                   <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-3"></div>
                   <p className="text-sm">Loading chart data for {getStockDisplayName(selectedStockSymbol)}...</p>
-                  <p className="text-xs mt-2 text-gray-400">Check browser console for details if this takes too long</p>
+                  <p className="text-xs mt-2 text-gray-400 dark:text-gray-500">Check browser console for details if this takes too long</p>
                 </div>
               ) : filteredStockCandles.length > 0 ? (
                 <>
@@ -1905,14 +2019,14 @@ function PortfolioBacktestResults({
                   </div>
                 </>
               ) : stockCandles.length > 0 && filteredStockCandles.length === 0 ? (
-                <div className="text-center py-12 text-yellow-50 border border-yellow-200 rounded">
-                  <p className="text-sm text-yellow-800 font-medium">No data available in the selected date range</p>
-                  <p className="text-xs mt-2 text-yellow-600">The backtest date range may not overlap with available stock data</p>
+                <div className="text-center py-12 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded">
+                  <p className="text-sm text-yellow-800 dark:text-yellow-200 font-medium">No data available in the selected date range</p>
+                  <p className="text-xs mt-2 text-yellow-600 dark:text-yellow-400">The backtest date range may not overlap with available stock data</p>
                 </div>
               ) : (
-                <div className="text-center py-12 text-red-50 border border-red-200 rounded">
-                  <p className="text-sm text-red-800 font-medium">Unable to load chart data for {getStockDisplayName(selectedStockSymbol)}</p>
-                  <p className="text-xs mt-2 text-red-600">Please check the browser console for error details</p>
+                <div className="text-center py-12 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded">
+                  <p className="text-sm text-red-800 dark:text-red-200 font-medium">Unable to load chart data for {getStockDisplayName(selectedStockSymbol)}</p>
+                  <p className="text-xs mt-2 text-red-600 dark:text-red-400">Please check the browser console for error details</p>
                 </div>
               )}
             </div>
@@ -1920,10 +2034,10 @@ function PortfolioBacktestResults({
 
           {/* Portfolio Drawdown */}
           <div>
-            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+            <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 text-gray-900 dark:text-white">
               <span className="text-red-600">📉</span> Portfolio Drawdown
             </h3>
-            <div className="bg-white p-4 rounded-lg border shadow-sm">
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
               <div ref={drawdownChartRef} />
             </div>
           </div>
@@ -1932,36 +2046,36 @@ function PortfolioBacktestResults({
 
       {/* Per-Stock Analysis Tab */}
       {selectedTab === 'stocks' && portfolioResult.perSymbolMetrics && portfolioResult.perSymbolMetrics.length > 0 && (
-        <div className="bg-white rounded-lg border overflow-hidden">
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-50 border-b">
+              <thead className="bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700">
                 <tr>
-                  <th className="text-left py-3 px-4 font-semibold">Symbol</th>
-                  <th className="text-right py-3 px-4 font-semibold">Return</th>
-                  <th className="text-right py-3 px-4 font-semibold">Return %</th>
-                  <th className="text-right py-3 px-4 font-semibold">Sharpe</th>
-                  <th className="text-right py-3 px-4 font-semibold">Max DD %</th>
-                  <th className="text-right py-3 px-4 font-semibold">Trades</th>
-                  <th className="text-right py-3 px-4 font-semibold">Win Rate</th>
-                  <th className="text-right py-3 px-4 font-semibold">Contribution</th>
+                  <th className="text-left py-3 px-4 font-semibold text-gray-900 dark:text-white">Symbol</th>
+                  <th className="text-right py-3 px-4 font-semibold text-gray-900 dark:text-white">Return</th>
+                  <th className="text-right py-3 px-4 font-semibold text-gray-900 dark:text-white">Return %</th>
+                  <th className="text-right py-3 px-4 font-semibold text-gray-900 dark:text-white">Sharpe</th>
+                  <th className="text-right py-3 px-4 font-semibold text-gray-900 dark:text-white">Max DD %</th>
+                  <th className="text-right py-3 px-4 font-semibold text-gray-900 dark:text-white">Trades</th>
+                  <th className="text-right py-3 px-4 font-semibold text-gray-900 dark:text-white">Win Rate</th>
+                  <th className="text-right py-3 px-4 font-semibold text-gray-900 dark:text-white">Contribution</th>
                 </tr>
               </thead>
               <tbody>
                 {portfolioResult.perSymbolMetrics.map((stock) => (
-                  <tr key={stock.symbol} className="border-b hover:bg-gray-50">
-                    <td className="py-3 px-4 font-medium">{stock.symbol}</td>
-                    <td className={`text-right py-3 px-4 font-mono ${stock.totalReturn >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  <tr key={stock.symbol} className="border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <td className="py-3 px-4 font-medium text-gray-900 dark:text-white">{stock.symbol}</td>
+                    <td className={`text-right py-3 px-4 font-mono ${stock.totalReturn >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                       ¥{stock.totalReturn.toFixed(2)}
                     </td>
-                    <td className={`text-right py-3 px-4 font-mono ${stock.totalReturnPct >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <td className={`text-right py-3 px-4 font-mono ${stock.totalReturnPct >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                       {formatPercent(stock.totalReturnPct)}
                     </td>
-                    <td className="text-right py-3 px-4 font-mono">{stock.sharpeRatio.toFixed(2)}</td>
-                    <td className="text-right py-3 px-4 font-mono text-red-600">{formatPercent(stock.maxDrawdownPct)}</td>
-                    <td className="text-right py-3 px-4">{stock.tradeCount}</td>
-                    <td className="text-right py-3 px-4 font-mono">{stock.winRate.toFixed(1)}%</td>
-                    <td className={`text-right py-3 px-4 font-mono ${stock.contributionToPortfolio >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    <td className="text-right py-3 px-4 font-mono text-gray-900 dark:text-white">{stock.sharpeRatio.toFixed(2)}</td>
+                    <td className="text-right py-3 px-4 font-mono text-red-600 dark:text-red-400">{formatPercent(stock.maxDrawdownPct)}</td>
+                    <td className="text-right py-3 px-4 text-gray-900 dark:text-white">{stock.tradeCount}</td>
+                    <td className="text-right py-3 px-4 font-mono text-gray-900 dark:text-white">{stock.winRate.toFixed(1)}%</td>
+                    <td className={`text-right py-3 px-4 font-mono ${stock.contributionToPortfolio >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
                       ¥{stock.contributionToPortfolio.toFixed(2)}
                     </td>
                   </tr>
@@ -2044,11 +2158,11 @@ function GroupBacktestResults({
   });
 
   return (
-    <div className="bg-white rounded-lg shadow-lg p-6">
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
       {/* Header */}
       <div className="mb-6">
-        <h2 className="text-3xl font-bold mb-2">Group Backtest Results</h2>
-        <div className="text-gray-600">
+        <h2 className="text-3xl font-bold mb-2 text-gray-900 dark:text-white">Group Backtest Results</h2>
+        <div className="text-gray-600 dark:text-gray-400">
           <span className="font-medium">{groupResult.groupName}</span>
           {strategyInfo?.name && <span> • Strategy: {strategyInfo.name}</span>}
           {dateRange?.startDate && dateRange?.endDate && (
@@ -2059,66 +2173,66 @@ function GroupBacktestResults({
 
       {/* Aggregated Metrics */}
       <div className="mb-6">
-        <h3 className="text-xl font-semibold mb-4">Aggregated Metrics</h3>
+        <h3 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Aggregated Metrics</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200">
-            <div className="text-sm text-gray-600 mb-1">Stocks</div>
-            <div className="text-3xl font-bold text-blue-900">
+          <div className="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/40 dark:to-blue-800/40 p-4 rounded-lg border border-blue-200 dark:border-blue-700">
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Stocks</div>
+            <div className="text-3xl font-bold text-blue-900 dark:text-blue-300">
               {groupResult.aggregatedMetrics.stockCount}
             </div>
           </div>
 
           <div className={`bg-gradient-to-br p-4 rounded-lg border ${
             groupResult.aggregatedMetrics.totalReturnPct >= 0
-              ? 'from-green-50 to-green-100 border-green-200'
-              : 'from-red-50 to-red-100 border-red-200'
+              ? 'from-green-50 to-green-100 dark:from-green-900/40 dark:to-green-800/40 border-green-200 dark:border-green-700'
+              : 'from-red-50 to-red-100 dark:from-red-900/40 dark:to-red-800/40 border-red-200 dark:border-red-700'
           }`}>
-            <div className="text-sm text-gray-600 mb-1">Avg Return</div>
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Avg Return</div>
             <div className={`text-3xl font-bold ${
-              groupResult.aggregatedMetrics.totalReturnPct >= 0 ? 'text-green-700' : 'text-red-700'
+              groupResult.aggregatedMetrics.totalReturnPct >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
             }`}>
               {formatPercent(groupResult.aggregatedMetrics.totalReturnPct)}
             </div>
           </div>
 
-          <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 p-4 rounded-lg border border-yellow-200">
-            <div className="text-sm text-gray-600 mb-1">Avg Win Rate</div>
-            <div className="text-3xl font-bold text-yellow-900">
+          <div className="bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900/40 dark:to-yellow-800/40 p-4 rounded-lg border border-yellow-200 dark:border-yellow-700">
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Avg Win Rate</div>
+            <div className="text-3xl font-bold text-yellow-900 dark:text-yellow-300">
               {groupResult.aggregatedMetrics.avgWinRate.toFixed(1)}%
             </div>
           </div>
 
-          <div className="bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200">
-            <div className="text-sm text-gray-600 mb-1">Total Trades</div>
-            <div className="text-3xl font-bold text-purple-900">
+          <div className="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/40 dark:to-purple-800/40 p-4 rounded-lg border border-purple-200 dark:border-purple-700">
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Trades</div>
+            <div className="text-3xl font-bold text-purple-900 dark:text-purple-300">
               {groupResult.aggregatedMetrics.totalTrades}
             </div>
           </div>
 
-          <div className="bg-gray-50 p-4 rounded-lg border">
-            <div className="text-sm text-gray-600 mb-1">Avg Sharpe</div>
-            <div className="text-2xl font-bold">
+          <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Avg Sharpe</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">
               {groupResult.aggregatedMetrics.avgSharpeRatio.toFixed(3)}
             </div>
           </div>
 
-          <div className="bg-gray-50 p-4 rounded-lg border">
-            <div className="text-sm text-gray-600 mb-1">Avg Sortino</div>
-            <div className="text-2xl font-bold">
+          <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Avg Sortino</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">
               {groupResult.aggregatedMetrics.avgSortinoRatio.toFixed(3)}
             </div>
           </div>
 
-          <div className="bg-gradient-to-br from-red-50 to-red-100 p-4 rounded-lg border border-red-200">
-            <div className="text-sm text-gray-600 mb-1">Avg Max DD</div>
-            <div className="text-2xl font-bold text-red-600">
+          <div className="bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/40 dark:to-red-800/40 p-4 rounded-lg border border-red-200 dark:border-red-700">
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Avg Max DD</div>
+            <div className="text-2xl font-bold text-red-600 dark:text-red-400">
               {formatPercent(groupResult.aggregatedMetrics.avgMaxDrawdownPct)}
             </div>
           </div>
 
-          <div className="bg-gray-50 p-4 rounded-lg border">
-            <div className="text-sm text-gray-600 mb-1">Avg Final Value</div>
-            <div className="text-2xl font-bold">
+          <div className="bg-gray-50 dark:bg-gray-900 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
+            <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Avg Final Value</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">
               RMB {formatNumber(groupResult.aggregatedMetrics.avgFinalValue)}
             </div>
           </div>
@@ -2127,14 +2241,14 @@ function GroupBacktestResults({
 
       {/* Individual Stock Results */}
       <div className="mb-6">
-        <h3 className="text-xl font-semibold mb-4">Individual Stock Results</h3>
-        <div className="overflow-x-auto border rounded-lg">
+        <h3 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Individual Stock Results</h3>
+        <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-lg">
           <table className="w-full border-collapse">
             <thead>
-              <tr className="bg-gray-100">
-                <th className="border p-3 text-left font-semibold w-12">Details</th>
+              <tr className="bg-gray-100 dark:bg-gray-900">
+                <th className="border border-gray-200 dark:border-gray-700 p-3 text-left font-semibold w-12 text-gray-900 dark:text-white">Details</th>
                 <th
-                  className="border p-3 text-left font-semibold cursor-pointer hover:bg-gray-200"
+                  className="border border-gray-200 dark:border-gray-700 p-3 text-left font-semibold cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-900 dark:text-white"
                   onClick={() => {
                     if (sortField === 'name') {
                       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -2147,7 +2261,7 @@ function GroupBacktestResults({
                   Stock {sortField === 'name' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
                 <th
-                  className="border p-3 text-right font-semibold cursor-pointer hover:bg-gray-200"
+                  className="border border-gray-200 dark:border-gray-700 p-3 text-right font-semibold cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-900 dark:text-white"
                   onClick={() => {
                     if (sortField === 'return') {
                       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -2159,12 +2273,12 @@ function GroupBacktestResults({
                 >
                   Return % {sortField === 'return' && (sortDirection === 'asc' ? '↑' : '↓')}
                 </th>
-                <th className="border p-3 text-right font-semibold">Final Value</th>
-                <th className="border p-3 text-right font-semibold">Max DD %</th>
-                <th className="border p-3 text-right font-semibold">Sharpe</th>
-                <th className="border p-3 text-right font-semibold">Win Rate</th>
+                <th className="border border-gray-200 dark:border-gray-700 p-3 text-right font-semibold text-gray-900 dark:text-white">Final Value</th>
+                <th className="border border-gray-200 dark:border-gray-700 p-3 text-right font-semibold text-gray-900 dark:text-white">Max DD %</th>
+                <th className="border border-gray-200 dark:border-gray-700 p-3 text-right font-semibold text-gray-900 dark:text-white">Sharpe</th>
+                <th className="border border-gray-200 dark:border-gray-700 p-3 text-right font-semibold text-gray-900 dark:text-white">Win Rate</th>
                 <th
-                  className="border p-3 text-right font-semibold cursor-pointer hover:bg-gray-200"
+                  className="border border-gray-200 dark:border-gray-700 p-3 text-right font-semibold cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-900 dark:text-white"
                   onClick={() => {
                     if (sortField === 'trades') {
                       setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -2181,44 +2295,44 @@ function GroupBacktestResults({
             <tbody>
               {sortedStocks.map((stock, idx) => (
                 <>
-                  <tr key={idx} className="hover:bg-gray-50">
-                    <td className="border p-3">
+                  <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <td className="border border-gray-200 dark:border-gray-700 p-3">
                       <button
                         onClick={() => toggleExpanded(stock.datasetName)}
-                        className="px-2 py-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                        className="px-2 py-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition-colors"
                         title={expandedStocks.has(stock.datasetName) ? "Hide details" : "Show details"}
                       >
                         {expandedStocks.has(stock.datasetName) ? '▼' : '▶'}
                       </button>
                     </td>
-                    <td className="border p-3 font-medium">
+                    <td className="border border-gray-200 dark:border-gray-700 p-3 font-medium text-gray-900 dark:text-white">
                       {stock.datasetName.replace(/\.csv$/i, '')}
                     </td>
-                    <td className={`border p-3 text-right font-mono font-semibold ${
-                      stock.metrics.totalReturnPct >= 0 ? 'text-green-600' : 'text-red-600'
+                    <td className={`border border-gray-200 dark:border-gray-700 p-3 text-right font-mono font-semibold ${
+                      stock.metrics.totalReturnPct >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
                     }`}>
                       {formatPercent(stock.metrics.totalReturnPct)}
                     </td>
-                    <td className="border p-3 text-right font-mono">
+                    <td className="border border-gray-200 dark:border-gray-700 p-3 text-right font-mono text-gray-900 dark:text-white">
                       RMB {formatNumber(stock.metrics.finalValue)}
                     </td>
-                    <td className="border p-3 text-right font-mono text-red-600">
+                    <td className="border border-gray-200 dark:border-gray-700 p-3 text-right font-mono text-red-600 dark:text-red-400">
                       {formatPercent(stock.metrics.maxDrawdownPct)}
                     </td>
-                    <td className="border p-3 text-right font-mono">
+                    <td className="border border-gray-200 dark:border-gray-700 p-3 text-right font-mono text-gray-900 dark:text-white">
                       {stock.metrics.sharpeRatio.toFixed(2)}
                     </td>
-                    <td className="border p-3 text-right font-mono">
+                    <td className="border border-gray-200 dark:border-gray-700 p-3 text-right font-mono text-gray-900 dark:text-white">
                       {stock.metrics.winRate.toFixed(1)}%
                     </td>
-                    <td className="border p-3 text-right">
+                    <td className="border border-gray-200 dark:border-gray-700 p-3 text-right text-gray-900 dark:text-white">
                       {stock.metrics.tradeCount}
                     </td>
                   </tr>
                   {expandedStocks.has(stock.datasetName) && (
                     <tr key={`${idx}-expanded`}>
-                      <td colSpan={8} className="border p-0">
-                        <div className="bg-gray-50 p-6">
+                      <td colSpan={8} className="border border-gray-200 dark:border-gray-700 p-0">
+                        <div className="bg-gray-50 dark:bg-gray-900 p-6">
                           {stockCandles[stock.datasetName] ? (
                             <BacktestResults
                               metrics={stock.metrics}
@@ -2234,7 +2348,7 @@ function GroupBacktestResults({
                           ) : (
                             <div className="text-center py-8">
                               <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                              <p className="mt-2 text-gray-600">Loading chart data...</p>
+                              <p className="mt-2 text-gray-600 dark:text-gray-400">Loading chart data...</p>
                             </div>
                           )}
                         </div>
@@ -2251,10 +2365,10 @@ function GroupBacktestResults({
       {/* Errors */}
       {groupResult.errors && groupResult.errors.length > 0 && (
         <div className="mb-6">
-          <h3 className="text-xl font-semibold mb-4 text-red-600">Errors</h3>
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <h3 className="text-xl font-semibold mb-4 text-red-600 dark:text-red-400">Errors</h3>
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
             {groupResult.errors.map((error, idx) => (
-              <div key={idx} className="mb-2 last:mb-0">
+              <div key={idx} className="mb-2 last:mb-0 text-red-800 dark:text-red-200">
                 <span className="font-medium">{error.datasetName}:</span> {error.error}
               </div>
             ))}
@@ -2312,6 +2426,9 @@ export default function BacktestResults({
 
   // Composition pie chart state - for single stock
   const [singleCompositionData, setSingleCompositionData] = useState<Array<{ name: string; value: number; color: string }>>([]);
+
+  // Theme for dark mode support
+  const { theme } = useTheme();
 
   const chartInitializedRef = useRef(false);
   const stackedChartInitializedRef = useRef(false);
@@ -2585,23 +2702,30 @@ export default function BacktestResults({
       equitySeriesRef.current = null;
     }
 
+    const isDarkEquity = theme === 'dark';
+    const bgColorEquity = isDarkEquity ? '#1f2937' : 'white';
+    const textColorEquity = isDarkEquity ? '#e5e7eb' : 'black';
+    const gridColorEquity = isDarkEquity ? '#374151' : '#e0e0e0';
+    const borderColorEquity = isDarkEquity ? '#4b5563' : '#d1d4dc';
+
     const chart = createChart(equityChartRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: 'white' },
-        textColor: 'black',
+        background: { type: ColorType.Solid, color: bgColorEquity },
+        textColor: textColorEquity,
       },
       width: equityChartRef.current.clientWidth,
       height: 400,
       grid: {
-        vertLines: { color: '#e0e0e0' },
-        horzLines: { color: '#e0e0e0' },
+        vertLines: { color: gridColorEquity },
+        horzLines: { color: gridColorEquity },
       },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
+        borderColor: borderColorEquity,
       },
       rightPriceScale: {
-        borderColor: '#d1d4dc',
+        borderColor: borderColorEquity,
         scaleMargins: {
           top: 0.1,
           bottom: 0.1,
@@ -2738,23 +2862,30 @@ export default function BacktestResults({
     }
 
     // Create new chart
+    const isDarkStacked = theme === 'dark';
+    const bgColorStacked = isDarkStacked ? '#1f2937' : 'white';
+    const textColorStacked = isDarkStacked ? '#e5e7eb' : 'black';
+    const gridColorStacked = isDarkStacked ? '#374151' : '#e0e0e0';
+    const borderColorStacked = isDarkStacked ? '#4b5563' : '#d1d4dc';
+
     const chart = createChart(stackedChartRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: 'white' },
-        textColor: 'black',
+        background: { type: ColorType.Solid, color: bgColorStacked },
+        textColor: textColorStacked,
       },
       width: stackedChartRef.current.clientWidth,
       height: 400,
       grid: {
-        vertLines: { color: '#e0e0e0' },
-        horzLines: { color: '#e0e0e0' },
+        vertLines: { color: gridColorStacked },
+        horzLines: { color: gridColorStacked },
       },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
+        borderColor: borderColorStacked,
       },
       rightPriceScale: {
-        borderColor: '#d1d4dc',
+        borderColor: borderColorStacked,
         scaleMargins: {
           top: 0.1,
           bottom: 0,
@@ -2954,23 +3085,30 @@ export default function BacktestResults({
       priceChartApiRef.current = null;
     }
 
+    const isDarkPrice = theme === 'dark';
+    const bgColorPrice = isDarkPrice ? '#1f2937' : 'white';
+    const textColorPrice = isDarkPrice ? '#e5e7eb' : 'black';
+    const gridColorPrice = isDarkPrice ? '#374151' : '#e0e0e0';
+    const borderColorPrice = isDarkPrice ? '#4b5563' : '#d1d4dc';
+
     const chart = createChart(priceChartRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: 'white' },
-        textColor: 'black',
+        background: { type: ColorType.Solid, color: bgColorPrice },
+        textColor: textColorPrice,
       },
       width: priceChartRef.current.clientWidth,
       height: 400,
       grid: {
-        vertLines: { color: '#e0e0e0' },
-        horzLines: { color: '#e0e0e0' },
+        vertLines: { color: gridColorPrice },
+        horzLines: { color: gridColorPrice },
       },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
+        borderColor: borderColorPrice,
       },
       rightPriceScale: {
-        borderColor: '#d1d4dc',
+        borderColor: borderColorPrice,
       },
     });
 
@@ -3128,23 +3266,30 @@ export default function BacktestResults({
       drawdownChartApiRef.current = null;
     }
 
+    const isDarkDrawdown = theme === 'dark';
+    const bgColorDrawdown = isDarkDrawdown ? '#1f2937' : 'white';
+    const textColorDrawdown = isDarkDrawdown ? '#e5e7eb' : 'black';
+    const gridColorDrawdown = isDarkDrawdown ? '#374151' : '#e0e0e0';
+    const borderColorDrawdown = isDarkDrawdown ? '#4b5563' : '#d1d4dc';
+
     const chart = createChart(drawdownChartRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: 'white' },
-        textColor: 'black',
+        background: { type: ColorType.Solid, color: bgColorDrawdown },
+        textColor: textColorDrawdown,
       },
       width: drawdownChartRef.current.clientWidth,
       height: 300,
       grid: {
-        vertLines: { color: '#e0e0e0' },
-        horzLines: { color: '#e0e0e0' },
+        vertLines: { color: gridColorDrawdown },
+        horzLines: { color: gridColorDrawdown },
       },
       timeScale: {
         timeVisible: true,
         secondsVisible: false,
+        borderColor: borderColorDrawdown,
       },
       rightPriceScale: {
-        borderColor: '#d1d4dc',
+        borderColor: borderColorDrawdown,
       },
     });
 
@@ -3211,6 +3356,45 @@ export default function BacktestResults({
       });
     }
   }, [selectedTab]);
+
+  // Update all single stock charts when theme changes
+  useEffect(() => {
+    const isDark = theme === 'dark';
+    const bgColor = isDark ? '#1f2937' : 'white';
+    const textColor = isDark ? '#e5e7eb' : 'black';
+    const gridColor = isDark ? '#374151' : '#e0e0e0';
+    const borderColor = isDark ? '#4b5563' : '#d1d4dc';
+
+    const themeOptions = {
+      layout: {
+        background: { type: ColorType.Solid, color: bgColor },
+        textColor: textColor,
+      },
+      grid: {
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
+      },
+      rightPriceScale: { borderColor: borderColor },
+      timeScale: { borderColor: borderColor },
+    };
+
+    // Update equity chart
+    if (equityChartApiRef.current && !(equityChartApiRef.current as any)._disposed) {
+      try { equityChartApiRef.current.applyOptions(themeOptions); } catch (e) {}
+    }
+    // Update stacked chart
+    if (stackedChartApiRef.current && !(stackedChartApiRef.current as any)._disposed) {
+      try { stackedChartApiRef.current.applyOptions(themeOptions); } catch (e) {}
+    }
+    // Update price chart
+    if (priceChartApiRef.current && !(priceChartApiRef.current as any)._disposed) {
+      try { priceChartApiRef.current.applyOptions(themeOptions); } catch (e) {}
+    }
+    // Update drawdown chart
+    if (drawdownChartApiRef.current && !(drawdownChartApiRef.current as any)._disposed) {
+      try { drawdownChartApiRef.current.applyOptions(themeOptions); } catch (e) {}
+    }
+  }, [theme]);
 
   const formatNumber = (value: number | null | undefined, decimals: number = 2): string => {
     if (value === null || value === undefined || isNaN(value)) {
@@ -3383,29 +3567,76 @@ export default function BacktestResults({
     URL.revokeObjectURL(url);
   };
 
+  // Update chart colors when theme changes
+  useEffect(() => {
+    const isDark = theme === 'dark';
+    const bgColor = isDark ? '#1f2937' : 'white';
+    const textColor = isDark ? '#e5e7eb' : 'black';
+    const gridColor = isDark ? '#374151' : '#e0e0e0';
+    const borderColor = isDark ? '#4b5563' : '#d1d4dc';
+
+    const themeOptions = {
+      layout: {
+        background: { type: ColorType.Solid, color: bgColor },
+        textColor: textColor,
+      },
+      grid: {
+        vertLines: { color: gridColor },
+        horzLines: { color: gridColor },
+      },
+      rightPriceScale: {
+        borderColor: borderColor,
+      },
+      timeScale: {
+        borderColor: borderColor,
+      },
+    };
+
+    if (equityChartApiRef.current && !(equityChartApiRef.current as any)._disposed) {
+      try {
+        equityChartApiRef.current.applyOptions(themeOptions);
+      } catch (e) { /* ignore */ }
+    }
+    if (stackedChartApiRef.current && !(stackedChartApiRef.current as any)._disposed) {
+      try {
+        stackedChartApiRef.current.applyOptions(themeOptions);
+      } catch (e) { /* ignore */ }
+    }
+    if (drawdownChartApiRef.current && !(drawdownChartApiRef.current as any)._disposed) {
+      try {
+        drawdownChartApiRef.current.applyOptions(themeOptions);
+      } catch (e) { /* ignore */ }
+    }
+    if (priceChartApiRef.current && !(priceChartApiRef.current as any)._disposed) {
+      try {
+        priceChartApiRef.current.applyOptions(themeOptions);
+      } catch (e) { /* ignore */ }
+    }
+  }, [theme]);
+
   return (
-    <div className="bg-white rounded-lg shadow-lg p-6">
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
       {/* Strategy Info */}
       {strategyInfo && (
-        <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-lg">
+        <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg">
           <div className="flex items-center gap-6 text-sm flex-wrap">
             <div className="flex items-center gap-2">
-              <span className="text-gray-600 font-medium">Strategy:</span>{' '}
-              <span className="font-semibold">{strategyInfo.name || 'N/A'}</span>
+              <span className="text-gray-600 dark:text-gray-400 font-medium">Strategy:</span>{' '}
+              <span className="font-semibold text-gray-900 dark:text-white">{strategyInfo.name || 'N/A'}</span>
               {warnings.length > 0 && (
                 <div className="relative group">
                   <span className="text-yellow-600 font-bold text-lg cursor-help">⚠️</span>
                   {/* Tooltip */}
                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50">
-                    <div className="bg-yellow-50 border border-yellow-300 rounded-lg shadow-lg p-3 min-w-[300px] max-w-[500px]">
-                      <div className="font-semibold text-yellow-800 mb-2">Performance Warnings</div>
+                    <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700 rounded-lg shadow-lg p-3 min-w-[300px] max-w-[500px]">
+                      <div className="font-semibold text-yellow-800 dark:text-yellow-200 mb-2">Performance Warnings</div>
                       <ul className="space-y-1">
                         {warnings.map((warn, idx) => (
-                          <li key={idx} className="text-sm text-yellow-700">• {warn}</li>
+                          <li key={idx} className="text-sm text-yellow-700 dark:text-yellow-300">• {warn}</li>
                         ))}
                       </ul>
                       {/* Arrow */}
-                      <div className="absolute top-full left-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-yellow-300"></div>
+                      <div className="absolute top-full left-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-yellow-300 dark:border-t-yellow-700"></div>
                     </div>
                   </div>
                 </div>
@@ -3413,24 +3644,24 @@ export default function BacktestResults({
             </div>
             {strategyInfo.datasetName && (
               <div>
-                <span className="text-gray-600 font-medium">Dataset:</span>{' '}
-                <span className="font-semibold text-gray-800">
+                <span className="text-gray-600 dark:text-gray-400 font-medium">Dataset:</span>{' '}
+                <span className="font-semibold text-gray-800 dark:text-gray-200">
                   {strategyInfo.datasetName.replace(/\.csv$/i, '')}
                 </span>
               </div>
             )}
             {strategyInfo.parameters && Object.keys(strategyInfo.parameters).length > 0 && (
               <div>
-                <span className="text-gray-600 font-medium">Parameters:</span>{' '}
-                <span className="text-gray-800">
+                <span className="text-gray-600 dark:text-gray-400 font-medium">Parameters:</span>{' '}
+                <span className="text-gray-800 dark:text-gray-200">
                   {Object.entries(strategyInfo.parameters).map(([key, val]) => `${key}=${val}`).join(', ')}
                 </span>
               </div>
             )}
             {metrics && (metrics.sameDayTrades !== undefined || metrics.nextOpenTrades !== undefined) && (
               <div>
-                <span className="text-gray-600 font-medium">Execution:</span>{' '}
-                <span className="font-semibold">
+                <span className="text-gray-600 dark:text-gray-400 font-medium">Execution:</span>{' '}
+                <span className="font-semibold text-gray-900 dark:text-white">
                   {metrics.sameDayTrades || 0} same-day,{' '}
                   {metrics.nextOpenTrades || 0} next-day
                 </span>
@@ -3438,8 +3669,8 @@ export default function BacktestResults({
             )}
             {metrics?.avgSlippagePct !== undefined && (
               <div>
-                <span className="text-gray-600 font-medium">Avg Slippage:</span>{' '}
-                <span className={`font-semibold ${metrics.avgSlippagePct >= 0 ? 'text-red-600' : 'text-green-600'}`}>
+                <span className="text-gray-600 dark:text-gray-400 font-medium">Avg Slippage:</span>{' '}
+                <span className={`font-semibold ${metrics.avgSlippagePct >= 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
                   {metrics.avgSlippagePct >= 0 ? '+' : ''}{metrics.avgSlippagePct.toFixed(3)}%
                 </span>
               </div>
@@ -3450,9 +3681,9 @@ export default function BacktestResults({
 
       {/* Summary Section */}
       <div className="mb-6 grid grid-cols-1 md:grid-cols-5 gap-4">
-        <div className="relative group bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200 cursor-help">
-          <div className="text-xs text-gray-600 mb-1">Initial Capital</div>
-          <div className="text-2xl font-bold text-blue-900">
+        <div className="relative group bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/40 dark:to-blue-800/40 p-4 rounded-lg border border-blue-200 dark:border-blue-700 cursor-help">
+          <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Initial Capital</div>
+          <div className="text-2xl font-bold text-blue-900 dark:text-blue-300">
             RMB {formatNumber(metrics.initialValue)}
           </div>
           {/* Tooltip */}
@@ -3465,9 +3696,9 @@ export default function BacktestResults({
             </div>
           </div>
         </div>
-        <div className="relative group bg-gradient-to-br from-purple-50 to-purple-100 p-4 rounded-lg border border-purple-200 cursor-help">
-          <div className="text-xs text-gray-600 mb-1">Final Value</div>
-          <div className="text-2xl font-bold text-purple-900">
+        <div className="relative group bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/40 dark:to-purple-800/40 p-4 rounded-lg border border-purple-200 dark:border-purple-700 cursor-help">
+          <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Final Value</div>
+          <div className="text-2xl font-bold text-purple-900 dark:text-purple-300">
             RMB {formatNumber(metrics.finalValue)}
           </div>
           {/* Tooltip */}
@@ -3482,16 +3713,16 @@ export default function BacktestResults({
         </div>
         <div className={`relative group p-4 rounded-lg border cursor-help bg-gradient-to-br ${
           metrics.totalReturnPct >= 0
-            ? 'from-green-50 to-green-100 border-green-200'
-            : 'from-red-50 to-red-100 border-red-200'
+            ? 'from-green-50 to-green-100 dark:from-green-900/40 dark:to-green-800/40 border-green-200 dark:border-green-700'
+            : 'from-red-50 to-red-100 dark:from-red-900/40 dark:to-red-800/40 border-red-200 dark:border-red-700'
         }`}>
-          <div className="text-xs text-gray-600 mb-1">Total Return</div>
+          <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Total Return</div>
           <div className={`text-2xl font-bold ${
-            metrics.totalReturnPct >= 0 ? 'text-green-700' : 'text-red-700'
+            metrics.totalReturnPct >= 0 ? 'text-green-700 dark:text-green-400' : 'text-red-700 dark:text-red-400'
           }`}>
             {formatPercent(metrics.totalReturnPct)}
           </div>
-          <div className="text-xs text-gray-600 mt-1">
+          <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
             RMB {formatNumber(Math.abs(metrics.totalReturn))}
           </div>
           {/* Tooltip */}
@@ -3505,12 +3736,12 @@ export default function BacktestResults({
             </div>
           </div>
         </div>
-        <div className="relative group bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-lg border border-orange-200 cursor-help">
-          <div className="text-xs text-gray-600 mb-1">Total Trades</div>
-          <div className="text-2xl font-bold text-orange-900">
+        <div className="relative group bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/40 dark:to-orange-800/40 p-4 rounded-lg border border-orange-200 dark:border-orange-700 cursor-help">
+          <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">Total Trades</div>
+          <div className="text-2xl font-bold text-orange-900 dark:text-orange-300">
             {metrics.tradeCount}
           </div>
-          <div className="text-xs text-gray-600 mt-1">
+          <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
             {metrics.wonTrades || 0}W / {metrics.lostTrades || 0}L
           </div>
           {/* Tooltip */}
@@ -3526,16 +3757,16 @@ export default function BacktestResults({
         {buyHoldMetrics && (
           <div className={`relative group p-4 rounded-lg border cursor-help bg-gradient-to-br ${
             buyHoldMetrics.outperformance >= 0
-              ? 'from-teal-50 to-teal-100 border-teal-200'
-              : 'from-rose-50 to-rose-100 border-rose-200'
+              ? 'from-teal-50 to-teal-100 dark:from-teal-900/40 dark:to-teal-800/40 border-teal-200 dark:border-teal-700'
+              : 'from-rose-50 to-rose-100 dark:from-rose-900/40 dark:to-rose-800/40 border-rose-200 dark:border-rose-700'
           }`}>
-            <div className="text-xs text-gray-600 mb-1">vs Buy & Hold</div>
+            <div className="text-xs text-gray-600 dark:text-gray-400 mb-1">vs Buy & Hold</div>
             <div className={`text-2xl font-bold ${
-              buyHoldMetrics.outperformance >= 0 ? 'text-teal-700' : 'text-rose-700'
+              buyHoldMetrics.outperformance >= 0 ? 'text-teal-700 dark:text-teal-400' : 'text-rose-700 dark:text-rose-400'
             }`}>
               {formatPercent(buyHoldMetrics.outperformance)}
             </div>
-            <div className="text-xs text-gray-600 mt-1">
+            <div className="text-xs text-gray-600 dark:text-gray-400 mt-1">
               B&H: {formatPercent(buyHoldMetrics.buyHoldReturnPct)}
             </div>
             {/* Tooltip */}
@@ -3553,14 +3784,14 @@ export default function BacktestResults({
       </div>
 
       {/* Tabs and Export Buttons */}
-      <div className="flex justify-between items-center mb-4 border-b">
+      <div className="flex justify-between items-center mb-4 border-b border-gray-200 dark:border-gray-700">
         <div className="flex gap-2">
           <button
             onClick={() => setSelectedTab('metrics')}
             className={`px-6 py-3 font-medium transition-colors ${
               selectedTab === 'metrics'
-                ? 'border-b-2 border-blue-600 text-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
+                ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
             }`}
           >
             Performance Metrics
@@ -3569,8 +3800,8 @@ export default function BacktestResults({
             onClick={() => setSelectedTab('trades')}
             className={`px-6 py-3 font-medium transition-colors ${
               selectedTab === 'trades'
-                ? 'border-b-2 border-blue-600 text-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
+                ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
             }`}
           >
             Trade List ({tradeMarkers.length})
@@ -3579,8 +3810,8 @@ export default function BacktestResults({
             onClick={() => setSelectedTab('charts')}
             className={`px-6 py-3 font-medium transition-colors ${
               selectedTab === 'charts'
-                ? 'border-b-2 border-blue-600 text-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
+                ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
             }`}
           >
             Charts
@@ -3589,8 +3820,8 @@ export default function BacktestResults({
             onClick={() => setSelectedTab('analysis')}
             className={`px-6 py-3 font-medium transition-colors ${
               selectedTab === 'analysis'
-                ? 'border-b-2 border-blue-600 text-blue-600'
-                : 'text-gray-600 hover:text-gray-800'
+                ? 'border-b-2 border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
             }`}
           >
             Analysis
@@ -3619,7 +3850,7 @@ export default function BacktestResults({
       <div className={selectedTab === 'metrics' ? 'space-y-4' : 'hidden'}>
         {/* Total Equity Curve Chart */}
         <div>
-          <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+          <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 text-gray-900 dark:text-white">
             <span className="text-green-600">📈</span> Total Equity Curve
           </h3>
           <div
@@ -3631,51 +3862,51 @@ export default function BacktestResults({
               }
             }}
           >
-            <div ref={equityChartRef} className="border rounded bg-white w-full" style={{ height: '400px', minHeight: '400px', overscrollBehavior: 'contain' }} />
+            <div ref={equityChartRef} className="border border-gray-200 dark:border-gray-700 rounded bg-white dark:bg-gray-800 w-full" style={{ height: '400px', minHeight: '400px', overscrollBehavior: 'contain' }} />
           </div>
         </div>
 
         {/* Portfolio Composition Stacked Area Chart */}
         <div>
-          <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+          <h3 className="text-lg font-semibold mb-3 flex items-center gap-2 text-gray-900 dark:text-white">
             <span className="text-blue-600">📊</span> Portfolio Composition Over Time
           </h3>
-          <div className="bg-white p-4 rounded-lg border shadow-sm">
+          <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
             <div className="flex gap-4">
               {/* Chart Section */}
               <div className="flex-1">
                 <div ref={stackedChartRef} />
 
                 {/* Legend Panel - Below Chart */}
-                <div className="mt-4 pt-4 border-t">
-                  <div className="text-sm font-semibold mb-3 text-gray-700">Legend (Top to Bottom)</div>
+                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <div className="text-sm font-semibold mb-3 text-gray-700 dark:text-gray-300">Legend (Top to Bottom)</div>
                   <div className="flex flex-wrap gap-4">
                     {/* Stock */}
                     <div className="flex items-center gap-2">
                       <div className="w-4 h-4 rounded" style={{ backgroundColor: '#60a5fa' }}></div>
-                      <span className="text-sm text-gray-700">Stock Value</span>
+                      <span className="text-sm text-gray-700 dark:text-gray-300">Stock Value</span>
                     </div>
                     {/* Cash */}
                     <div className="flex items-center gap-2">
                       <div className="w-4 h-4 rounded" style={{ backgroundColor: '#e5e7eb' }}></div>
-                      <span className="text-sm text-gray-700">Cash</span>
+                      <span className="text-sm text-gray-700 dark:text-gray-300">Cash</span>
                     </div>
                   </div>
-                  <div className="mt-3 text-xs text-gray-500">
+                  <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
                     Each colored area shows the value of that component. The gap between the top line and cash line represents the stock value.
                   </div>
                 </div>
               </div>
 
               {/* Composition Pie Chart - Beside Chart */}
-              <div className="flex-shrink-0 w-64 flex flex-col justify-center border-l pl-4">
-                <div className="text-sm font-semibold mb-3 text-gray-700 text-center">
+              <div className="flex-shrink-0 w-64 flex flex-col justify-center border-l border-gray-200 dark:border-gray-700 pl-4">
+                <div className="text-sm font-semibold mb-3 text-gray-700 dark:text-gray-300 text-center">
                   Portfolio Composition {hoveredTime ? '(Hover Point)' : '(Latest)'}
                 </div>
                 {singleCompositionData.length > 0 ? (
                   <PieChart data={singleCompositionData} size={240} />
                 ) : (
-                  <div className="text-xs text-gray-500 text-center">Loading composition data...</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 text-center">Loading composition data...</div>
                 )}
               </div>
             </div>
@@ -3689,14 +3920,14 @@ export default function BacktestResults({
           <div className="space-y-6">
             {/* Risk-Adjusted Returns */}
             <div>
-              <h3 className="text-lg font-semibold mb-3 text-gray-700 border-b pb-2">Risk-Adjusted Performance</h3>
+              <h3 className="text-lg font-semibold mb-3 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 pb-2">Risk-Adjusted Performance</h3>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                <div className="relative group bg-gradient-to-br from-red-50 to-red-100 p-4 rounded-lg border border-red-200 cursor-help">
-                  <div className="text-sm text-gray-600 mb-1">Max Drawdown</div>
-                  <div className="text-2xl font-bold text-red-600">
+                <div className="relative group bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/40 dark:to-red-800/40 p-4 rounded-lg border border-red-200 dark:border-red-700 cursor-help">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Max Drawdown</div>
+                  <div className="text-2xl font-bold text-red-600 dark:text-red-400">
                     {formatPercent(metrics.maxDrawdownPct)}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     RMB {formatNumber(metrics.maxDrawdown)}
                   </div>
                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-72">
@@ -3709,12 +3940,12 @@ export default function BacktestResults({
                   </div>
                 </div>
 
-                <div className="relative group bg-gray-50 p-4 rounded-lg border cursor-help">
-                  <div className="text-sm text-gray-600 mb-1">Sharpe Ratio</div>
-                  <div className="text-2xl font-bold">
+                <div className="relative group bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border dark:border-gray-700 cursor-help">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Sharpe Ratio</div>
+                  <div className="text-2xl font-bold dark:text-white">
                     {metrics.sharpeRatio.toFixed(3)}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">Annualized</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Annualized</div>
                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-72">
                     <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
                       <div className="font-semibold mb-1">Sharpe Ratio</div>
@@ -3725,12 +3956,12 @@ export default function BacktestResults({
                   </div>
                 </div>
 
-                <div className="relative group bg-gray-50 p-4 rounded-lg border cursor-help">
-                  <div className="text-sm text-gray-600 mb-1">Sortino Ratio</div>
-                  <div className="text-2xl font-bold">
+                <div className="relative group bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border dark:border-gray-700 cursor-help">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Sortino Ratio</div>
+                  <div className="text-2xl font-bold dark:text-white">
                     {metrics.sortinoRatio.toFixed(3)}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">Downside Risk</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Downside Risk</div>
                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-72">
                     <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
                       <div className="font-semibold mb-1">Sortino Ratio</div>
@@ -3741,12 +3972,12 @@ export default function BacktestResults({
                   </div>
                 </div>
 
-                <div className="relative group bg-gray-50 p-4 rounded-lg border cursor-help">
-                  <div className="text-sm text-gray-600 mb-1">Calmar Ratio</div>
-                  <div className="text-2xl font-bold">
+                <div className="relative group bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border dark:border-gray-700 cursor-help">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Calmar Ratio</div>
+                  <div className="text-2xl font-bold dark:text-white">
                     {metrics.calmarRatio.toFixed(3)}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">Return/Drawdown</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Return/Drawdown</div>
                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-72">
                     <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
                       <div className="font-semibold mb-1">Calmar Ratio</div>
@@ -3757,12 +3988,12 @@ export default function BacktestResults({
                   </div>
                 </div>
 
-                <div className="relative group bg-gray-50 p-4 rounded-lg border cursor-help">
-                  <div className="text-sm text-gray-600 mb-1">Profit Factor</div>
-                  <div className="text-2xl font-bold">
+                <div className="relative group bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border dark:border-gray-700 cursor-help">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Profit Factor</div>
+                  <div className="text-2xl font-bold dark:text-white">
                     {metrics.profitFactor === Infinity ? '∞' : metrics.profitFactor.toFixed(2)}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">Wins/Losses</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Wins/Losses</div>
                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-72">
                     <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
                       <div className="font-semibold mb-1">Profit Factor</div>
@@ -3777,11 +4008,11 @@ export default function BacktestResults({
 
             {/* Trade Statistics */}
             <div>
-              <h3 className="text-lg font-semibold mb-3 text-gray-700 border-b pb-2">Trade Statistics</h3>
+              <h3 className="text-lg font-semibold mb-3 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 pb-2">Trade Statistics</h3>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                <div className="relative group bg-gray-50 p-4 rounded-lg border cursor-help">
-                  <div className="text-sm text-gray-600 mb-1">Total Trades</div>
-                  <div className="text-2xl font-bold">
+                <div className="relative group bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border dark:border-gray-700 cursor-help">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Trades</div>
+                  <div className="text-2xl font-bold dark:text-white">
                     {metrics.tradeCount}
                   </div>
                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-64">
@@ -3793,12 +4024,12 @@ export default function BacktestResults({
                   </div>
                 </div>
 
-                <div className="relative group bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg border border-green-200 cursor-help">
-                  <div className="text-sm text-gray-600 mb-1">Winning Trades</div>
-                  <div className="text-2xl font-bold text-green-600">
+                <div className="relative group bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/40 dark:to-green-800/40 p-4 rounded-lg border border-green-200 dark:border-green-700 cursor-help">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Winning Trades</div>
+                  <div className="text-2xl font-bold text-green-600 dark:text-green-400">
                     {metrics.wonTrades || 0}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     {metrics.tradeCount > 0 ? ((metrics.wonTrades || 0) / metrics.tradeCount * 100).toFixed(1) : 0}%
                   </div>
                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-64">
@@ -3810,12 +4041,12 @@ export default function BacktestResults({
                   </div>
                 </div>
 
-                <div className="relative group bg-gradient-to-br from-red-50 to-red-100 p-4 rounded-lg border border-red-200 cursor-help">
-                  <div className="text-sm text-gray-600 mb-1">Losing Trades</div>
-                  <div className="text-2xl font-bold text-red-600">
+                <div className="relative group bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/40 dark:to-red-800/40 p-4 rounded-lg border border-red-200 dark:border-red-700 cursor-help">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Losing Trades</div>
+                  <div className="text-2xl font-bold text-red-600 dark:text-red-400">
                     {metrics.lostTrades || 0}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     {metrics.tradeCount > 0 ? ((metrics.lostTrades || 0) / metrics.tradeCount * 100).toFixed(1) : 0}%
                   </div>
                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-64">
@@ -3827,9 +4058,9 @@ export default function BacktestResults({
                   </div>
                 </div>
 
-                <div className="relative group bg-gradient-to-br from-blue-50 to-blue-100 p-4 rounded-lg border border-blue-200 cursor-help">
-                  <div className="text-sm text-gray-600 mb-1">Win Rate</div>
-                  <div className="text-2xl font-bold text-blue-600">
+                <div className="relative group bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/40 dark:to-blue-800/40 p-4 rounded-lg border border-blue-200 dark:border-blue-700 cursor-help">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Win Rate</div>
+                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
                     {metrics.winRate.toFixed(1)}%
                   </div>
                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-64">
@@ -3842,9 +4073,9 @@ export default function BacktestResults({
                   </div>
                 </div>
 
-                <div className="relative group bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg border border-green-200 cursor-help">
-                  <div className="text-sm text-gray-600 mb-1">Avg Win</div>
-                  <div className="text-2xl font-bold text-green-600">
+                <div className="relative group bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/40 dark:to-green-800/40 p-4 rounded-lg border border-green-200 dark:border-green-700 cursor-help">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Avg Win</div>
+                  <div className="text-2xl font-bold text-green-600 dark:text-green-400">
                     RMB {formatNumber(metrics.avgWin)}
                   </div>
                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-64">
@@ -3857,9 +4088,9 @@ export default function BacktestResults({
                   </div>
                 </div>
 
-                <div className="relative group bg-gradient-to-br from-red-50 to-red-100 p-4 rounded-lg border border-red-200 cursor-help">
-                  <div className="text-sm text-gray-600 mb-1">Avg Loss</div>
-                  <div className="text-2xl font-bold text-red-600">
+                <div className="relative group bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/40 dark:to-red-800/40 p-4 rounded-lg border border-red-200 dark:border-red-700 cursor-help">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Avg Loss</div>
+                  <div className="text-2xl font-bold text-red-600 dark:text-red-400">
                     RMB {formatNumber(Math.abs(metrics.avgLoss))}
                   </div>
                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-64">
@@ -3877,12 +4108,12 @@ export default function BacktestResults({
             {/* Execution & Slippage */}
             {(metrics.avgSlippagePct !== undefined || metrics.sameDayTrades !== undefined) && (
               <div>
-                <h3 className="text-lg font-semibold mb-3 text-gray-700 border-b pb-2">Execution & Slippage</h3>
+                <h3 className="text-lg font-semibold mb-3 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 pb-2">Execution & Slippage</h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <div className="relative group bg-gray-50 p-4 rounded-lg border cursor-help">
-                    <div className="text-sm text-gray-600 mb-1">Same-Day Trades</div>
-                    <div className="text-2xl font-bold">{metrics.sameDayTrades || 0}</div>
-                    <div className="text-xs text-gray-500 mt-1">Execute at close</div>
+                  <div className="relative group bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border dark:border-gray-700 cursor-help">
+                    <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Same-Day Trades</div>
+                    <div className="text-2xl font-bold dark:text-white">{metrics.sameDayTrades || 0}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Execute at close</div>
                     <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-64">
                       <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
                         <div className="font-semibold mb-1">Same-Day Trades</div>
@@ -3892,10 +4123,10 @@ export default function BacktestResults({
                     </div>
                   </div>
 
-                  <div className="relative group bg-gray-50 p-4 rounded-lg border cursor-help">
-                    <div className="text-sm text-gray-600 mb-1">Next-Day Trades</div>
-                    <div className="text-2xl font-bold">{metrics.nextOpenTrades || 0}</div>
-                    <div className="text-xs text-gray-500 mt-1">Execute at open</div>
+                  <div className="relative group bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border dark:border-gray-700 cursor-help">
+                    <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Next-Day Trades</div>
+                    <div className="text-2xl font-bold dark:text-white">{metrics.nextOpenTrades || 0}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Execute at open</div>
                     <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-64">
                       <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
                         <div className="font-semibold mb-1">Next-Day Trades</div>
@@ -3905,12 +4136,12 @@ export default function BacktestResults({
                     </div>
                   </div>
 
-                  <div className="relative group bg-gradient-to-br from-orange-50 to-orange-100 p-4 rounded-lg border border-orange-200 cursor-help">
-                    <div className="text-sm text-gray-600 mb-1">Avg Slippage</div>
-                    <div className={`text-2xl font-bold ${(metrics.avgSlippagePct ?? 0) >= 0 ? 'text-orange-700' : 'text-green-700'}`}>
+                  <div className="relative group bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/40 dark:to-orange-800/40 p-4 rounded-lg border border-orange-200 dark:border-orange-700 cursor-help">
+                    <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Avg Slippage</div>
+                    <div className={`text-2xl font-bold ${(metrics.avgSlippagePct ?? 0) >= 0 ? 'text-orange-700 dark:text-orange-400' : 'text-green-700 dark:text-green-400'}`}>
                       {(metrics.avgSlippagePct ?? 0) >= 0 ? '+' : ''}{metrics.avgSlippagePct?.toFixed(3) ?? '0.000'}%
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">Price difference</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Price difference</div>
                     <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-72">
                       <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
                         <div className="font-semibold mb-1">Average Slippage</div>
@@ -3921,12 +4152,12 @@ export default function BacktestResults({
                     </div>
                   </div>
 
-                  <div className="relative group bg-gray-50 p-4 rounded-lg border cursor-help">
-                    <div className="text-sm text-gray-600 mb-1">Slippage Cost</div>
-                    <div className="text-2xl font-bold">
+                  <div className="relative group bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border dark:border-gray-700 cursor-help">
+                    <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Slippage Cost</div>
+                    <div className="text-2xl font-bold dark:text-white">
                       RMB {formatNumber(metrics.totalSlippageCost || 0)}
                     </div>
-                    <div className="text-xs text-gray-500 mt-1">Total impact</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Total impact</div>
                     <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-64">
                       <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
                         <div className="font-semibold mb-1">Slippage Cost</div>
@@ -3942,14 +4173,14 @@ export default function BacktestResults({
 
             {/* Advanced Metrics */}
             <div>
-              <h3 className="text-lg font-semibold mb-3 text-gray-700 border-b pb-2">Advanced Metrics</h3>
+              <h3 className="text-lg font-semibold mb-3 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 pb-2">Advanced Metrics</h3>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                <div className="relative group bg-gray-50 p-4 rounded-lg border cursor-help">
-                  <div className="text-sm text-gray-600 mb-1">Expectancy</div>
-                  <div className="text-2xl font-bold">
+                <div className="relative group bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border dark:border-gray-700 cursor-help">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Expectancy</div>
+                  <div className="text-2xl font-bold dark:text-white">
                     RMB {formatNumber(advancedMetrics.expectancy)}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">Per Trade</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Per Trade</div>
                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-72">
                     <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
                       <div className="font-semibold mb-1">Expectancy</div>
@@ -3960,12 +4191,12 @@ export default function BacktestResults({
                   </div>
                 </div>
 
-                <div className="relative group bg-gray-50 p-4 rounded-lg border cursor-help">
-                  <div className="text-sm text-gray-600 mb-1">Recovery Factor</div>
-                  <div className="text-2xl font-bold">
+                <div className="relative group bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border dark:border-gray-700 cursor-help">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Recovery Factor</div>
+                  <div className="text-2xl font-bold dark:text-white">
                     {advancedMetrics.recoveryFactor.toFixed(2)}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">Profit/Drawdown</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Profit/Drawdown</div>
                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-72">
                     <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
                       <div className="font-semibold mb-1">Recovery Factor</div>
@@ -3976,12 +4207,12 @@ export default function BacktestResults({
                   </div>
                 </div>
 
-                <div className="relative group bg-gray-50 p-4 rounded-lg border cursor-help">
-                  <div className="text-sm text-gray-600 mb-1">Payoff Ratio</div>
-                  <div className="text-2xl font-bold">
+                <div className="relative group bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border dark:border-gray-700 cursor-help">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Payoff Ratio</div>
+                  <div className="text-2xl font-bold dark:text-white">
                     {advancedMetrics.payoffRatio.toFixed(2)}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">Win/Loss Size</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Win/Loss Size</div>
                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-72">
                     <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
                       <div className="font-semibold mb-1">Payoff Ratio</div>
@@ -3992,12 +4223,12 @@ export default function BacktestResults({
                   </div>
                 </div>
 
-                <div className="relative group bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg border border-green-200 cursor-help">
-                  <div className="text-sm text-gray-600 mb-1">Max Win Streak</div>
-                  <div className="text-2xl font-bold text-green-600">
+                <div className="relative group bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/40 dark:to-green-800/40 p-4 rounded-lg border border-green-200 dark:border-green-700 cursor-help">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Max Win Streak</div>
+                  <div className="text-2xl font-bold text-green-600 dark:text-green-400">
                     {advancedMetrics.maxConsecutiveWins}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">Consecutive</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Consecutive</div>
                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-64">
                     <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
                       <div className="font-semibold mb-1">Max Win Streak</div>
@@ -4007,12 +4238,12 @@ export default function BacktestResults({
                   </div>
                 </div>
 
-                <div className="relative group bg-gradient-to-br from-red-50 to-red-100 p-4 rounded-lg border border-red-200 cursor-help">
-                  <div className="text-sm text-gray-600 mb-1">Max Loss Streak</div>
-                  <div className="text-2xl font-bold text-red-600">
+                <div className="relative group bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/40 dark:to-red-800/40 p-4 rounded-lg border border-red-200 dark:border-red-700 cursor-help">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Max Loss Streak</div>
+                  <div className="text-2xl font-bold text-red-600 dark:text-red-400">
                     {advancedMetrics.maxConsecutiveLosses}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">Consecutive</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Consecutive</div>
                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-64">
                     <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
                       <div className="font-semibold mb-1">Max Loss Streak</div>
@@ -4022,12 +4253,12 @@ export default function BacktestResults({
                   </div>
                 </div>
 
-                <div className="relative group bg-gray-50 p-4 rounded-lg border cursor-help">
-                  <div className="text-sm text-gray-600 mb-1">Avg Holding</div>
-                  <div className="text-2xl font-bold">
+                <div className="relative group bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border dark:border-gray-700 cursor-help">
+                  <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Avg Holding</div>
+                  <div className="text-2xl font-bold dark:text-white">
                     {advancedMetrics.avgHoldingPeriod.toFixed(1)}
                   </div>
-                  <div className="text-xs text-gray-500 mt-1">Days</div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Days</div>
                   <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50 w-64">
                     <div className="bg-gray-900 text-white text-xs rounded-lg shadow-lg p-3">
                       <div className="font-semibold mb-1">Average Holding Period</div>
@@ -4047,13 +4278,13 @@ export default function BacktestResults({
       {selectedTab === 'trades' && (
         <div>
           {/* Trade Filters and Controls */}
-          <div className="mb-4 flex items-center gap-4 p-4 bg-gray-50 border rounded-lg">
+          <div className="mb-4 flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-800 border dark:border-gray-700 rounded-lg">
             <div>
-              <label className="text-sm font-medium text-gray-700 mr-2">Filter:</label>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">Filter:</label>
               <select
                 value={tradeFilter}
                 onChange={(e) => { setTradeFilter(e.target.value as any); setCurrentPage(1); }}
-                className="px-3 py-1 border rounded text-sm"
+                className="px-3 py-1 border dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 dark:text-white"
               >
                 <option value="all">All Trades</option>
                 <option value="buy">Buy Only</option>
@@ -4061,11 +4292,11 @@ export default function BacktestResults({
               </select>
             </div>
             <div>
-              <label className="text-sm font-medium text-gray-700 mr-2">Per Page:</label>
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300 mr-2">Per Page:</label>
               <select
                 value={tradesPerPage}
                 onChange={(e) => { setTradesPerPage(Number(e.target.value)); setCurrentPage(1); }}
-                className="px-3 py-1 border rounded text-sm"
+                className="px-3 py-1 border dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 dark:text-white"
               >
                 <option value="10">10</option>
                 <option value="25">25</option>
@@ -4073,17 +4304,17 @@ export default function BacktestResults({
                 <option value="100">100</option>
               </select>
             </div>
-            <div className="ml-auto text-sm text-gray-600">
+            <div className="ml-auto text-sm text-gray-600 dark:text-gray-400">
               Showing {processedTrades.length} trades (Page {currentPage} of {totalPages || 1})
             </div>
           </div>
 
-          <div className="overflow-x-auto border rounded-lg">
+          <div className="overflow-x-auto border dark:border-gray-700 rounded-lg">
             <table className="w-full border-collapse">
               <thead>
-                <tr className="bg-gray-100">
+                <tr className="bg-gray-100 dark:bg-gray-800">
                   <th
-                    className="border p-3 text-left font-semibold cursor-pointer hover:bg-gray-200"
+                    className="border dark:border-gray-700 p-3 text-left font-semibold cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 dark:text-white"
                     onClick={() => {
                       if (tradeSortField === 'date') {
                         setTradeSortDirection(tradeSortDirection === 'asc' ? 'desc' : 'asc');
@@ -4095,13 +4326,13 @@ export default function BacktestResults({
                   >
                     Signal Date {tradeSortField === 'date' && (tradeSortDirection === 'asc' ? '↑' : '↓')}
                   </th>
-                  <th className="border p-3 text-left font-semibold">Exec Date</th>
-                  <th className="border p-3 text-left font-semibold">Type</th>
-                  <th className="border p-3 text-right font-semibold">Signal Price</th>
-                  <th className="border p-3 text-right font-semibold">Exec Price</th>
-                  <th className="border p-3 text-right font-semibold">Slippage %</th>
+                  <th className="border dark:border-gray-700 p-3 text-left font-semibold dark:text-white">Exec Date</th>
+                  <th className="border dark:border-gray-700 p-3 text-left font-semibold dark:text-white">Type</th>
+                  <th className="border dark:border-gray-700 p-3 text-right font-semibold dark:text-white">Signal Price</th>
+                  <th className="border dark:border-gray-700 p-3 text-right font-semibold dark:text-white">Exec Price</th>
+                  <th className="border dark:border-gray-700 p-3 text-right font-semibold dark:text-white">Slippage %</th>
                   <th
-                    className="border p-3 text-right font-semibold cursor-pointer hover:bg-gray-200"
+                    className="border dark:border-gray-700 p-3 text-right font-semibold cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 dark:text-white"
                     onClick={() => {
                       if (tradeSortField === 'size') {
                         setTradeSortDirection(tradeSortDirection === 'asc' ? 'desc' : 'asc');
@@ -4114,7 +4345,7 @@ export default function BacktestResults({
                     Size {tradeSortField === 'size' && (tradeSortDirection === 'asc' ? '↑' : '↓')}
                   </th>
                   <th
-                    className="border p-3 text-right font-semibold cursor-pointer hover:bg-gray-200"
+                    className="border dark:border-gray-700 p-3 text-right font-semibold cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-700 dark:text-white"
                     onClick={() => {
                       if (tradeSortField === 'value') {
                         setTradeSortDirection(tradeSortDirection === 'asc' ? 'desc' : 'asc');
@@ -4126,7 +4357,7 @@ export default function BacktestResults({
                   >
                     Value {tradeSortField === 'value' && (tradeSortDirection === 'asc' ? '↑' : '↓')}
                   </th>
-                  <th className="border p-3 text-right font-semibold">Commission</th>
+                  <th className="border dark:border-gray-700 p-3 text-right font-semibold dark:text-white">Commission</th>
                 </tr>
               </thead>
               <tbody>
@@ -4136,51 +4367,51 @@ export default function BacktestResults({
                     : null;
 
                   return (
-                    <tr key={idx} className="hover:bg-gray-50 transition-colors">
-                      <td className="border p-3">{trade.signal_date || trade.date}</td>
-                      <td className="border p-3">
+                    <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                      <td className="border dark:border-gray-700 p-3 dark:text-gray-200">{trade.signal_date || trade.date}</td>
+                      <td className="border dark:border-gray-700 p-3 dark:text-gray-200">
                         {trade.execution_date || trade.date}
                         {trade.execution_mode === 'next_open' && (
-                          <span className="ml-2 text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                          <span className="ml-2 text-xs bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-300 px-2 py-1 rounded">
                             Next Day
                           </span>
                         )}
                       </td>
-                      <td className="border p-3">
+                      <td className="border dark:border-gray-700 p-3">
                         <span
                           className={`px-3 py-1 rounded text-sm font-medium ${
                             trade.type === 'buy'
-                              ? 'bg-green-100 text-green-800'
-                              : 'bg-red-100 text-red-800'
+                              ? 'bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-300'
+                              : 'bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300'
                           }`}
                         >
                           {trade.type.toUpperCase()}
                         </span>
                       </td>
-                      <td className="border p-3 text-right font-mono">
+                      <td className="border dark:border-gray-700 p-3 text-right font-mono dark:text-gray-200">
                         {trade.signal_price !== undefined && trade.signal_price > 0
                           ? trade.signal_price.toFixed(2)
                           : '-'}
                       </td>
-                      <td className="border p-3 text-right font-mono">
+                      <td className="border dark:border-gray-700 p-3 text-right font-mono dark:text-gray-200">
                         {trade.price !== undefined && trade.price > 0
                           ? trade.price.toFixed(2)
                           : 'N/A'}
                       </td>
-                      <td className={`border p-3 text-right font-mono ${
-                        slippage !== null ? (slippage >= 0 ? 'text-red-600' : 'text-green-600') : ''
+                      <td className={`border dark:border-gray-700 p-3 text-right font-mono ${
+                        slippage !== null ? (slippage >= 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400') : 'dark:text-gray-200'
                       }`}>
                         {slippage !== null ? `${slippage >= 0 ? '+' : ''}${slippage.toFixed(2)}%` : '-'}
                       </td>
-                      <td className="border p-3 text-right font-mono">
+                      <td className="border dark:border-gray-700 p-3 text-right font-mono dark:text-gray-200">
                         {trade.size !== undefined ? trade.size.toLocaleString() : (trade.amount ? formatNumber(trade.amount) : 'N/A')}
                       </td>
-                      <td className="border p-3 text-right font-mono">
+                      <td className="border dark:border-gray-700 p-3 text-right font-mono dark:text-gray-200">
                         {trade.value !== undefined && trade.value > 0
                           ? formatNumber(trade.value)
                           : 'N/A'}
                       </td>
-                      <td className="border p-3 text-right font-mono text-gray-500">
+                      <td className="border dark:border-gray-700 p-3 text-right font-mono text-gray-500 dark:text-gray-400">
                         {trade.commission !== undefined && trade.commission > 0
                           ? formatNumber(trade.commission)
                           : '-'}
@@ -4198,7 +4429,7 @@ export default function BacktestResults({
               <button
                 onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
                 disabled={currentPage === 1}
-                className="px-4 py-2 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                className="px-4 py-2 border dark:border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white"
               >
                 Previous
               </button>
@@ -4218,10 +4449,10 @@ export default function BacktestResults({
                     <button
                       key={pageNum}
                       onClick={() => setCurrentPage(pageNum)}
-                      className={`px-3 py-2 border rounded ${
+                      className={`px-3 py-2 border dark:border-gray-600 rounded ${
                         currentPage === pageNum
                           ? 'bg-blue-600 text-white'
-                          : 'hover:bg-gray-100'
+                          : 'hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white'
                       }`}
                     >
                       {pageNum}
@@ -4232,7 +4463,7 @@ export default function BacktestResults({
               <button
                 onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
                 disabled={currentPage === totalPages}
-                className="px-4 py-2 border rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+                className="px-4 py-2 border dark:border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white"
               >
                 Next
               </button>
@@ -4244,9 +4475,9 @@ export default function BacktestResults({
       {/* Charts Tab - always render containers but conditionally show them */}
       <div className={selectedTab === 'charts' ? 'space-y-6' : 'hidden'}>
         <div>
-          <h3 className="text-lg font-semibold mb-3 text-gray-700 border-b pb-2">Price Chart with Trade Markers</h3>
+          <h3 className="text-lg font-semibold mb-3 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 pb-2">Price Chart with Trade Markers</h3>
           <div
-            className="border rounded-lg bg-white overflow-hidden"
+            className="border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 overflow-hidden"
             style={{ overscrollBehavior: 'contain', touchAction: 'pan-y pinch-zoom' }}
             onWheel={(e) => {
               if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
@@ -4256,7 +4487,7 @@ export default function BacktestResults({
           >
             <div ref={priceChartRef} style={{ width: '100%', height: '400px', overscrollBehavior: 'contain' }} />
           </div>
-          <div className="mt-2 text-sm text-gray-600 flex items-center gap-4">
+          <div className="mt-2 text-sm text-gray-600 dark:text-gray-400 flex items-center gap-4">
             <div className="flex items-center gap-1">
               <span className="inline-block w-3 h-3 bg-blue-500"></span>
               <span>Buy (B)</span>
@@ -4270,7 +4501,7 @@ export default function BacktestResults({
           {/* Trade Detail Panels */}
           <div className="mt-4 grid grid-cols-2 gap-4">
             {/* Left Trade Panel */}
-            <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+            <div className="border dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
               <h4 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">
                 Previous Trade
               </h4>
@@ -4329,7 +4560,7 @@ export default function BacktestResults({
             </div>
 
             {/* Right Trade Panel */}
-            <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
+            <div className="border dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-800">
               <h4 className="text-sm font-semibold mb-2 text-gray-700 dark:text-gray-300">
                 Next Trade
               </h4>
@@ -4389,9 +4620,9 @@ export default function BacktestResults({
           </div>
         </div>
         <div>
-          <h3 className="text-lg font-semibold mb-3 text-gray-700 border-b pb-2">Drawdown Chart</h3>
+          <h3 className="text-lg font-semibold mb-3 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 pb-2">Drawdown Chart</h3>
           <div
-            className="border rounded-lg bg-white overflow-hidden"
+            className="border dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 overflow-hidden"
             style={{ overscrollBehavior: 'contain', touchAction: 'pan-y pinch-zoom' }}
             onWheel={(e) => {
               if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
@@ -4401,7 +4632,7 @@ export default function BacktestResults({
           >
             <div ref={drawdownChartRef} style={{ width: '100%', height: '300px', overscrollBehavior: 'contain' }} />
           </div>
-          <div className="mt-2 text-sm text-gray-600">
+          <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
             Shows the percentage decline from the peak equity value over time
           </div>
         </div>
@@ -4412,13 +4643,13 @@ export default function BacktestResults({
         <div className="space-y-6">
           {/* Year Selection */}
           {availableYears.length > 0 && (
-            <div className="mb-4 p-4 bg-gray-50 border rounded-lg">
+            <div className="mb-4 p-4 bg-gray-50 dark:bg-gray-800 border dark:border-gray-700 rounded-lg">
               <div className="flex items-center gap-4">
-                <label className="text-sm font-medium text-gray-700">Select Year:</label>
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Select Year:</label>
                 <select
                   value={selectedYear}
                   onChange={(e) => setSelectedYear(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded text-sm bg-white hover:border-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 dark:text-white hover:border-gray-400 dark:hover:border-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   {availableYears.map(year => (
                     <option key={year} value={year}>
@@ -4427,7 +4658,7 @@ export default function BacktestResults({
                   ))}
                 </select>
                 {availableYears.length > 1 && (
-                  <div className="ml-auto text-sm text-gray-600">
+                  <div className="ml-auto text-sm text-gray-600 dark:text-gray-400">
                     Showing {filteredMonthlyPerformance.length} months for {selectedYear}
                   </div>
                 )}
@@ -4437,32 +4668,32 @@ export default function BacktestResults({
 
           {/* Monthly Performance */}
           <div>
-            <h3 className="text-lg font-semibold mb-3 text-gray-700 border-b pb-2">
+            <h3 className="text-lg font-semibold mb-3 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 pb-2">
               Monthly Performance {selectedYear && `(${selectedYear})`}
             </h3>
             {filteredMonthlyPerformance.length > 0 ? (
-              <div className="overflow-x-auto border rounded-lg">
+              <div className="overflow-x-auto border dark:border-gray-700 rounded-lg">
                 <table className="w-full border-collapse">
                   <thead>
-                    <tr className="bg-gray-100">
-                      <th className="border p-3 text-left font-semibold">Month</th>
-                      <th className="border p-3 text-right font-semibold">Return %</th>
-                      <th className="border p-3 text-right font-semibold">Trades</th>
-                      <th className="border p-3 text-right font-semibold">Avg Daily Return %</th>
+                    <tr className="bg-gray-100 dark:bg-gray-800">
+                      <th className="border dark:border-gray-700 p-3 text-left font-semibold dark:text-white">Month</th>
+                      <th className="border dark:border-gray-700 p-3 text-right font-semibold dark:text-white">Return %</th>
+                      <th className="border dark:border-gray-700 p-3 text-right font-semibold dark:text-white">Trades</th>
+                      <th className="border dark:border-gray-700 p-3 text-right font-semibold dark:text-white">Avg Daily Return %</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredMonthlyPerformance.map((month, idx) => (
-                      <tr key={idx} className="hover:bg-gray-50">
-                        <td className="border p-3">{month.month}</td>
-                        <td className={`border p-3 text-right font-mono font-semibold ${
-                          month.return >= 0 ? 'text-green-600' : 'text-red-600'
+                      <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                        <td className="border dark:border-gray-700 p-3 dark:text-gray-200">{month.month}</td>
+                        <td className={`border dark:border-gray-700 p-3 text-right font-mono font-semibold ${
+                          month.return >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
                         }`}>
                           {formatPercent(month.return)}
                         </td>
-                        <td className="border p-3 text-right">{month.trades}</td>
-                        <td className={`border p-3 text-right font-mono ${
-                          month.avgReturn >= 0 ? 'text-green-600' : 'text-red-600'
+                        <td className="border dark:border-gray-700 p-3 text-right dark:text-gray-200">{month.trades}</td>
+                        <td className={`border dark:border-gray-700 p-3 text-right font-mono ${
+                          month.avgReturn >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
                         }`}>
                           {month.avgReturn.toFixed(3)}%
                         </td>
@@ -4472,7 +4703,7 @@ export default function BacktestResults({
                 </table>
               </div>
             ) : (
-              <div className="p-8 text-center text-gray-500 border rounded-lg bg-gray-50">
+              <div className="p-8 text-center text-gray-500 dark:text-gray-400 border dark:border-gray-700 rounded-lg bg-gray-50 dark:bg-gray-800">
                 No data available for the selected year
               </div>
             )}
@@ -4480,31 +4711,31 @@ export default function BacktestResults({
 
           {/* Returns Distribution */}
           <div>
-            <h3 className="text-lg font-semibold mb-3 text-gray-700 border-b pb-2">Returns Distribution</h3>
+            <h3 className="text-lg font-semibold mb-3 text-gray-700 dark:text-gray-300 border-b border-gray-200 dark:border-gray-700 pb-2">Returns Distribution</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-              <div className="bg-gray-50 p-4 rounded-lg border">
-                <div className="text-sm text-gray-600 mb-1">Mean Daily Return</div>
+              <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border dark:border-gray-700">
+                <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Mean Daily Return</div>
                 <div className={`text-2xl font-bold ${
-                  returnsDistribution.mean >= 0 ? 'text-green-600' : 'text-red-600'
+                  returnsDistribution.mean >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
                 }`}>
                   {returnsDistribution.mean.toFixed(3)}%
                 </div>
               </div>
-              <div className="bg-gray-50 p-4 rounded-lg border">
-                <div className="text-sm text-gray-600 mb-1">Std Deviation</div>
-                <div className="text-2xl font-bold">
+              <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border dark:border-gray-700">
+                <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Std Deviation</div>
+                <div className="text-2xl font-bold dark:text-white">
                   {returnsDistribution.stdDev.toFixed(3)}%
                 </div>
               </div>
-              <div className="bg-gray-50 p-4 rounded-lg border">
-                <div className="text-sm text-gray-600 mb-1">Sample Size</div>
-                <div className="text-2xl font-bold">
+              <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg border dark:border-gray-700">
+                <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Sample Size</div>
+                <div className="text-2xl font-bold dark:text-white">
                   {returnsDistribution.returns.length}
                 </div>
-                <div className="text-xs text-gray-500 mt-1">Days</div>
+                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Days</div>
               </div>
             </div>
-            <div className="p-4 bg-gray-50 border rounded-lg text-center text-gray-600">
+            <div className="p-4 bg-gray-50 dark:bg-gray-800 border dark:border-gray-700 rounded-lg text-center text-gray-600 dark:text-gray-400">
               Returns distribution histogram will be displayed here
               <div className="mt-2 text-sm">(Visualization in progress)</div>
             </div>

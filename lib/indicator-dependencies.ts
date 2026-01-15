@@ -1,6 +1,36 @@
 import { Indicator } from './indicator-storage';
 
 /**
+ * Replace column name references in Python code
+ * Handles patterns like: data['column_name'], data["column_name"], data[column_name]
+ */
+export function replaceColumnInCode(
+  code: string,
+  oldColumnName: string,
+  newColumnName: string
+): string {
+  // Escape special regex characters in the column name
+  const escapedOld = oldColumnName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  // Pattern 1: data['column_name'] or data["column_name"]
+  const singleQuotePattern = new RegExp(`data\\['${escapedOld}'\\]`, 'g');
+  const doubleQuotePattern = new RegExp(`data\\["${escapedOld}"\\]`, 'g');
+
+  // Pattern 2: Direct string references (for dict returns in group indicators)
+  // e.g., 'column_name': value or "column_name": value
+  const dictKeySingle = new RegExp(`'${escapedOld}'\\s*:`, 'g');
+  const dictKeyDouble = new RegExp(`"${escapedOld}"\\s*:`, 'g');
+
+  let result = code;
+  result = result.replace(singleQuotePattern, `data['${newColumnName}']`);
+  result = result.replace(doubleQuotePattern, `data["${newColumnName}"]`);
+  result = result.replace(dictKeySingle, `'${newColumnName}':`);
+  result = result.replace(dictKeyDouble, `"${newColumnName}":`);
+
+  return result;
+}
+
+/**
  * Find all indicators that depend on the given indicator
  */
 export function findDependentIndicators(

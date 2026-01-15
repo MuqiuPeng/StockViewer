@@ -1,0 +1,53 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Build outputs
+.next
+out
+build
+
+# Python
+venv
+aktools-env
+__pycache__
+*.pyc
+*.pyo
+
+# Data (will be mounted as volumes)
+data/csv/*
+data/indicators/*.json
+data/strategies/*.json
+data/groups/*.json
+data/backtest-history/*.json
+data/datasets/*
+data/view-settings/*.json
+
+# Logs
+logs
+*.log
+*.log.*
+aktools_log.log*
+
+# IDE/Editor
+.cursor
+.claude
+.vscode
+.idea
+
+# Git
+.git
+.gitignore
+
+# Docker
+docker
+Dockerfile*
+docker-compose*.yml
+
+# Misc
+.DS_Store
+*.pem
+.env
+.env*.local
+.vercel

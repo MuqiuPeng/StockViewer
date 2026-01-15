@@ -1,0 +1,29 @@
+# AKTools API Service
+FROM python:3.11-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user
+RUN useradd --create-home --shell /bin/bash aktools
+
+# Switch to non-root user
+USER aktools
+WORKDIR /home/aktools
+
+# Set writable temp directory for pip
+ENV TMPDIR=/home/aktools/tmp
+RUN mkdir -p /home/aktools/tmp
+
+# Install aktools
+RUN pip install --user --no-cache-dir aktools
+
+# Add local bin to PATH
+ENV PATH="/home/aktools/.local/bin:$PATH"
+
+EXPOSE 8080
+
+# Run aktools API server
+CMD ["python", "-m", "aktools"]

@@ -1,9 +1,76 @@
 import { NextResponse } from 'next/server';
 import { getIndicatorById, updateIndicator, deleteIndicator, loadIndicators, saveIndicators } from '@/lib/indicator-storage';
 import { validatePythonCode } from '@/lib/indicator-validator';
-import { findDependentIndicators, getCascadeDeleteList, findIndicatorsDependingOnColumns } from '@/lib/indicator-dependencies';
+import { findDependentIndicators, getCascadeDeleteList, findIndicatorsDependingOnColumns, replaceColumnInCode } from '@/lib/indicator-dependencies';
 import { detectDependencies } from '@/lib/detect-dependencies';
 import { renameGroupIndicatorColumns, removeGroupIndicatorColumns, cleanupOrphanedGroupColumns } from '@/lib/csv-updater';
+
+// Helper to detect column name changes and find affected indicators
+interface ColumnRename {
+  oldName: string;
+  newName: string;
+}
+
+function detectColumnRenames(
+  existingIndicator: any,
+  updates: {
+    outputColumn?: string;
+    groupName?: string;
+    expectedOutputs?: string[];
+  }
+): ColumnRename[] {
+  const renames: ColumnRename[] = [];
+
+  if (existingIndicator.isGroup) {
+    // Group indicator
+    const oldGroupName = existingIndicator.groupName;
+    const newGroupName = updates.groupName !== undefined ? updates.groupName : oldGroupName;
+    const oldOutputs = existingIndicator.expectedOutputs || [];
+    const newOutputs = updates.expectedOutputs !== undefined ? updates.expectedOutputs : oldOutputs;
+
+    // Check if group name is changing
+    if (oldGroupName && newGroupName && oldGroupName !== newGroupName) {
+      // All columns with old group name need to be renamed
+      for (const output of oldOutputs) {
+        if (output.trim()) {
+          renames.push({
+            oldName: `${oldGroupName}:${output}`,
+            newName: `${newGroupName}:${output}`,
+          });
+        }
+      }
+    }
+
+    // Check if individual output names are changing (only if group name didn't change)
+    if (oldGroupName === newGroupName && oldOutputs.length > 0 && newOutputs.length > 0) {
+      // Match outputs by index to detect renames
+      const maxLen = Math.min(oldOutputs.length, newOutputs.length);
+      for (let i = 0; i < maxLen; i++) {
+        const oldOutput = oldOutputs[i]?.trim();
+        const newOutput = newOutputs[i]?.trim();
+        if (oldOutput && newOutput && oldOutput !== newOutput) {
+          renames.push({
+            oldName: `${oldGroupName}:${oldOutput}`,
+            newName: `${newGroupName}:${newOutput}`,
+          });
+        }
+      }
+    }
+  } else {
+    // Single indicator
+    const oldOutputColumn = existingIndicator.outputColumn;
+    const newOutputColumn = updates.outputColumn;
+
+    if (oldOutputColumn && newOutputColumn && oldOutputColumn !== newOutputColumn) {
+      renames.push({
+        oldName: oldOutputColumn,
+        newName: newOutputColumn,
+      });
+    }
+  }
+
+  return renames;
+}
 
 export const runtime = 'nodejs';
 
@@ -101,7 +168,112 @@ export async function PUT(
     if (expectedOutputs !== undefined) {
       updates.expectedOutputs = expectedOutputs.filter((output: string) => output.trim() !== '');
     }
-    if (externalDatasets !== undefined) updates.externalDatasets = externalDatasets;
+    // Handle externalDatasets - null means clear all, undefined means don't change
+    if (externalDatasets !== undefined) {
+      updates.externalDatasets = externalDatasets === null ? undefined : externalDatasets;
+    }
+
+    // Detect column renames
+    const columnRenames = detectColumnRenames(existingIndicator, {
+      outputColumn,
+      groupName,
+      expectedOutputs: expectedOutputs ? expectedOutputs.filter((output: string) => output.trim() !== '') : undefined,
+    });
+
+    // Check URL params
+    const url = new URL(request.url);
+    const autoFix = url.searchParams.get('autoFix') === 'true';
+
+    // If there are column renames, check for dependent indicators
+    if (columnRenames.length > 0) {
+      const allIndicators = await loadIndicators();
+      const oldColumnNames = columnRenames.map(r => r.oldName);
+      const columnDependents = findIndicatorsDependingOnColumns(oldColumnNames, allIndicators);
+
+      // Filter out the current indicator from dependents
+      const affectedIndicators: { column: string; newColumn: string; indicators: { id: string; name: string }[] }[] = [];
+
+      columnDependents.forEach((indicators, column) => {
+        const filtered = indicators.filter(ind => ind.id !== params.id);
+        if (filtered.length > 0) {
+          const rename = columnRenames.find(r => r.oldName === column);
+          affectedIndicators.push({
+            column,
+            newColumn: rename?.newName || column,
+            indicators: filtered.map(ind => ({ id: ind.id, name: ind.name })),
+          });
+        }
+      });
+
+      if (affectedIndicators.length > 0 && !autoFix) {
+        // Return info about affected indicators, ask for confirmation
+        return NextResponse.json(
+          {
+            error: 'Column rename affects dependent indicators',
+            message: 'The column name change will affect other indicators that use this column',
+            columnRenames: affectedIndicators,
+            requiresAutoFix: true,
+          },
+          { status: 400 }
+        );
+      }
+
+      // Auto-fix: Update code in all dependent indicators
+      if (affectedIndicators.length > 0 && autoFix) {
+        console.log(`Auto-fixing ${affectedIndicators.length} column renames in dependent indicators`);
+
+        // Get all affected indicator IDs
+        const affectedIds = new Set<string>();
+        affectedIndicators.forEach(({ indicators }) => {
+          indicators.forEach(ind => affectedIds.add(ind.id));
+        });
+
+        // IMPORTANT: First update the target indicator in allIndicators with the new column names
+        // so that dependency detection can find the new columns
+        const targetIndicatorIndex = allIndicators.findIndex(ind => ind.id === params.id);
+        if (targetIndicatorIndex !== -1) {
+          // Apply updates to the target indicator
+          if (outputColumn !== undefined) {
+            allIndicators[targetIndicatorIndex].outputColumn = outputColumn;
+          }
+          if (groupName !== undefined) {
+            allIndicators[targetIndicatorIndex].groupName = groupName;
+          }
+          if (expectedOutputs !== undefined) {
+            allIndicators[targetIndicatorIndex].expectedOutputs = expectedOutputs.filter((o: string) => o.trim() !== '');
+          }
+        }
+
+        // Update each affected indicator's code
+        for (const indicator of allIndicators) {
+          if (affectedIds.has(indicator.id)) {
+            let updatedCode = indicator.pythonCode;
+
+            // Apply all renames
+            for (const rename of columnRenames) {
+              updatedCode = replaceColumnInCode(updatedCode, rename.oldName, rename.newName);
+            }
+
+            if (updatedCode !== indicator.pythonCode) {
+              // Re-detect dependencies with the updated code
+              // Now allIndicators has the updated target indicator, so dependencies will be found correctly
+              const { dependencies, dependencyColumns } = detectDependencies(updatedCode, allIndicators, indicator.id);
+
+              // Update the indicator
+              indicator.pythonCode = updatedCode;
+              indicator.dependencies = dependencies;
+              indicator.dependencyColumns = dependencyColumns;
+              indicator.updatedAt = new Date().toISOString();
+
+              console.log(`Updated code in indicator "${indicator.name}"`);
+            }
+          }
+        }
+
+        // Save all updated indicators
+        await saveIndicators(allIndicators);
+      }
+    }
 
     // Re-detect dependencies if Python code is being updated
     if (pythonCode !== undefined) {

@@ -278,10 +278,10 @@ export default function BacktestPage() {
         </div>
 
         {backtestResults?.dateRange && (
-          <div className="flex items-center gap-4 text-sm bg-blue-50 border border-blue-200 rounded px-4 py-2">
+          <div className="flex items-center gap-4 text-sm bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded px-4 py-2">
             <div>
-              <span className="text-gray-600">Period:</span>{' '}
-              <span className="font-medium">
+              <span className="text-gray-600 dark:text-gray-400">Period:</span>{' '}
+              <span className="font-medium text-gray-900 dark:text-white">
                 {backtestResults.dateRange.startDate
                   ? new Date(backtestResults.dateRange.startDate).toLocaleDateString()
                   : 'Start'} -{' '}
@@ -292,8 +292,8 @@ export default function BacktestPage() {
             </div>
             {backtestResults.dateRange.dataPoints && (
               <div>
-                <span className="text-gray-600">Data Points:</span>{' '}
-                <span className="font-medium">{backtestResults.dateRange.dataPoints.toLocaleString()}</span>
+                <span className="text-gray-600 dark:text-gray-400">Data Points:</span>{' '}
+                <span className="font-medium text-gray-900 dark:text-white">{backtestResults.dateRange.dataPoints.toLocaleString()}</span>
               </div>
             )}
           </div>
@@ -348,7 +348,7 @@ export default function BacktestPage() {
       {isBacktestLoading && (
         <div className="mt-8 text-center py-12">
           <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600"></div>
-          <p className="mt-4 text-gray-600">Running backtest...</p>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Running backtest...</p>
         </div>
       )}
 

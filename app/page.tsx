@@ -13,7 +13,7 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="grid md:grid-cols-3 gap-6 max-w-5xl mx-auto mb-16">
+        <div className="grid md:grid-cols-4 gap-6 max-w-6xl mx-auto mb-16">
           <Link
             href="/viewer"
             className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md hover:shadow-lg dark:shadow-none dark:hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] transition-shadow border border-gray-200 dark:border-gray-700 dark:hover:border-gray-500"
@@ -44,6 +44,17 @@ export default function Home() {
             <h2 className="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Datasets</h2>
             <p className="text-gray-600 dark:text-gray-400">
               Manage your stock datasets and organize them into groups
+            </p>
+          </Link>
+
+          <Link
+            href="/docs"
+            className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-md hover:shadow-lg dark:shadow-none dark:hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] transition-shadow border border-gray-200 dark:border-gray-700 dark:hover:border-gray-500"
+          >
+            <div className="text-4xl mb-4">📖</div>
+            <h2 className="text-2xl font-bold mb-2 text-gray-900 dark:text-white">Docs</h2>
+            <p className="text-gray-600 dark:text-gray-400">
+              Learn how to use all features with comprehensive documentation
             </p>
           </Link>
         </div>

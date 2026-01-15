@@ -13,6 +13,7 @@ interface Indicator {
   isGroup?: boolean;
   groupName?: string;
   expectedOutputs?: string[];
+  dependencyColumns?: string[];
   createdAt: string;
   updatedAt?: string;
 }
@@ -159,7 +160,7 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
       />
 
       {/* Modal */}
-      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-4xl max-h-[80vh] overflow-y-auto">
+      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-6xl max-h-[80vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold dark:text-white">Indicator Manager</h2>
           <button
@@ -197,6 +198,7 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
               <tr className="bg-gray-100 dark:bg-gray-700">
                 <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Name</th>
                 <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Description</th>
+                <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Depending Cols</th>
                 <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Output Column</th>
                 <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Actions</th>
               </tr>
@@ -206,6 +208,11 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
                 <tr key={indicator.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                   <td className="border dark:border-gray-600 p-2 font-medium dark:text-white">{indicator.name}</td>
                   <td className="border dark:border-gray-600 p-2 dark:text-gray-200">{indicator.description}</td>
+                  <td className="border dark:border-gray-600 p-2 font-mono text-sm dark:text-gray-300">
+                    {indicator.dependencyColumns && indicator.dependencyColumns.length > 0
+                      ? indicator.dependencyColumns.join(', ')
+                      : <span className="text-gray-400 dark:text-gray-500 italic">None</span>}
+                  </td>
                   <td className="border dark:border-gray-600 p-2 font-mono text-sm dark:text-gray-300">{formatOutputColumn(indicator)}</td>
                   <td className="border dark:border-gray-600 p-2">
                     <div className="flex gap-2">

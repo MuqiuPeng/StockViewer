@@ -1,0 +1,58 @@
+services:
+  # Main StockViewer Application
+  app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_AKTOOLS_API_URL=http://aktools:8080
+      - PYTHON_EXECUTABLE=python3
+      - PYTHON_TIMEOUT_MS=300000
+    volumes:
+      # Persist data between container restarts
+      - stockviewer-csv:/app/data/csv
+      - stockviewer-indicators:/app/data/indicators
+      - stockviewer-strategies:/app/data/strategies
+      - stockviewer-groups:/app/data/groups
+      - stockviewer-backtest:/app/data/backtest-history
+      - stockviewer-datasets:/app/data/datasets
+      - stockviewer-viewsettings:/app/data/view-settings
+    depends_on:
+      aktools:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - stockviewer-network
+
+  # AKTools API Service
+  aktools:
+    build:
+      context: .
+      dockerfile: Dockerfile.aktools
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - stockviewer-network
+
+networks:
+  stockviewer-network:
+    driver: bridge
+
+volumes:
+  stockviewer-csv:
+  stockviewer-indicators:
+  stockviewer-strategies:
+  stockviewer-groups:
+  stockviewer-backtest:
+  stockviewer-datasets:
+  stockviewer-viewsettings:

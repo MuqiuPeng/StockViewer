@@ -200,6 +200,13 @@ class BaseExecutor:
                     warnings.warn(f"Skipping incomplete external dataset config for '{param_name}'")
                     continue
 
+                # Check if "All" datasets is selected
+                if dataset_name == '__all__':
+                    result_df = self._merge_all_datasets_from_group(
+                        result_df, param_name, group_id, group_id_to_name, groups_data
+                    )
+                    continue
+
                 # Load the external dataset
                 ext_df = None
                 if group_id.startswith('datasource_'):
@@ -261,6 +268,127 @@ class BaseExecutor:
                 import sys
                 traceback.print_exc(file=sys.stderr)
                 continue
+
+        return result_df
+
+    def _merge_all_datasets_from_group(
+        self,
+        result_df: pd.DataFrame,
+        param_name: str,
+        group_id: str,
+        group_id_to_name: Dict[str, str],
+        groups_data: dict
+    ) -> pd.DataFrame:
+        """
+        Merge ALL datasets from a group, creating dict columns for each column name.
+
+        When accessing data['{param_name}@{col_name}'], returns a Series where each row
+        is a dict of {dataset_name: value}.
+
+        Args:
+            result_df: Main DataFrame to merge into
+            param_name: Parameter name for this external dataset
+            group_id: ID of the group to load all datasets from
+            group_id_to_name: Mapping of group IDs to names
+            groups_data: Full groups data from groups.json
+
+        Returns:
+            DataFrame with dict columns for each column in the datasets
+        """
+        # Find the group
+        group_info = None
+        for group in groups_data.get('groups', []):
+            if group['id'] == group_id:
+                group_info = group
+                break
+
+        if not group_info:
+            warnings.warn(f"Group ID '{group_id}' not found for parameter '{param_name}'")
+            return result_df
+
+        dataset_names = group_info.get('datasetNames', [])
+        if not dataset_names:
+            warnings.warn(f"No datasets found in group for parameter '{param_name}'")
+            return result_df
+
+        print(f"INFO: Loading ALL {len(dataset_names)} datasets from group for '{param_name}'", file=sys.stderr)
+
+        # Load all datasets and collect them
+        all_datasets: Dict[str, pd.DataFrame] = {}
+        all_columns: set = set()
+
+        for ds_name in dataset_names:
+            try:
+                ext_df = None
+                if group_id.startswith('datasource_'):
+                    # Data source group - load directly from CSV file
+                    csv_path = os.path.join(os.getcwd(), 'data', 'csv', ds_name)
+                    if not os.path.exists(csv_path):
+                        continue
+                    ext_df = pd.read_csv(csv_path)
+                else:
+                    # Custom group
+                    group_name = group_id_to_name.get(group_id)
+                    if group_name:
+                        ext_df = self.load_dataset_from_group(group_name, ds_name)
+
+                if ext_df is None or ext_df.empty:
+                    continue
+
+                # Prepare for merging
+                if 'date' in ext_df.columns:
+                    ext_df['date'] = pd.to_datetime(ext_df['date'])
+                    ext_df.set_index('date', drop=True, inplace=True)
+
+                # Normalize date index
+                if isinstance(ext_df.index, pd.DatetimeIndex):
+                    if ext_df.index.tz is not None:
+                        ext_df.index = pd.DatetimeIndex(ext_df.index.date)
+                    else:
+                        ext_df.index = ext_df.index.normalize()
+
+                # Store dataset with clean name (remove .csv extension)
+                clean_name = ds_name.replace('.csv', '')
+                all_datasets[clean_name] = ext_df
+                all_columns.update(ext_df.columns)
+
+            except Exception as e:
+                warnings.warn(f"Failed to load dataset '{ds_name}': {e}")
+                continue
+
+        if not all_datasets:
+            warnings.warn(f"No datasets could be loaded for parameter '{param_name}'")
+            return result_df
+
+        # Normalize result_df index
+        if isinstance(result_df.index, pd.DatetimeIndex):
+            if result_df.index.tz is not None:
+                result_df.index = pd.DatetimeIndex(result_df.index.date)
+            else:
+                result_df.index = result_df.index.normalize()
+
+        # For each column, create an array column containing all dataset values for each row
+        # data['param@col'] returns an array of values from all datasets for that date
+        for col_name in all_columns:
+            array_col_name = f'{param_name}@{col_name}'
+
+            # Build array for each row in result_df
+            array_values = []
+            for idx in result_df.index:
+                row_array = []
+                for ds_name, ds_df in all_datasets.items():
+                    if col_name in ds_df.columns and idx in ds_df.index:
+                        value = ds_df.loc[idx, col_name]
+                        # Handle NaN values
+                        if pd.isna(value):
+                            row_array.append(None)
+                        else:
+                            row_array.append(value)
+                array_values.append(row_array)
+
+            result_df[array_col_name] = array_values
+
+        print(f"INFO: Created {len(all_columns)} array columns from {len(all_datasets)} datasets for '{param_name}'", file=sys.stderr)
 
         return result_df
 

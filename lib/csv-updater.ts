@@ -4,6 +4,137 @@ import { getCsvFileStats } from './datasets';
 import { cleanDateColumn } from './date-cleaner';
 import { loadMetadata, saveMetadata } from './dataset-metadata';
 
+// Basic columns that are always valid (from CSV data, not indicators)
+export const REQUIRED_COLUMNS = ['date', 'open', 'high', 'low', 'close'];
+export const BASE_INDICATORS = ['volume', 'turnover', 'amplitude', 'change_pct', 'change_amount', 'turnover_rate'];
+
+/**
+ * Get all unique column names across all datasets
+ */
+export async function getAllColumnsFromDatasets(): Promise<{ columns: Set<string>; errors: string[] }> {
+  const datasets = await loadMetadata();
+  const allColumns = new Set<string>();
+  const errors: string[] = [];
+
+  for (const dataset of datasets) {
+    try {
+      const fileStats = await getCsvFileStats(dataset.filename);
+      if (!fileStats.exists) {
+        continue;
+      }
+
+      const fileContent = await readFile(fileStats.path, 'utf-8');
+
+      await new Promise<void>((resolve, reject) => {
+        Papa.parse(fileContent, {
+          header: true,
+          preview: 1, // Only need headers, not all data
+          complete: (results) => {
+            const headers = results.meta.fields || [];
+            headers.forEach(col => allColumns.add(col));
+            resolve();
+          },
+          error: (error: Error) => {
+            reject(new Error(`CSV parsing error: ${error.message}`));
+          },
+        });
+      });
+    } catch (error) {
+      errors.push(`Failed to read ${dataset.filename}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  return { columns: allColumns, errors };
+}
+
+/**
+ * Remove specific columns from all datasets
+ */
+export async function removeColumnsFromAllDatasets(
+  columnsToRemove: string[]
+): Promise<{ updatedCount: number; errors: string[] }> {
+  const datasets = await loadMetadata();
+  const errors: string[] = [];
+  let updatedCount = 0;
+
+  for (const dataset of datasets) {
+    try {
+      const fileStats = await getCsvFileStats(dataset.filename);
+      if (!fileStats.exists) {
+        continue;
+      }
+
+      const fileContent = await readFile(fileStats.path, 'utf-8');
+
+      const updated = await new Promise<boolean>((resolve, reject) => {
+        Papa.parse(fileContent, {
+          header: true,
+          skipEmptyLines: true,
+          complete: async (results) => {
+            try {
+              const rows = results.data as Record<string, any>[];
+              const headers = results.meta.fields || [];
+
+              // Check if this CSV has any of the columns to remove
+              const matchingColumns = headers.filter(col => columnsToRemove.includes(col));
+
+              if (matchingColumns.length === 0) {
+                resolve(false);
+                return;
+              }
+
+              // Remove the specified columns from each row
+              const updatedRows = rows.map(row => {
+                const newRow: Record<string, any> = {};
+                for (const [key, value] of Object.entries(row)) {
+                  if (!columnsToRemove.includes(key)) {
+                    newRow[key] = value;
+                  }
+                }
+                return newRow;
+              });
+
+              // Clean date column
+              cleanDateColumn(updatedRows, 'date');
+
+              // Generate updated CSV
+              const updatedCsv = Papa.unparse(updatedRows);
+
+              // Write back to file
+              await writeFile(fileStats.path, updatedCsv, 'utf-8');
+
+              // Update dataset metadata columns if present
+              if (dataset.columns) {
+                dataset.columns = dataset.columns.filter(col => !columnsToRemove.includes(col));
+              }
+
+              resolve(true);
+            } catch (error) {
+              reject(error);
+            }
+          },
+          error: (error: Error) => {
+            reject(new Error(`CSV parsing error: ${error.message}`));
+          },
+        });
+      });
+
+      if (updated) {
+        updatedCount++;
+      }
+    } catch (error) {
+      errors.push(`Failed to update ${dataset.filename}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
+  // Save updated metadata
+  if (updatedCount > 0) {
+    await saveMetadata(datasets);
+  }
+
+  return { updatedCount, errors };
+}
+
 export async function addIndicatorGroupColumns(
   filename: string,
   groupName: string,

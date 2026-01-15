@@ -94,6 +94,21 @@ export default function IndicatorEditorModal({
   const [editorInstance, setEditorInstance] = useState<any>(null);
   const [monacoInstance, setMonacoInstance] = useState<any>(null);
 
+  // Orphaned columns check state
+  const [showOrphanedColumnsModal, setShowOrphanedColumnsModal] = useState(false);
+  const [orphanedColumnsData, setOrphanedColumnsData] = useState<{
+    orphanedColumns: string[];
+    dependentIndicators: { column: string; indicators: { id: string; name: string }[] }[];
+  } | null>(null);
+  const [isCleaningOrphans, setIsCleaningOrphans] = useState(false);
+
+  // Column rename auto-fix state
+  const [showColumnRenameModal, setShowColumnRenameModal] = useState(false);
+  const [columnRenameData, setColumnRenameData] = useState<{
+    columnRenames: { column: string; newColumn: string; indicators: { id: string; name: string }[] }[];
+    pendingSubmit: any; // Store the pending request body
+  } | null>(null);
+
   // Load groups on mount (includes both custom and data source groups)
   useEffect(() => {
     if (isOpen) {
@@ -264,9 +279,11 @@ export default function IndicatorEditorModal({
         )
       );
 
-      if (Object.keys(validExternalDatasets).length > 0) {
-        requestBody.externalDatasets = validExternalDatasets;
-      }
+      // Always send externalDatasets (even if empty) so the API knows to clear it
+      // Use null to signal "clear all external datasets"
+      requestBody.externalDatasets = Object.keys(validExternalDatasets).length > 0
+        ? validExternalDatasets
+        : null;
 
       const response = await fetch(url, {
         method,
@@ -277,6 +294,18 @@ export default function IndicatorEditorModal({
       const data = await response.json();
 
       if (!response.ok) {
+        // Check if this is a column rename that affects dependent indicators
+        if (data.error === 'Column rename affects dependent indicators' && data.requiresAutoFix) {
+          // Store the pending request and show the modal
+          setColumnRenameData({
+            columnRenames: data.columnRenames,
+            pendingSubmit: requestBody,
+          });
+          setShowColumnRenameModal(true);
+          setIsLoading(false);
+          return;
+        }
+
         // Check if this is a "columns have dependents" error
         if (data.error === 'Columns have dependent indicators' && data.dependentColumns) {
           // Build confirmation message
@@ -320,10 +349,126 @@ export default function IndicatorEditorModal({
 
       setIsLoading(false);
       onSuccess();
+
+      // Check for orphaned columns after successful save
+      checkForOrphanedColumns();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error');
       setIsLoading(false);
     }
+  };
+
+  // Check for orphaned columns in CSV files
+  const checkForOrphanedColumns = async () => {
+    try {
+      const response = await fetch('/api/check-orphaned-columns');
+      const data = await response.json();
+
+      if (data.hasOrphanedColumns && data.orphanedColumns.length > 0) {
+        setOrphanedColumnsData({
+          orphanedColumns: data.orphanedColumns,
+          dependentIndicators: data.dependentIndicators || [],
+        });
+        setShowOrphanedColumnsModal(true);
+      }
+    } catch (err) {
+      console.error('Error checking for orphaned columns:', err);
+    }
+  };
+
+  // Handle orphaned columns cleanup
+  const handleCleanupOrphanedColumns = async () => {
+    if (!orphanedColumnsData) return;
+
+    setIsCleaningOrphans(true);
+
+    try {
+      // Collect all indicator IDs that need to be deleted
+      const indicatorIdsToDelete: string[] = [];
+      orphanedColumnsData.dependentIndicators.forEach(({ indicators }) => {
+        indicators.forEach(ind => {
+          if (!indicatorIdsToDelete.includes(ind.id)) {
+            indicatorIdsToDelete.push(ind.id);
+          }
+        });
+      });
+
+      const response = await fetch('/api/check-orphaned-columns', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orphanedColumns: orphanedColumnsData.orphanedColumns,
+          indicatorIdsToDelete,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        console.log('Cleaned up orphaned columns:', data);
+        setShowOrphanedColumnsModal(false);
+        setOrphanedColumnsData(null);
+        onSuccess(); // Refresh the indicator list
+      } else {
+        setError(data.message || 'Failed to cleanup orphaned columns');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error cleaning up orphaned columns');
+    } finally {
+      setIsCleaningOrphans(false);
+    }
+  };
+
+  // Cancel orphaned columns cleanup
+  const handleCancelOrphanedCleanup = () => {
+    setShowOrphanedColumnsModal(false);
+    setOrphanedColumnsData(null);
+  };
+
+  // Handle column rename auto-fix
+  const handleAutoFixColumnRename = async () => {
+    if (!columnRenameData || !indicator) return;
+
+    setIsLoading(true);
+
+    try {
+      const url = `/api/indicators/${indicator.id}?autoFix=true`;
+
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(columnRenameData.pendingSubmit),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.message || 'Failed to save indicator');
+        setIsLoading(false);
+        setShowColumnRenameModal(false);
+        setColumnRenameData(null);
+        return;
+      }
+
+      setIsLoading(false);
+      setShowColumnRenameModal(false);
+      setColumnRenameData(null);
+      onSuccess();
+
+      // Check for orphaned columns after successful save
+      checkForOrphanedColumns();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Network error');
+      setIsLoading(false);
+      setShowColumnRenameModal(false);
+      setColumnRenameData(null);
+    }
+  };
+
+  // Cancel column rename
+  const handleCancelColumnRename = () => {
+    setShowColumnRenameModal(false);
+    setColumnRenameData(null);
   };
 
   const handleInsertTemplate = () => {
@@ -583,8 +728,9 @@ export default function IndicatorEditorModal({
               <div className="text-xs text-blue-700 dark:text-blue-300 space-y-1">
                 <div>1. Click &quot;+ Add External Dataset&quot; below</div>
                 <div>2. Choose a parameter name (e.g., <code className="bg-blue-100 dark:bg-blue-800 px-1">index</code>)</div>
-                <div>3. Select group and dataset</div>
-                <div>4. Click &quot;Insert Template&quot; to see example code</div>
+                <div>3. Select group and dataset (or &quot;All&quot; for all datasets)</div>
+                <div>4. Single dataset: <code className="bg-blue-100 dark:bg-blue-800 px-1">data[&apos;param@col&apos;]</code> → value</div>
+                <div>5. All datasets: <code className="bg-blue-100 dark:bg-blue-800 px-1">data[&apos;param@col&apos;]</code> → [val1, val2, ...]</div>
               </div>
             </div>
 
@@ -715,10 +861,16 @@ export default function IndicatorEditorModal({
                         disabled={!isEditing || !config.groupId}
                       >
                         <option value="">Select dataset</option>
+                        <option value="__all__">All (returns dict per column)</option>
                         {selectedGroup?.datasetNames.map((ds: string) => (
                           <option key={ds} value={ds}>{ds}</option>
                         ))}
                       </select>
+                      {config.datasetName === '__all__' && (
+                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                          Access: data[&apos;{config.paramName}@col_name&apos;] returns [val1, val2, ...]
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1054,6 +1206,142 @@ export default function IndicatorEditorModal({
           </div>
         </form>
       </div>
+
+      {/* Orphaned Columns Confirmation Modal */}
+      {showOrphanedColumnsModal && orphanedColumnsData && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[80vh] overflow-hidden">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-orange-600 dark:text-orange-400 mb-4 flex items-center gap-2">
+                <span>⚠️</span> Orphaned Columns Detected
+              </h3>
+
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                The following columns exist in your CSV files but don&apos;t correspond to any defined indicator:
+              </p>
+
+              <div className="bg-gray-50 dark:bg-gray-700 rounded p-3 mb-4 max-h-32 overflow-y-auto">
+                <div className="flex flex-wrap gap-2">
+                  {orphanedColumnsData.orphanedColumns.map((col, idx) => (
+                    <span key={idx} className="px-2 py-1 bg-orange-100 dark:bg-orange-900/50 text-orange-800 dark:text-orange-300 text-xs rounded">
+                      {col}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              {orphanedColumnsData.dependentIndicators.length > 0 && (
+                <>
+                  <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
+                    The following indicators depend on these orphaned columns and will also be deleted:
+                  </p>
+                  <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded p-3 mb-4 max-h-40 overflow-y-auto">
+                    {orphanedColumnsData.dependentIndicators.map(({ column, indicators }, idx) => (
+                      <div key={idx} className="mb-2 last:mb-0">
+                        <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                          Column: <span className="font-mono text-red-600 dark:text-red-400">{column}</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {indicators.map((ind, indIdx) => (
+                            <span key={indIdx} className="px-2 py-0.5 bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 text-xs rounded">
+                              {ind.name}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                Do you want to remove these orphaned columns from all datasets?
+              </p>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={handleCancelOrphanedCleanup}
+                  disabled={isCleaningOrphans}
+                  className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCleanupOrphanedColumns}
+                  disabled={isCleaningOrphans}
+                  className="px-4 py-2 text-sm bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50"
+                >
+                  {isCleaningOrphans ? 'Cleaning...' : 'Continue & Remove'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Column Rename Auto-Fix Modal */}
+      {showColumnRenameModal && columnRenameData && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[80vh] overflow-hidden">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-blue-600 dark:text-blue-400 mb-4 flex items-center gap-2">
+                <span>🔄</span> Column Name Change Detected
+              </h3>
+
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+                You are changing column names that are used by other indicators. Do you want to automatically update their code?
+              </p>
+
+              <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded p-3 mb-4 max-h-60 overflow-y-auto">
+                {columnRenameData.columnRenames.map(({ column, newColumn, indicators }, idx) => (
+                  <div key={idx} className="mb-3 last:mb-0">
+                    <div className="text-sm mb-2">
+                      <span className="font-mono text-red-600 dark:text-red-400 line-through">{column}</span>
+                      <span className="mx-2 text-gray-500">→</span>
+                      <span className="font-mono text-green-600 dark:text-green-400">{newColumn}</span>
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                      Used by:
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {indicators.map((ind, indIdx) => (
+                        <span key={indIdx} className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-xs rounded">
+                          {ind.name}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+                Click &quot;Auto-Fix&quot; to update all references in the dependent indicators&apos; code automatically.
+              </p>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={handleCancelColumnRename}
+                  disabled={isLoading}
+                  className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleAutoFixColumnRename}
+                  disabled={isLoading}
+                  className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {isLoading ? 'Updating...' : 'Auto-Fix & Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

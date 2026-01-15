@@ -74,3 +74,9 @@ next-env.d.ts
 *.log
 *.log.*
 aktools_log.log*
+
+# docker
+.docker/
+docker-compose.override.yml
+*.tar
+*.tar.gz
