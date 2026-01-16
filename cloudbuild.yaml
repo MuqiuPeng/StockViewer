@@ -1,0 +1,49 @@
+# Google Cloud Build configuration
+# This file configures Cloud Build to build and deploy StockViewer
+
+steps:
+  # Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/stockviewer:$COMMIT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/stockviewer:latest'
+      - '-f'
+      - 'docker/Dockerfile.combined'
+      - '--build-arg'
+      - 'NEXT_PUBLIC_BASE_PATH=/stockviewer'
+      - '.'
+
+  # Push the image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/stockviewer:$COMMIT_SHA'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/stockviewer:latest'
+
+  # Deploy to Cloud Run (optional - uncomment if using Cloud Run)
+  # - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+  #   entrypoint: gcloud
+  #   args:
+  #     - 'run'
+  #     - 'deploy'
+  #     - 'stockviewer'
+  #     - '--image'
+  #     - 'gcr.io/$PROJECT_ID/stockviewer:$COMMIT_SHA'
+  #     - '--region'
+  #     - 'us-central1'
+  #     - '--platform'
+  #     - 'managed'
+
+images:
+  - 'gcr.io/$PROJECT_ID/stockviewer:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/stockviewer:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
