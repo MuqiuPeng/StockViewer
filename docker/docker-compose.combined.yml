@@ -1,0 +1,22 @@
+# Combined single-container deployment
+# Usage: docker compose -f docker/docker-compose.combined.yml up -d
+
+services:
+  stockviewer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.combined
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_AKTOOLS_API_URL=http://127.0.0.1:8080
+      - NEXT_PUBLIC_STORAGE_MODE=local
+      - PYTHON_EXECUTABLE=/opt/venv/bin/python
+      - PYTHON_TIMEOUT_MS=300000
+    volumes:
+      - stockviewer-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  stockviewer-data:

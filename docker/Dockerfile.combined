@@ -1,0 +1,81 @@
+# Combined StockViewer + AKTools in single container
+FROM node:20-bookworm-slim AS base
+
+# Install Python and supervisor
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-venv \
+    python3-dev \
+    build-essential \
+    supervisor \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install dependencies stage
+FROM base AS deps
+COPY package.json package-lock.json ./
+RUN npm ci
+
+# Build stage
+FROM base AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Use Docker-specific Next.js config
+COPY docker/next.config.docker.js ./next.config.js
+
+# Build args for base path (set during docker build)
+ARG NEXT_PUBLIC_BASE_PATH=""
+ENV NEXT_PUBLIC_BASE_PATH=${NEXT_PUBLIC_BASE_PATH}
+
+# Build Next.js application
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
+
+# Production stage
+FROM base AS runner
+WORKDIR /app
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+# Create Python venv and install dependencies
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Install Python packages
+RUN pip install --no-cache-dir pandas numpy aktools
+
+# Copy built application
+COPY --from=builder /app/.next/standalone ./
+COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder /app/public ./public 2>/dev/null || mkdir -p ./public
+
+# Copy Python executors
+COPY --from=builder /app/data/python ./data/python
+
+# Create data directories
+RUN mkdir -p data/csv data/indicators data/strategies data/groups \
+    data/backtest-history data/datasets data/view-settings
+
+# Copy supervisor config
+COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+
+# Environment variables
+ENV PORT=3000
+ENV HOSTNAME="0.0.0.0"
+ENV NEXT_PUBLIC_AKTOOLS_API_URL=http://127.0.0.1:8080
+ENV PYTHON_EXECUTABLE=/opt/venv/bin/python
+
+EXPOSE 3000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:3000/ || exit 1
+
+# Run both services via supervisor
+CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

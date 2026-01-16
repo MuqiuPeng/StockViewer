@@ -1,0 +1,63 @@
+# Production deployment with PostgreSQL and auth
+# Usage:
+#   1. Copy .env.production.example to .env.production and fill in values
+#   2. docker compose -f docker/docker-compose.production.yml up -d
+
+services:
+  stockviewer:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.combined
+      args:
+        - NEXT_PUBLIC_BASE_PATH=/stockviewer
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_AKTOOLS_API_URL=http://127.0.0.1:8080
+      - NEXT_PUBLIC_STORAGE_MODE=database
+      - NEXT_PUBLIC_BASE_PATH=/stockviewer
+      - PYTHON_EXECUTABLE=/opt/venv/bin/python
+      - PYTHON_TIMEOUT_MS=300000
+      # Auth (from .env.production)
+      - AUTH_SECRET=${AUTH_SECRET}
+      - AUTH_URL=${AUTH_URL}
+      - AUTH_GOOGLE_ID=${AUTH_GOOGLE_ID}
+      - AUTH_GOOGLE_SECRET=${AUTH_GOOGLE_SECRET}
+      - AUTH_GITHUB_ID=${AUTH_GITHUB_ID}
+      - AUTH_GITHUB_SECRET=${AUTH_GITHUB_SECRET}
+      # Database
+      - DATABASE_URL=postgresql://stockviewer:${POSTGRES_PASSWORD}@db:5432/stockviewer
+    volumes:
+      - stockviewer-data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - stockviewer-network
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=stockviewer
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=stockviewer
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stockviewer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - stockviewer-network
+
+networks:
+  stockviewer-network:
+    driver: bridge
+
+volumes:
+  stockviewer-data:
+  postgres-data:

@@ -2,6 +2,10 @@
 const nextConfig = {
   reactStrictMode: true,
   output: 'standalone', // Required for Docker deployment
+
+  // Base path for deployment at robindev.org/stockviewer
+  basePath: process.env.NEXT_PUBLIC_BASE_PATH || '',
+  assetPrefix: process.env.NEXT_PUBLIC_BASE_PATH || '',
   webpack: (config, { isServer }) => {
     // Fix for lightweight-charts and other libraries
     if (!isServer) {
