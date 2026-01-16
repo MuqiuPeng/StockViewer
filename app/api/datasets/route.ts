@@ -1,22 +1,32 @@
 import { NextResponse } from 'next/server';
-import { getCsvFileStats } from '@/lib/datasets';
-import { unlink } from 'fs/promises';
-import { loadMetadata, migrateDatasetIds } from '@/lib/dataset-metadata';
+import { getApiStorage } from '@/lib/api-auth';
+import type { DatasetMetadata } from '@/lib/dataset-metadata';
 
 export const runtime = 'nodejs';
 
 export async function GET() {
   try {
-    let datasets = await loadMetadata();
-
-    // Auto-migration: If any dataset is missing ID, run migration
-    if (datasets.length > 0 && !datasets[0].id) {
-      console.log('Datasets missing IDs, running migration...');
-      await migrateDatasetIds();
-      datasets = await loadMetadata();
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
     }
 
-    return NextResponse.json(datasets);
+    const store = authResult.storage.getJsonStore<DatasetMetadata>('datasetMetadata');
+    const fileStore = authResult.storage.getFileStore();
+    const datasets = await store.getAll();
+
+    // Check if each dataset's file exists locally
+    const datasetsWithStatus = await Promise.all(
+      datasets.map(async (dataset) => {
+        const fileExists = await fileStore.exists(dataset.filename);
+        return {
+          ...dataset,
+          fileMissing: !fileExists,
+        };
+      })
+    );
+
+    return NextResponse.json(datasetsWithStatus);
   } catch (error) {
     console.error('Error listing datasets:', error);
     return NextResponse.json(
@@ -29,6 +39,14 @@ export async function GET() {
 // DELETE /api/datasets - Delete a dataset
 export async function DELETE(request: Request) {
   try {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+
+    const store = authResult.storage.getJsonStore<DatasetMetadata>('datasetMetadata');
+    const fileStore = authResult.storage.getFileStore();
+
     const body = await request.json();
     const { identifier, name } = body; // Accept both identifier (new) and name (legacy)
 
@@ -41,8 +59,22 @@ export async function DELETE(request: Request) {
     }
 
     // Find dataset by ID (or name/filename for backward compatibility)
-    const { findDataset, removeDataset } = await import('@/lib/dataset-metadata');
-    const dataset = await findDataset(lookupValue);
+    const datasets = await store.getAll();
+    let dataset = datasets.find(ds => ds.id === lookupValue);
+    if (!dataset) {
+      dataset = datasets.find(
+        ds => ds.filename === lookupValue || ds.filename.replace(/\.csv$/i, '') === lookupValue
+      );
+    }
+    if (!dataset) {
+      dataset = datasets.find(ds => ds.name === lookupValue);
+    }
+    if (!dataset) {
+      const codeMatches = datasets.filter(ds => ds.code === lookupValue);
+      if (codeMatches.length === 1) {
+        dataset = codeMatches[0];
+      }
+    }
 
     if (!dataset) {
       return NextResponse.json(
@@ -52,13 +84,13 @@ export async function DELETE(request: Request) {
     }
 
     // Delete CSV file
-    const fileStats = await getCsvFileStats(dataset.filename);
-    if (fileStats.exists) {
-      await unlink(fileStats.path);
+    const exists = await fileStore.exists(dataset.filename);
+    if (exists) {
+      await fileStore.delete(dataset.filename);
     }
 
     // Remove from metadata
-    await removeDataset(dataset.filename);
+    await store.delete(dataset.id);
 
     return NextResponse.json({ success: true, message: `Dataset ${dataset.name} deleted successfully` });
   } catch (error) {
@@ -72,4 +104,3 @@ export async function DELETE(request: Request) {
     );
   }
 }
-

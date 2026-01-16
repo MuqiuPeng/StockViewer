@@ -19,7 +19,7 @@ interface Indicator {
 interface IndicatorEditorModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (savedItem?: Indicator, type?: 'indicator') => void;
   indicator?: Indicator | null;
 }
 
@@ -334,7 +334,7 @@ export default function IndicatorEditorModal({
             }
 
             setIsLoading(false);
-            onSuccess();
+            onSuccess(forceData.indicator || forceData, 'indicator');
             return;
           } else {
             setIsLoading(false);
@@ -348,7 +348,7 @@ export default function IndicatorEditorModal({
       }
 
       setIsLoading(false);
-      onSuccess();
+      onSuccess(data.indicator || data, 'indicator');
 
       // Check for orphaned columns after successful save
       checkForOrphanedColumns();
@@ -408,7 +408,7 @@ export default function IndicatorEditorModal({
         console.log('Cleaned up orphaned columns:', data);
         setShowOrphanedColumnsModal(false);
         setOrphanedColumnsData(null);
-        onSuccess(); // Refresh the indicator list
+        onSuccess(); // Refresh the indicator list (no new item here, just cleanup)
       } else {
         setError(data.message || 'Failed to cleanup orphaned columns');
       }
@@ -453,7 +453,7 @@ export default function IndicatorEditorModal({
       setIsLoading(false);
       setShowColumnRenameModal(false);
       setColumnRenameData(null);
-      onSuccess();
+      onSuccess(data.indicator || data, 'indicator');
 
       // Check for orphaned columns after successful save
       checkForOrphanedColumns();

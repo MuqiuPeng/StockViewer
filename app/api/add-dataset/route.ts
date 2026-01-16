@@ -1,15 +1,12 @@
 import { NextResponse } from 'next/server';
-import { writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
-import { getCsvDirectory } from '@/lib/datasets';
-import { getDatasetInfo } from '@/lib/csv';
-import { loadIndicators } from '@/lib/indicator-storage';
-import { executePythonIndicator } from '@/lib/python-executor';
-import { addIndicatorColumn, addIndicatorGroupColumns } from '@/lib/csv-updater';
-import { topologicalSort } from '@/lib/indicator-dependencies';
+import { getApiStorage } from '@/lib/api-auth';
 import { API_CONFIG } from '@/lib/env';
 import { getDataSourceConfig } from '@/lib/data-sources';
 import { cleanDateColumn } from '@/lib/date-cleaner';
+import { executePythonIndicator } from '@/lib/python-executor';
+import { topologicalSort } from '@/lib/indicator-dependencies';
+import type { Indicator } from '@/lib/indicator-storage';
+import type { DatasetMetadata } from '@/lib/dataset-metadata';
 import Papa from 'papaparse';
 
 export const runtime = 'nodejs';
@@ -84,6 +81,15 @@ function buildApiUrl(
 
 export async function POST(request: Request) {
   try {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const storage = authResult.storage;
+    const fileStore = storage.getFileStore();
+    const indicatorStore = storage.getJsonStore<Indicator>('indicators');
+    const datasetStore = storage.getJsonStore<DatasetMetadata>('datasetMetadata');
+
     const body: RequestBody = await request.json();
     const { symbol, dataSource = 'stock_zh_a_hist', customParams = {}, name: providedName } = body;
 
@@ -155,21 +161,15 @@ export async function POST(request: Request) {
     }
 
     // Generate CSV
-    const csv = Papa.unparse(transformedData);
-
-    // Ensure directory exists
-    const csvDir = getCsvDirectory();
-    await mkdir(csvDir, { recursive: true });
+    let csv = Papa.unparse(transformedData);
 
     // Write file with data source in filename: {symbol}_{dataSource}.csv
-    // Always include data source to prevent duplicates
     const filename = `${symbol}_${dataSource}.csv`;
-    const filePath = join(csvDir, filename);
-    await writeFile(filePath, csv, 'utf-8');
+    await fileStore.writeText(filename, csv);
 
     // Automatically apply all indicators
     try {
-      const indicators = await loadIndicators();
+      const indicators = await indicatorStore.getAll();
 
       if (indicators.length > 0) {
         // Sort indicators by dependencies (topological sort)
@@ -179,8 +179,7 @@ export async function POST(request: Request) {
         for (const indicator of sortedIndicators) {
           try {
             // Reload CSV data each time to include previously applied indicators
-            const { readFile } = await import('fs/promises');
-            const currentCsvContent = await readFile(filePath, 'utf-8');
+            const currentCsvContent = await fileStore.readText(filename);
             const parsed = Papa.parse(currentCsvContent, { header: true, skipEmptyLines: true });
             const currentData = parsed.data as any[];
 
@@ -212,18 +211,37 @@ export async function POST(request: Request) {
             });
 
             if (result.success && result.values) {
-              // Handle group indicators vs single indicators
+              // Reload CSV for modification
+              const csvContent = await fileStore.readText(filename);
+              const parsedCsv = Papa.parse(csvContent, { header: true, skipEmptyLines: true });
+              const csvData = parsedCsv.data as any[];
+
               if (indicator.isGroup && indicator.groupName) {
                 // Group indicator - add multiple columns
                 const valuesDict = result.values as Record<string, (number | null)[]>;
-                await addIndicatorGroupColumns(filename, indicator.groupName, valuesDict);
+                for (const [outputName, values] of Object.entries(valuesDict)) {
+                  const columnName = `${indicator.groupName}:${outputName}`;
+                  values.forEach((value, i) => {
+                    if (i < csvData.length) {
+                      csvData[i][columnName] = value !== null ? value : '';
+                    }
+                  });
+                }
                 console.log(`Applied group indicator ${indicator.name} to ${symbol}`);
               } else {
                 // Single indicator - add one column
                 const valuesArray = result.values as (number | null)[];
-                await addIndicatorColumn(filename, indicator.outputColumn, valuesArray);
+                valuesArray.forEach((value, i) => {
+                  if (i < csvData.length) {
+                    csvData[i][indicator.outputColumn] = value !== null ? value : '';
+                  }
+                });
                 console.log(`Applied indicator ${indicator.name} to ${symbol}`);
               }
+
+              // Write updated CSV
+              const updatedCsv = Papa.unparse(csvData);
+              await fileStore.writeText(filename, updatedCsv);
             } else {
               console.warn(`Failed to apply indicator ${indicator.name} to ${symbol}:`, result.error);
             }
@@ -239,7 +257,17 @@ export async function POST(request: Request) {
     }
 
     // Get dataset info (after indicators have been applied)
-    const datasetInfo = await getDatasetInfo(filename);
+    const finalCsvContent = await fileStore.readText(filename);
+    const finalParsed = Papa.parse(finalCsvContent, { header: true, skipEmptyLines: true });
+    const finalData = finalParsed.data as any[];
+    const columns = finalParsed.meta.fields || [];
+
+    // Extract date range and indicators
+    const dates = finalData.map(row => row.date).filter(Boolean).sort();
+    const firstDate = dates[0];
+    const lastDate = dates[dates.length - 1];
+    const baseColumns = ['date', 'open', 'high', 'low', 'close', 'volume', 'turnover', 'amplitude', 'change_pct', 'change_amount', 'turnover_rate'];
+    const indicatorColumns = columns.filter(col => !baseColumns.includes(col));
 
     // Determine the name for this dataset
     let stockName = symbol; // Default to symbol if nothing else works
@@ -276,28 +304,56 @@ export async function POST(request: Request) {
     }
 
     // Register dataset in metadata
-    const { registerDataset } = await import('@/lib/dataset-metadata');
     const datasetId = `${symbol}_${dataSource}`;
-    await registerDataset({
-      id: datasetId,
-      code: symbol,
-      name: stockName, // Use fetched stock name or symbol as fallback
-      filename,
-      dataSource,
-      firstDate: datasetInfo.firstDate,
-      lastDate: datasetInfo.lastDate,
-      lastUpdate: datasetInfo.lastUpdate,
-      rowCount: datasetInfo.rowCount,
-      columns: datasetInfo.columns,
-      indicators: datasetInfo.indicators,
-    });
+    const now = new Date().toISOString();
+
+    // Check if dataset already exists
+    const existingDatasets = await datasetStore.getAll();
+    const existingDataset = existingDatasets.find(ds => ds.filename === filename);
+
+    if (existingDataset) {
+      // Update existing
+      await datasetStore.update(existingDataset.id, {
+        code: symbol,
+        name: stockName,
+        dataSource,
+        firstDate,
+        lastDate,
+        lastUpdate: now,
+        rowCount: finalData.length,
+        columns,
+        indicators: indicatorColumns,
+      });
+    } else {
+      // Create new
+      await datasetStore.create({
+        code: symbol,
+        name: stockName,
+        filename,
+        dataSource,
+        firstDate,
+        lastDate,
+        lastUpdate: now,
+        rowCount: finalData.length,
+        columns,
+        indicators: indicatorColumns,
+      });
+    }
 
     return NextResponse.json({
       success: true,
       dataset: {
-        ...datasetInfo,
         id: datasetId,
-        name: stockName, // Return the fetched stock name
+        code: symbol,
+        name: stockName,
+        filename,
+        dataSource,
+        firstDate,
+        lastDate,
+        lastUpdate: now,
+        rowCount: finalData.length,
+        columns,
+        indicators: indicatorColumns,
       }
     });
 

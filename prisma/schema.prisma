@@ -1,0 +1,233 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ============================================================================
+// NextAuth.js Required Models
+// ============================================================================
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  accounts      Account[]
+  sessions      Session[]
+
+  // User-scoped data relations
+  indicators       Indicator[]
+  strategies       Strategy[]
+  backtestHistory  BacktestHistoryEntry[]
+  groups           StockGroup[]
+  datasetMetadata  DatasetMetadata[]
+  viewSettings     ViewSetting[]
+  settings         UserSettings?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model UserSettings {
+  id          String  @id @default(cuid())
+  userId      String  @unique
+  csvDataPath String? // User's local CSV data folder path
+  setupComplete Boolean @default(false) // Whether user has completed initial setup
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ============================================================================
+// Application Data Models (User-Scoped)
+// ============================================================================
+
+model Indicator {
+  id                String   @id @default(cuid())
+  userId            String
+  name              String
+  description       String   @db.Text
+  pythonCode        String   @db.Text
+  outputColumn      String
+  dependencies      String[] // Array of indicator IDs
+  dependencyColumns String[] // Specific columns like "KDJ:K", "SMA_20"
+
+  // Group indicator fields
+  isGroup         Boolean  @default(false)
+  groupName       String?
+  expectedOutputs String[] // e.g., ["DIF", "DEA", "MACD"]
+
+  // External datasets (stored as JSON)
+  externalDatasets Json? // Record<string, { groupId: string; datasetName: string }>
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name]) // Unique name per user
+  @@index([userId])
+}
+
+model Strategy {
+  id               String   @id @default(cuid())
+  userId           String
+  name             String
+  description      String   @db.Text
+  pythonCode       String   @db.Text
+  strategyType     String   @default("single") // 'single' | 'portfolio'
+  constraints      Json? // PortfolioConstraints
+  parameters       Json? // Record<string, any>
+  externalDatasets Json? // Record<string, { groupId: string; datasetName: string }>
+  dependencies     String[] // Indicator names this strategy depends on
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name]) // Unique name per user
+  @@index([userId])
+}
+
+model BacktestHistoryEntry {
+  id           String @id @default(cuid())
+  userId       String
+  strategyId   String
+  strategyName String
+  strategyType String // 'single' | 'portfolio'
+
+  // Target information (stored as JSON)
+  target Json // { type, datasetName?, symbols?, groupId?, groupName? }
+
+  // Parameters (stored as JSON)
+  parameters Json // { initialCash, commission, startDate?, endDate?, etc. }
+
+  // Full backtest result (stored as JSON)
+  result Json
+
+  // Metadata
+  starred Boolean  @default(false)
+  notes   String?  @db.Text
+  tags    String[]
+
+  // Denormalized summary for filtering/sorting
+  totalReturn    Float
+  totalReturnPct Float
+  sharpeRatio    Float
+  tradeCount     Int
+  duration       Int
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, createdAt])
+  @@index([userId, starred])
+}
+
+model StockGroup {
+  id             String   @id @default(cuid())
+  userId         String
+  name           String
+  description    String?  @db.Text
+  datasetNames   String[] // Array of dataset filenames
+  isDataSource   Boolean  @default(false) // True for auto-generated
+  dataSourceName String?  // For data source groups
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name]) // Unique name per user
+  @@index([userId])
+}
+
+model DatasetMetadata {
+  id         String   @id @default(cuid())
+  userId     String
+  code       String
+  name       String
+  filename   String
+  dataSource String
+  firstDate  String?
+  lastDate   String?
+  lastUpdate String?
+  rowCount   Int?
+  columns    String[]
+  indicators String[]
+
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, filename]) // Unique filename per user
+  @@index([userId])
+  @@index([userId, code])
+}
+
+model ViewSetting {
+  id                 String @id @default(cuid())
+  userId             String
+  name               String
+  enabledIndicators1 String[]
+  enabledIndicators2 String[]
+  constantLines1     Json // ConstantLine[]
+  constantLines2     Json // ConstantLine[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name]) // Unique name per user
+  @@index([userId])
+}

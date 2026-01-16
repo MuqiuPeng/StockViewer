@@ -65,10 +65,11 @@ export const PYTHON_CONFIG = {
  */
 export const DATA_CONFIG = {
   /**
-   * CSV data directory
+   * CSV data directory path - where user stores their stock CSV files
+   * This is a LOCAL path on the user's machine, not server storage
    * Default: {project_root}/data/csv
    */
-  CSV_DIR: getEnv('CSV_DIR', ''),
+  CSV_DATA_PATH: getEnv('CSV_DATA_PATH', ''),
 
   /**
    * Maximum CSV file size in MB
@@ -82,6 +83,18 @@ export const DATA_CONFIG = {
    */
   INDICATORS_FILE: getEnv('INDICATORS_FILE', ''),
 } as const;
+
+/**
+ * Get the resolved CSV data path
+ * Returns the configured path or defaults to {cwd}/data/csv
+ */
+export function getCsvDataPath(): string {
+  if (DATA_CONFIG.CSV_DATA_PATH) {
+    return DATA_CONFIG.CSV_DATA_PATH;
+  }
+  // Default to project's data/csv folder
+  return require('path').join(process.cwd(), 'data', 'csv');
+}
 
 /**
  * Performance & Caching Configuration

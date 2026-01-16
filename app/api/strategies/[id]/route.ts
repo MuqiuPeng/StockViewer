@@ -1,10 +1,6 @@
 import { NextResponse } from 'next/server';
-import {
-  getStrategyById,
-  updateStrategy,
-  deleteStrategy,
-  Strategy,
-} from '@/lib/strategy-storage';
+import { Strategy } from '@/lib/strategy-storage';
+import { getApiStorage } from '@/lib/api-auth';
 
 // GET /api/strategies/[id] - Get single strategy
 export async function GET(
@@ -12,7 +8,12 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const strategy = await getStrategyById(params.id);
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+
+    const strategy = await authResult.storage.getJsonStore<Strategy>('strategies').getById(params.id);
 
     if (!strategy) {
       return NextResponse.json(
@@ -39,11 +40,17 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const store = authResult.storage.getJsonStore<Strategy>('strategies');
+
     const body = await request.json();
     const { name, description, pythonCode, parameters, constraints, externalDatasets } = body;
 
     // Validate that strategy exists
-    const existing = await getStrategyById(params.id);
+    const existing = await store.getById(params.id);
     if (!existing) {
       return NextResponse.json(
         { error: 'Strategy not found' },
@@ -53,7 +60,20 @@ export async function PUT(
 
     // Build update object
     const updates: Partial<Strategy> = {};
-    if (name !== undefined) updates.name = name;
+    if (name !== undefined) {
+      // Check for duplicate names
+      const allStrategies = await store.getAll();
+      const duplicate = allStrategies.find(
+        (s) => s.id !== params.id && s.name.toLowerCase() === name.toLowerCase()
+      );
+      if (duplicate) {
+        return NextResponse.json(
+          { error: 'Duplicate strategy', message: `Strategy with name "${name}" already exists` },
+          { status: 409 }
+        );
+      }
+      updates.name = name;
+    }
     if (description !== undefined) updates.description = description;
     if (pythonCode !== undefined) {
       // Basic validation
@@ -82,16 +102,9 @@ export async function PUT(
       updates.constraints = constraints;
     }
 
-    const updated = await updateStrategy(params.id, updates);
+    const updated = await store.update(params.id, updates);
     return NextResponse.json({ strategy: updated });
   } catch (error) {
-    if (error instanceof Error && error.message.includes('already exists')) {
-      return NextResponse.json(
-        { error: 'Duplicate strategy', message: error.message },
-        { status: 409 }
-      );
-    }
-
     return NextResponse.json(
       {
         error: 'Failed to update strategy',
@@ -108,16 +121,24 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    await deleteStrategy(params.id);
-    return NextResponse.json({ success: true });
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('not found')) {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const store = authResult.storage.getJsonStore<Strategy>('strategies');
+
+    // Check if exists
+    const existing = await store.getById(params.id);
+    if (!existing) {
       return NextResponse.json(
-        { error: 'Strategy not found', message: error.message },
+        { error: 'Strategy not found' },
         { status: 404 }
       );
     }
 
+    await store.delete(params.id);
+    return NextResponse.json({ success: true });
+  } catch (error) {
     return NextResponse.json(
       {
         error: 'Failed to delete strategy',
@@ -127,4 +148,3 @@ export async function DELETE(
     );
   }
 }
-

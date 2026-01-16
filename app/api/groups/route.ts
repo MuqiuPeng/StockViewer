@@ -1,24 +1,76 @@
 import { NextResponse } from 'next/server';
-import {
-  loadGroups,
-  createGroup,
-  updateGroup,
-  deleteGroup,
-  getGroupById,
-  syncDataSourceGroups,
-} from '@/lib/group-storage';
-import { loadMetadata } from '@/lib/dataset-metadata';
+import { getApiStorage } from '@/lib/api-auth';
+import type { StockGroup } from '@/lib/group-storage';
+import type { DatasetMetadata } from '@/lib/dataset-metadata';
 
 export const runtime = 'nodejs';
+
+// Helper function to sync data source groups
+async function syncDataSourceGroups(
+  groupStore: any,
+  datasetStore: any
+): Promise<void> {
+  const datasets = await datasetStore.getAll() as DatasetMetadata[];
+  const groups = await groupStore.getAll() as StockGroup[];
+
+  // Get all unique data sources
+  const dataSources = new Set<string>();
+  for (const dataset of datasets) {
+    if (dataset.dataSource) {
+      dataSources.add(dataset.dataSource);
+    }
+  }
+
+  // Create/update data source groups
+  for (const dataSource of dataSources) {
+    const datasetNames = datasets
+      .filter(d => d.dataSource === dataSource)
+      .map(d => d.name);
+
+    const existingGroup = groups.find(
+      g => g.isDataSource && g.dataSourceName === dataSource
+    );
+
+    if (existingGroup) {
+      // Update if datasets changed
+      if (JSON.stringify(existingGroup.datasetNames.sort()) !== JSON.stringify(datasetNames.sort())) {
+        await groupStore.update(existingGroup.id, { datasetNames });
+      }
+    } else {
+      // Create new data source group
+      await groupStore.create({
+        name: `[${dataSource}]`,
+        description: `Auto-generated group for ${dataSource} data source`,
+        datasetNames,
+        isDataSource: true,
+        dataSourceName: dataSource,
+      });
+    }
+  }
+
+  // Remove data source groups that no longer have a corresponding data source
+  for (const group of groups) {
+    if (group.isDataSource && group.dataSourceName && !dataSources.has(group.dataSourceName)) {
+      await groupStore.delete(group.id);
+    }
+  }
+}
 
 // GET /api/groups - List all groups
 export async function GET() {
   try {
-    // Sync data source groups before returning
-    const datasets = await loadMetadata();
-    await syncDataSourceGroups(datasets);
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
 
-    const groups = await loadGroups();
+    const groupStore = authResult.storage.getJsonStore<StockGroup>('groups');
+    const datasetStore = authResult.storage.getJsonStore<DatasetMetadata>('datasetMetadata');
+
+    // Sync data source groups before returning
+    await syncDataSourceGroups(groupStore, datasetStore);
+
+    const groups = await groupStore.getAll();
     return NextResponse.json({ groups });
   } catch (error) {
     console.error('Error loading groups:', error);
@@ -32,6 +84,12 @@ export async function GET() {
 // POST /api/groups - Create a new group
 export async function POST(request: Request) {
   try {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const store = authResult.storage.getJsonStore<StockGroup>('groups');
+
     const body = await request.json();
     const { name, description, datasetNames } = body;
 
@@ -42,7 +100,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const group = await createGroup({
+    const group = await store.create({
       name: name.trim(),
       description: description?.trim() || '',
       datasetNames: Array.isArray(datasetNames) ? datasetNames : [],
@@ -61,6 +119,12 @@ export async function POST(request: Request) {
 // PUT /api/groups - Update a group
 export async function PUT(request: Request) {
   try {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const store = authResult.storage.getJsonStore<StockGroup>('groups');
+
     const body = await request.json();
     const { id, name, description, datasetNames } = body;
 
@@ -72,8 +136,14 @@ export async function PUT(request: Request) {
     }
 
     // Check if this is a data source group (auto-generated, cannot be edited)
-    const existingGroup = await getGroupById(id);
-    if (existingGroup?.isDataSource) {
+    const existingGroup = await store.getById(id);
+    if (!existingGroup) {
+      return NextResponse.json(
+        { error: 'Group not found' },
+        { status: 404 }
+      );
+    }
+    if (existingGroup.isDataSource) {
       return NextResponse.json(
         { error: 'Cannot edit data source group', message: 'Data source groups are auto-generated and cannot be modified' },
         { status: 403 }
@@ -103,14 +173,7 @@ export async function PUT(request: Request) {
       updates.datasetNames = datasetNames;
     }
 
-    const group = await updateGroup(id, updates);
-    if (!group) {
-      return NextResponse.json(
-        { error: 'Group not found' },
-        { status: 404 }
-      );
-    }
-
+    const group = await store.update(id, updates);
     return NextResponse.json({ group });
   } catch (error) {
     console.error('Error updating group:', error);
@@ -124,6 +187,12 @@ export async function PUT(request: Request) {
 // DELETE /api/groups - Delete a group
 export async function DELETE(request: Request) {
   try {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const store = authResult.storage.getJsonStore<StockGroup>('groups');
+
     const body = await request.json();
     const { id } = body;
 
@@ -135,22 +204,21 @@ export async function DELETE(request: Request) {
     }
 
     // Check if this is a data source group (auto-generated, cannot be deleted)
-    const existingGroup = await getGroupById(id);
-    if (existingGroup?.isDataSource) {
+    const existingGroup = await store.getById(id);
+    if (!existingGroup) {
+      return NextResponse.json(
+        { error: 'Group not found' },
+        { status: 404 }
+      );
+    }
+    if (existingGroup.isDataSource) {
       return NextResponse.json(
         { error: 'Cannot delete data source group', message: 'Data source groups are auto-generated and cannot be deleted' },
         { status: 403 }
       );
     }
 
-    const deleted = await deleteGroup(id);
-    if (!deleted) {
-      return NextResponse.json(
-        { error: 'Group not found' },
-        { status: 404 }
-      );
-    }
-
+    await store.delete(id);
     return NextResponse.json({ success: true, message: 'Group deleted successfully' });
   } catch (error) {
     console.error('Error deleting group:', error);
@@ -160,4 +228,3 @@ export async function DELETE(request: Request) {
     );
   }
 }
-

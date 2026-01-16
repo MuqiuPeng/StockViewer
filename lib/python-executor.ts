@@ -3,6 +3,9 @@ import path from 'path';
 import { existsSync } from 'fs';
 import { PYTHON_CONFIG } from './env';
 
+// Get project root directory - use the location of this file to find it
+const PROJECT_ROOT = path.resolve(__dirname, '..');
+
 export interface PythonExecutionInput {
   code: string;
   data: Record<string, any>[];
@@ -29,40 +32,48 @@ export async function executePythonIndicator(
   input: PythonExecutionInput
 ): Promise<PythonExecutionResult> {
   return new Promise((resolve, reject) => {
-    const pythonScript = path.join(process.cwd(), 'data', 'python', 'executor.py');
+    // Try both PROJECT_ROOT and process.cwd() for finding files
+    const projectRoot = existsSync(path.join(PROJECT_ROOT, 'package.json')) ? PROJECT_ROOT : process.cwd();
+    const pythonScript = path.join(projectRoot, 'data', 'python', 'executor.py');
 
     // Check if executor.py exists
     if (!existsSync(pythonScript)) {
-      reject(new Error(`Python script not found: ${pythonScript}. Current directory: ${process.cwd()}`));
+      reject(new Error(`Python script not found: ${pythonScript}. Project root: ${projectRoot}`));
       return;
     }
 
     // Get Python executable - prioritize env config, then local venv
-    let pythonExecutable: string;
+    let pythonExecutable: string = 'python3';
 
     // Check for configured Python path first
     if (PYTHON_CONFIG.EXECUTABLE !== 'python3') {
       // Custom Python executable specified in env
       pythonExecutable = PYTHON_CONFIG.EXECUTABLE;
     } else {
-      // Look for local venv in project directory
-      const venvPath = path.join(process.cwd(), 'venv');
-      const venvPython = process.platform === 'win32'
-        ? path.join(venvPath, 'Scripts', 'python.exe')
-        : path.join(venvPath, 'bin', 'python');
+      // Look for local venv in project directory (check multiple common names)
+      const venvNames = ['python-venv', 'venv', '.venv', 'aktools-env'];
+      let foundVenv = false;
 
-      if (existsSync(venvPython)) {
-        pythonExecutable = venvPython;
-        console.log('[Python Executor] Using venv Python:', venvPython);
-      } else {
+      for (const venvName of venvNames) {
+        const venvPath = path.join(projectRoot, venvName);
+        const venvPython = process.platform === 'win32'
+          ? path.join(venvPath, 'Scripts', 'python.exe')
+          : path.join(venvPath, 'bin', 'python');
+
+        if (existsSync(venvPython)) {
+          // Use the venv python directly (don't resolve symlink - it breaks venv!)
+          pythonExecutable = venvPython;
+          foundVenv = true;
+          break;
+        }
+      }
+
+      if (!foundVenv) {
         // Fall back to python3
         pythonExecutable = 'python3';
-        console.log('[Python Executor] venv not found, using system python3');
+        console.warn('[Python Executor] venv not found in', projectRoot, '- using system python3');
       }
     }
-
-    console.log('[Python Executor] Executing with:', pythonExecutable);
-    console.log('[Python Executor] Script:', pythonScript);
 
     // Spawn Python process
     const pythonProcess = spawn(pythonExecutable, [pythonScript], {

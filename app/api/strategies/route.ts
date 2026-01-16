@@ -1,14 +1,16 @@
 import { NextResponse } from 'next/server';
-import {
-  loadStrategies,
-  saveStrategy,
-  Strategy,
-} from '@/lib/strategy-storage';
+import { Strategy } from '@/lib/strategy-storage';
+import { getApiStorage } from '@/lib/api-auth';
 
 // GET /api/strategies - List all strategies
 export async function GET() {
   try {
-    const strategies = await loadStrategies();
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+
+    const strategies = await authResult.storage.getJsonStore<Strategy>('strategies').getAll();
     return NextResponse.json({ strategies });
   } catch (error) {
     return NextResponse.json(
@@ -24,6 +26,12 @@ export async function GET() {
 // POST /api/strategies - Create new strategy
 export async function POST(request: Request) {
   try {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const store = authResult.storage.getJsonStore<Strategy>('strategies');
+
     const body = await request.json();
     const { name, description, pythonCode, parameters, strategyType, constraints, externalDatasets } = body;
 
@@ -54,8 +62,20 @@ export async function POST(request: Request) {
       );
     }
 
+    // Check for duplicate names
+    const allStrategies = await store.getAll();
+    const duplicate = allStrategies.find(
+      (s) => s.name.toLowerCase() === name.toLowerCase()
+    );
+    if (duplicate) {
+      return NextResponse.json(
+        { error: 'Duplicate strategy', message: `Strategy with name "${name}" already exists` },
+        { status: 409 }
+      );
+    }
+
     // Create strategy
-    const strategy = await saveStrategy({
+    const strategy = await store.create({
       name,
       description,
       pythonCode,
@@ -67,13 +87,6 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ strategy }, { status: 201 });
   } catch (error) {
-    if (error instanceof Error && error.message.includes('already exists')) {
-      return NextResponse.json(
-        { error: 'Duplicate strategy', message: error.message },
-        { status: 409 }
-      );
-    }
-
     return NextResponse.json(
       {
         error: 'Failed to create strategy',
@@ -83,4 +96,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

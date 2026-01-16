@@ -112,22 +112,31 @@ export async function executeBacktest(
     }
 
     // Get Python executable - prioritize env config, then local venv
-    let pythonExecutable: string;
+    let pythonExecutable: string = 'python3';
 
     // Check for configured Python path first
     if (PYTHON_CONFIG.EXECUTABLE !== 'python3') {
       // Custom Python executable specified in env
       pythonExecutable = PYTHON_CONFIG.EXECUTABLE;
     } else {
-      // Look for local venv in project directory
-      const venvPath = path.join(process.cwd(), 'venv');
-      const venvPython = process.platform === 'win32'
-        ? path.join(venvPath, 'Scripts', 'python.exe')
-        : path.join(venvPath, 'bin', 'python');
+      // Look for local venv in project directory (check multiple common names)
+      const venvNames = ['python-venv', 'venv', '.venv', 'aktools-env'];
+      let foundVenv = false;
 
-      if (existsSync(venvPython)) {
-        pythonExecutable = venvPython;
-      } else {
+      for (const venvName of venvNames) {
+        const venvPath = path.join(process.cwd(), venvName);
+        const venvPython = process.platform === 'win32'
+          ? path.join(venvPath, 'Scripts', 'python.exe')
+          : path.join(venvPath, 'bin', 'python');
+
+        if (existsSync(venvPython)) {
+          pythonExecutable = venvPython;
+          foundVenv = true;
+          break;
+        }
+      }
+
+      if (!foundVenv) {
         // Fall back to python3
         pythonExecutable = 'python3';
       }

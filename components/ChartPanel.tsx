@@ -78,8 +78,8 @@ const commonTimeScaleOptions = {
 };
 
 export default function ChartPanel({
-  candles,
-  indicators,
+  candles = [],
+  indicators = {},
   enabledIndicators1,
   enabledIndicators2,
   colorMap,

@@ -2,7 +2,9 @@ import Papa from 'papaparse';
 import { readFile, writeFile } from 'fs/promises';
 import { getCsvFileStats } from './datasets';
 import { cleanDateColumn } from './date-cleaner';
-import { loadMetadata, saveMetadata } from './dataset-metadata';
+import { loadMetadata, saveMetadata, findDataset } from './dataset-metadata';
+import type { StorageProvider } from './storage/types';
+import { getStorageMode } from './storage';
 
 // Basic columns that are always valid (from CSV data, not indicators)
 export const REQUIRED_COLUMNS = ['date', 'open', 'high', 'low', 'close'];
@@ -138,14 +140,27 @@ export async function removeColumnsFromAllDatasets(
 export async function addIndicatorGroupColumns(
   filename: string,
   groupName: string,
-  indicatorValues: Record<string, (number | null)[]>
+  indicatorValues: Record<string, (number | null)[]>,
+  storage?: StorageProvider
 ): Promise<void> {
-  const fileStats = await getCsvFileStats(filename);
-  if (!fileStats.exists) {
-    throw new Error(`CSV file not found: ${filename}`);
-  }
+  let fileContent: string;
+  let filePath: string | null = null;
 
-  const fileContent = await readFile(fileStats.path, 'utf-8');
+  if (storage) {
+    const fileStore = storage.getFileStore();
+    const exists = await fileStore.exists(filename);
+    if (!exists) {
+      throw new Error(`CSV file not found: ${filename}`);
+    }
+    fileContent = await fileStore.readText(filename);
+  } else {
+    const fileStats = await getCsvFileStats(filename);
+    if (!fileStats.exists) {
+      throw new Error(`CSV file not found: ${filename}`);
+    }
+    fileContent = await readFile(fileStats.path, 'utf-8');
+    filePath = fileStats.path;
+  }
 
   return new Promise((resolve, reject) => {
     Papa.parse(fileContent, {
@@ -205,7 +220,14 @@ export async function addIndicatorGroupColumns(
           const updatedCsv = Papa.unparse(rows);
 
           // Write back to file
-          await writeFile(fileStats.path, updatedCsv, 'utf-8');
+          if (storage) {
+            await storage.getFileStore().writeText(filename, updatedCsv);
+          } else if (filePath) {
+            await writeFile(filePath, updatedCsv, 'utf-8');
+          }
+
+          // Update dataset metadata with group columns
+          await updateDatasetMetadataGroupColumns(filename, groupName, Object.keys(indicatorValues), storage);
 
           resolve();
         } catch (error) {
@@ -222,14 +244,27 @@ export async function addIndicatorGroupColumns(
 export async function addIndicatorColumn(
   filename: string,
   columnName: string,
-  values: (number | null)[]
+  values: (number | null)[],
+  storage?: StorageProvider
 ): Promise<void> {
-  const fileStats = await getCsvFileStats(filename);
-  if (!fileStats.exists) {
-    throw new Error(`CSV file not found: ${filename}`);
-  }
+  let fileContent: string;
+  let filePath: string | null = null;
 
-  const fileContent = await readFile(fileStats.path, 'utf-8');
+  if (storage) {
+    const fileStore = storage.getFileStore();
+    const exists = await fileStore.exists(filename);
+    if (!exists) {
+      throw new Error(`CSV file not found: ${filename}`);
+    }
+    fileContent = await fileStore.readText(filename);
+  } else {
+    const fileStats = await getCsvFileStats(filename);
+    if (!fileStats.exists) {
+      throw new Error(`CSV file not found: ${filename}`);
+    }
+    fileContent = await readFile(fileStats.path, 'utf-8');
+    filePath = fileStats.path;
+  }
 
   return new Promise((resolve, reject) => {
     Papa.parse(fileContent, {
@@ -266,7 +301,14 @@ export async function addIndicatorColumn(
           const updatedCsv = Papa.unparse(rows);
 
           // Write back to file
-          await writeFile(fileStats.path, updatedCsv, 'utf-8');
+          if (storage) {
+            await storage.getFileStore().writeText(filename, updatedCsv);
+          } else if (filePath) {
+            await writeFile(filePath, updatedCsv, 'utf-8');
+          }
+
+          // Update dataset metadata columns
+          await updateDatasetMetadataColumns(filename, columnName, storage);
 
           resolve();
         } catch (error) {
@@ -278,6 +320,100 @@ export async function addIndicatorColumn(
       },
     });
   });
+}
+
+/**
+ * Helper to update dataset metadata with new column
+ */
+async function updateDatasetMetadataColumns(
+  filename: string,
+  columnName: string,
+  storage?: StorageProvider
+): Promise<void> {
+  try {
+    const dataset = await findDataset(filename, storage);
+    if (dataset) {
+      const columns = dataset.columns || [];
+      if (!columns.includes(columnName)) {
+        columns.push(columnName);
+        dataset.columns = columns;
+
+        // Also update indicators list if it's a computed indicator
+        const indicators = dataset.indicators || [];
+        if (!BASE_INDICATORS.includes(columnName) && !REQUIRED_COLUMNS.includes(columnName)) {
+          if (!indicators.includes(columnName)) {
+            indicators.push(columnName);
+            dataset.indicators = indicators;
+          }
+        }
+
+        // Save metadata
+        if (storage) {
+          const metadataStore = storage.getJsonStore<typeof dataset>('datasetMetadata');
+          await metadataStore.update(dataset.id, { columns, indicators });
+        } else if (getStorageMode() !== 'database') {
+          const allDatasets = await loadMetadata();
+          const idx = allDatasets.findIndex(ds => ds.id === dataset.id);
+          if (idx >= 0) {
+            allDatasets[idx] = dataset;
+            await saveMetadata(allDatasets);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`Failed to update metadata for ${filename}:`, error);
+  }
+}
+
+/**
+ * Helper to update dataset metadata with new group columns
+ */
+async function updateDatasetMetadataGroupColumns(
+  filename: string,
+  groupName: string,
+  indicatorNames: string[],
+  storage?: StorageProvider
+): Promise<void> {
+  try {
+    const dataset = await findDataset(filename, storage);
+    if (dataset) {
+      const columns = dataset.columns || [];
+      const indicators = dataset.indicators || [];
+      let modified = false;
+
+      for (const indicatorName of indicatorNames) {
+        const columnName = `${groupName}:${indicatorName}`;
+        if (!columns.includes(columnName)) {
+          columns.push(columnName);
+          modified = true;
+        }
+        if (!indicators.includes(columnName)) {
+          indicators.push(columnName);
+        }
+      }
+
+      if (modified) {
+        dataset.columns = columns;
+        dataset.indicators = indicators;
+
+        // Save metadata
+        if (storage) {
+          const metadataStore = storage.getJsonStore<typeof dataset>('datasetMetadata');
+          await metadataStore.update(dataset.id, { columns, indicators });
+        } else if (getStorageMode() !== 'database') {
+          const allDatasets = await loadMetadata();
+          const idx = allDatasets.findIndex(ds => ds.id === dataset.id);
+          if (idx >= 0) {
+            allDatasets[idx] = dataset;
+            await saveMetadata(allDatasets);
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`Failed to update metadata for ${filename}:`, error);
+  }
 }
 
 /**

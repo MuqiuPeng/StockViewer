@@ -1,15 +1,26 @@
 import { NextResponse } from 'next/server';
-import { getAllBacktestHistory } from '@/lib/backtest-history-storage';
+import { getApiStorage } from '@/lib/api-auth';
+import type { BacktestHistoryEntry } from '@/lib/backtest-history-storage';
 
 // GET /api/backtest-history - Get all backtest history entries with optional filtering
 export async function GET(request: Request) {
   try {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+
     const { searchParams } = new URL(request.url);
     const starred = searchParams.get('starred');
     const strategyId = searchParams.get('strategyId');
     const tags = searchParams.get('tags')?.split(',').filter(Boolean);
 
-    let entries = await getAllBacktestHistory();
+    let entries = await authResult.storage.getJsonStore<BacktestHistoryEntry>('backtestHistory').getAll();
+
+    // Sort by createdAt descending
+    entries = entries.sort(
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
 
     // Apply filters
     if (starred === 'true') {

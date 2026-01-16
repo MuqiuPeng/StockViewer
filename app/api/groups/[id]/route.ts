@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { getGroupById, updateGroup, deleteGroup } from '@/lib/group-storage';
+import { getApiStorage } from '@/lib/api-auth';
+import type { StockGroup } from '@/lib/group-storage';
 
 export const runtime = 'nodejs';
 
@@ -9,7 +10,12 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const group = await getGroupById(params.id);
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+
+    const group = await authResult.storage.getJsonStore<StockGroup>('groups').getById(params.id);
     if (!group) {
       return NextResponse.json(
         { error: 'Group not found' },
@@ -32,8 +38,29 @@ export async function PUT(
   { params }: { params: { id: string } }
 ) {
   try {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const store = authResult.storage.getJsonStore<StockGroup>('groups');
+
     const body = await request.json();
     const { name, description, datasetNames } = body;
+
+    // Check if group exists and if it's a data source group
+    const existingGroup = await store.getById(params.id);
+    if (!existingGroup) {
+      return NextResponse.json(
+        { error: 'Group not found' },
+        { status: 404 }
+      );
+    }
+    if (existingGroup.isDataSource) {
+      return NextResponse.json(
+        { error: 'Cannot edit data source group', message: 'Data source groups are auto-generated and cannot be modified' },
+        { status: 403 }
+      );
+    }
 
     const updates: any = {};
     if (name !== undefined) {
@@ -58,14 +85,7 @@ export async function PUT(
       updates.datasetNames = datasetNames;
     }
 
-    const group = await updateGroup(params.id, updates);
-    if (!group) {
-      return NextResponse.json(
-        { error: 'Group not found' },
-        { status: 404 }
-      );
-    }
-
+    const group = await store.update(params.id, updates);
     return NextResponse.json({ group });
   } catch (error) {
     console.error('Error updating group:', error);
@@ -82,14 +102,28 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const deleted = await deleteGroup(params.id);
-    if (!deleted) {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const store = authResult.storage.getJsonStore<StockGroup>('groups');
+
+    // Check if group exists and if it's a data source group
+    const existingGroup = await store.getById(params.id);
+    if (!existingGroup) {
       return NextResponse.json(
         { error: 'Group not found' },
         { status: 404 }
       );
     }
+    if (existingGroup.isDataSource) {
+      return NextResponse.json(
+        { error: 'Cannot delete data source group', message: 'Data source groups are auto-generated and cannot be deleted' },
+        { status: 403 }
+      );
+    }
 
+    await store.delete(params.id);
     return NextResponse.json({ success: true, message: 'Group deleted successfully' });
   } catch (error) {
     console.error('Error deleting group:', error);
@@ -99,4 +133,3 @@ export async function DELETE(
     );
   }
 }
-

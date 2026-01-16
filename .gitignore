@@ -7,6 +7,7 @@
 
 # python virtual environment
 /venv
+/python-venv
 aktools-env/
 __pycache__/
 *.pyc
@@ -80,3 +81,5 @@ aktools_log.log*
 docker-compose.override.yml
 *.tar
 *.tar.gz
+
+/lib/generated/prisma

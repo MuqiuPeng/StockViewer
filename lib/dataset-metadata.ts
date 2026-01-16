@@ -1,7 +1,10 @@
-import { readFile, writeFile } from 'fs/promises';
-import { join } from 'path';
+/**
+ * Dataset metadata storage module
+ * Uses the storage abstraction layer for both local (file) and online (IndexedDB) modes
+ */
 
-const METADATA_FILE = join(process.cwd(), 'data', 'datasets', 'datasets.json');
+import { getStorageProvider, getStorageMode } from './storage';
+import type { JsonStorageProvider, StorageProvider } from './storage/types';
 
 export interface DatasetMetadata {
   id: string;              // Unique identifier: {symbol}_{dataSource}
@@ -15,39 +18,46 @@ export interface DatasetMetadata {
   rowCount?: number;
   columns?: string[];
   indicators?: string[];
+  createdAt?: string;      // For storage abstraction compatibility
 }
 
-interface MetadataStore {
-  datasets: DatasetMetadata[];
+/**
+ * Get the dataset metadata store instance
+ * @param storage Optional storage provider (required for database mode)
+ */
+function getStore(storage?: StorageProvider): JsonStorageProvider<DatasetMetadata> {
+  if (storage) {
+    return storage.getJsonStore<DatasetMetadata>('datasetMetadata');
+  }
+  if (getStorageMode() === 'database') {
+    throw new Error('Database mode requires passing a storage provider. Use getApiStorage() in API routes.');
+  }
+  return getStorageProvider().getJsonStore<DatasetMetadata>('datasetMetadata');
 }
 
 /**
  * Load all dataset metadata
+ * @param storage Optional storage provider (required for database mode)
  */
-export async function loadMetadata(): Promise<DatasetMetadata[]> {
-  try {
-    const content = await readFile(METADATA_FILE, 'utf-8');
-    const data: MetadataStore = JSON.parse(content);
-    return data.datasets || [];
-  } catch {
-    return [];
-  }
+export async function loadMetadata(storage?: StorageProvider): Promise<DatasetMetadata[]> {
+  return getStore(storage).getAll();
 }
 
 /**
- * Save all dataset metadata
+ * Save all dataset metadata (bulk replace)
  */
 export async function saveMetadata(datasets: DatasetMetadata[]): Promise<void> {
-  const data: MetadataStore = { datasets };
-  await writeFile(METADATA_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  return getStore().saveAll(datasets);
 }
 
 /**
  * Find dataset by ID, code, name, or filename
  * Priority: ID > filename > name > code (only if unique)
+ * @param identifier The identifier to search for
+ * @param storage Optional storage provider (required for database mode)
  */
-export async function findDataset(identifier: string): Promise<DatasetMetadata | null> {
-  const datasets = await loadMetadata();
+export async function findDataset(identifier: string, storage?: StorageProvider): Promise<DatasetMetadata | null> {
+  const datasets = await loadMetadata(storage);
 
   // Priority 1: Match by unique ID
   let match = datasets.find(ds => ds.id === identifier);
@@ -81,18 +91,22 @@ export async function findDataset(identifier: string): Promise<DatasetMetadata |
  * Register or update a dataset
  */
 export async function registerDataset(metadata: DatasetMetadata): Promise<void> {
-  const datasets = await loadMetadata();
+  const store = getStore();
+  const datasets = await store.getAll();
   const existingIndex = datasets.findIndex(ds => ds.filename === metadata.filename);
 
   if (existingIndex >= 0) {
-    // Update existing
-    datasets[existingIndex] = metadata;
+    // Update existing - preserve the id
+    const existingId = datasets[existingIndex].id;
+    await store.update(existingId, metadata);
   } else {
-    // Add new
-    datasets.push(metadata);
+    // Add new - ensure id exists
+    const metadataWithId = {
+      ...metadata,
+      id: metadata.id || `${metadata.code}_${metadata.dataSource}`,
+    };
+    await store.create(metadataWithId);
   }
-
-  await saveMetadata(datasets);
 }
 
 /**
@@ -100,8 +114,10 @@ export async function registerDataset(metadata: DatasetMetadata): Promise<void> 
  */
 export async function removeDataset(filename: string): Promise<void> {
   const datasets = await loadMetadata();
-  const filtered = datasets.filter(ds => ds.filename !== filename);
-  await saveMetadata(filtered);
+  const dataset = datasets.find(ds => ds.filename === filename);
+  if (dataset) {
+    await getStore().delete(dataset.id);
+  }
 }
 
 /**
@@ -111,8 +127,7 @@ export async function updateDatasetName(filename: string, name: string): Promise
   const datasets = await loadMetadata();
   const dataset = datasets.find(ds => ds.filename === filename);
   if (dataset) {
-    dataset.name = name;
-    await saveMetadata(datasets);
+    await getStore().update(dataset.id, { name });
   }
 }
 

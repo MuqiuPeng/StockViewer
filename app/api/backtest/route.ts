@@ -1,17 +1,17 @@
 import { NextResponse } from 'next/server';
 import { executeBacktest } from '@/lib/backtest-executor';
 import { getStrategyById } from '@/lib/strategy-storage';
-import { getCsvFileStats } from '@/lib/datasets';
 import { getGroupById } from '@/lib/group-storage';
 import { findDataset } from '@/lib/dataset-metadata';
-import { readFile } from 'fs/promises';
 import Papa from 'papaparse';
 import { createBacktestHistoryEntry } from '@/lib/backtest-history-storage';
+import { getApiStorage } from '@/lib/api-auth';
+import type { StorageProvider } from '@/lib/storage';
 
 // Helper function to load and parse a dataset
-async function loadDataset(datasetIdentifier: string) {
+async function loadDatasetWithStorage(datasetIdentifier: string, storage: StorageProvider) {
   // Try to find dataset using metadata (supports code, name, or filename)
-  const metadata = await findDataset(datasetIdentifier);
+  const metadata = await findDataset(datasetIdentifier, storage);
 
   let filename: string;
   if (metadata) {
@@ -25,12 +25,13 @@ async function loadDataset(datasetIdentifier: string) {
     }
   }
 
-  const fileStats = await getCsvFileStats(filename);
-  if (!fileStats.exists) {
+  const fileStore = storage.getFileStore();
+  const exists = await fileStore.exists(filename);
+  if (!exists) {
     throw new Error(`Dataset "${datasetIdentifier}" not found`);
   }
 
-  const fileContent = await readFile(fileStats.path, 'utf-8');
+  const fileContent = await fileStore.readText(filename);
   const dataset = await new Promise<Record<string, any>[]>((resolve, reject) => {
     Papa.parse(fileContent, {
       header: true,
@@ -83,6 +84,13 @@ function filterDatasetByDateRange(
 // POST /api/backtest - Run backtest (single stock or group)
 export async function POST(request: Request) {
   try {
+    // Get authenticated storage
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const storage = authResult.storage;
+
     const body = await request.json();
     const { strategyId, target, initialCash, commission, parameters, startDate, endDate } = body;
 
@@ -130,7 +138,7 @@ export async function POST(request: Request) {
     }
 
     // Load strategy
-    const strategy = await getStrategyById(strategyId);
+    const strategy = await getStrategyById(strategyId, storage);
     if (!strategy) {
       return NextResponse.json(
         { error: 'Strategy not found' },
@@ -148,11 +156,11 @@ export async function POST(request: Request) {
         );
       }
 
-      const dataset = await loadDataset(actualTarget.datasetName);
+      const dataset = await loadDatasetWithStorage(actualTarget.datasetName, storage);
       const filteredDataset = filterDatasetByDateRange(dataset, startDate, endDate);
 
       // Get dataset metadata for display name
-      const datasetMetadata = await findDataset(actualTarget.datasetName);
+      const datasetMetadata = await findDataset(actualTarget.datasetName, storage);
       const displayName = datasetMetadata?.name || actualTarget.datasetName;
 
       const startTime = Date.now();
@@ -194,7 +202,7 @@ export async function POST(request: Request) {
 
       // Auto-save to history
       try {
-        await createBacktestHistoryEntry({
+        await createBacktestHistoryEntry(storage, {
           strategyId,
           strategyName: strategy.name,
           strategyType: strategy.strategyType || 'single',
@@ -251,7 +259,7 @@ export async function POST(request: Request) {
 
       for (const filename of actualTarget.symbols) {
         try {
-          const dataset = await loadDataset(filename);
+          const dataset = await loadDatasetWithStorage(filename, storage);
           const filteredDataset = filterDatasetByDateRange(dataset, startDate, endDate);
 
           // Use stock code as key instead of full filename
@@ -341,7 +349,7 @@ export async function POST(request: Request) {
 
       // Auto-save to history
       try {
-        await createBacktestHistoryEntry({
+        await createBacktestHistoryEntry(storage, {
           strategyId,
           strategyName: strategy.name,
           strategyType: strategy.strategyType || 'portfolio',
@@ -375,7 +383,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ result: resultWithMetadata });
     } else {
       // Group backtest
-      const group = await getGroupById(actualTarget.groupId);
+      const group = await getGroupById(actualTarget.groupId, storage);
       if (!group) {
         return NextResponse.json(
           { error: 'Group not found' },
@@ -396,7 +404,7 @@ export async function POST(request: Request) {
 
       for (const datasetName of group.datasetNames) {
         try {
-          const dataset = await loadDataset(datasetName);
+          const dataset = await loadDatasetWithStorage(datasetName, storage);
           const filteredDataset = filterDatasetByDateRange(dataset, startDate, endDate);
 
           const stockStartTime = Date.now();
@@ -471,7 +479,7 @@ export async function POST(request: Request) {
         if (!actualStartDate || !actualEndDate) {
           // Load the first dataset to get date range
           try {
-            const firstDataset = await loadDataset(stockResults[0].datasetName);
+            const firstDataset = await loadDatasetWithStorage(stockResults[0].datasetName, storage);
             const filteredFirstDataset = filterDatasetByDateRange(firstDataset, startDate, endDate);
             actualStartDate = actualStartDate || (filteredFirstDataset[0]?.date || filteredFirstDataset[0]?.['日期'] || null);
             actualEndDate = actualEndDate || (filteredFirstDataset[filteredFirstDataset.length - 1]?.date || filteredFirstDataset[filteredFirstDataset.length - 1]?.['日期'] || null);
@@ -501,7 +509,7 @@ export async function POST(request: Request) {
         // Calculate total execution time (sum of all individual backtests)
         const totalDuration = stockResults.reduce((sum, r) => sum + (r.executionTime || 0), 0);
 
-        await createBacktestHistoryEntry({
+        await createBacktestHistoryEntry(storage, {
           strategyId,
           strategyName: strategy.name,
           strategyType: strategy.strategyType || 'single',

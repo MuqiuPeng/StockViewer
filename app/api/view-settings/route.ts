@@ -1,14 +1,15 @@
 import { NextResponse } from 'next/server';
-import {
-  getAllViewSettings,
-  createViewSetting,
-  updateViewSetting,
-  deleteViewSetting,
-} from '@/lib/view-settings-storage';
+import { getApiStorage } from '@/lib/api-auth';
+import type { ViewSetting } from '@/lib/view-settings-storage';
 
 export async function GET() {
   try {
-    const settings = getAllViewSettings();
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+
+    const settings = await authResult.storage.getJsonStore<ViewSetting>('viewSettings').getAll();
     return NextResponse.json({ settings });
   } catch (error: any) {
     return NextResponse.json(
@@ -20,6 +21,12 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const store = authResult.storage.getJsonStore<ViewSetting>('viewSettings');
+
     const body = await request.json();
     const { name, enabledIndicators1, enabledIndicators2, constantLines1, constantLines2 } = body;
 
@@ -30,7 +37,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const setting = createViewSetting({
+    const setting = await store.create({
       name: name.trim(),
       enabledIndicators1: enabledIndicators1 || [],
       enabledIndicators2: enabledIndicators2 || [],
@@ -49,6 +56,12 @@ export async function POST(request: Request) {
 
 export async function PUT(request: Request) {
   try {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const store = authResult.storage.getJsonStore<ViewSetting>('viewSettings');
+
     const body = await request.json();
     const { id, name, enabledIndicators1, enabledIndicators2, constantLines1, constantLines2 } = body;
 
@@ -59,6 +72,15 @@ export async function PUT(request: Request) {
       );
     }
 
+    // Check if exists
+    const existing = await store.getById(id);
+    if (!existing) {
+      return NextResponse.json(
+        { error: true, message: 'View setting not found' },
+        { status: 404 }
+      );
+    }
+
     const updates: any = {};
     if (name !== undefined) updates.name = name.trim();
     if (enabledIndicators1 !== undefined) updates.enabledIndicators1 = enabledIndicators1;
@@ -66,14 +88,7 @@ export async function PUT(request: Request) {
     if (constantLines1 !== undefined) updates.constantLines1 = constantLines1;
     if (constantLines2 !== undefined) updates.constantLines2 = constantLines2;
 
-    const setting = updateViewSetting(id, updates);
-
-    if (!setting) {
-      return NextResponse.json(
-        { error: true, message: 'View setting not found' },
-        { status: 404 }
-      );
-    }
+    const setting = await store.update(id, updates);
 
     return NextResponse.json({ setting });
   } catch (error: any) {
@@ -86,6 +101,12 @@ export async function PUT(request: Request) {
 
 export async function DELETE(request: Request) {
   try {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const store = authResult.storage.getJsonStore<ViewSetting>('viewSettings');
+
     const body = await request.json();
     const { id } = body;
 
@@ -96,15 +117,16 @@ export async function DELETE(request: Request) {
       );
     }
 
-    const success = deleteViewSetting(id);
-
-    if (!success) {
+    // Check if exists
+    const existing = await store.getById(id);
+    if (!existing) {
       return NextResponse.json(
         { error: true, message: 'View setting not found' },
         { status: 404 }
       );
     }
 
+    await store.delete(id);
     return NextResponse.json({ success: true });
   } catch (error: any) {
     return NextResponse.json(

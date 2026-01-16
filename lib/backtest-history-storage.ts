@@ -1,6 +1,10 @@
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
-import { randomUUID } from 'crypto';
+/**
+ * Backtest history storage module
+ * Uses the storage abstraction layer for both local (file) and online (IndexedDB) modes
+ */
+
+import { getStorageProvider, getStorageMode } from './storage';
+import type { JsonStorageProvider, StorageProvider } from './storage/types';
 import { BacktestResult } from './backtest-executor';
 import { PortfolioConstraints } from './types/portfolio';
 
@@ -51,109 +55,84 @@ export interface BacktestHistoryEntry {
   };
 }
 
-interface BacktestHistoryFile {
-  entries: BacktestHistoryEntry[];
-}
-
-function getHistoryDirectory(): string {
-  return join(process.cwd(), 'data', 'backtest-history');
-}
-
-function getHistoryFilePath(): string {
-  return join(getHistoryDirectory(), 'history.json');
-}
-
-export async function getAllBacktestHistory(): Promise<BacktestHistoryEntry[]> {
-  try {
-    const filePath = getHistoryFilePath();
-    const content = await readFile(filePath, 'utf-8');
-    const data: BacktestHistoryFile = JSON.parse(content);
-    const entries = data.entries || [];
-
-    // Sort by createdAt descending (newest first)
-    return entries.sort((a, b) =>
-      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-    );
-  } catch (error) {
-    // If file doesn't exist or is invalid, return empty array
-    return [];
+/**
+ * Get the backtest history store instance
+ */
+function getStore(storage?: StorageProvider): JsonStorageProvider<BacktestHistoryEntry> {
+  if (storage) {
+    return storage.getJsonStore<BacktestHistoryEntry>('backtestHistory');
   }
+  if (getStorageMode() === 'database') {
+    throw new Error('Database mode requires passing a storage provider.');
+  }
+  return getStorageProvider().getJsonStore<BacktestHistoryEntry>('backtestHistory');
 }
 
-async function saveBacktestHistory(entries: BacktestHistoryEntry[]): Promise<void> {
-  const historyDir = getHistoryDirectory();
-  await mkdir(historyDir, { recursive: true });
+/**
+ * Get all backtest history entries (sorted by date, newest first)
+ */
+export async function getAllBacktestHistory(): Promise<BacktestHistoryEntry[]> {
+  const entries = await getStore().getAll();
 
-  const filePath = getHistoryFilePath();
-  const data: BacktestHistoryFile = { entries };
-  await writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  // Sort by createdAt descending (newest first)
+  return entries.sort((a, b) =>
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
 }
 
+/**
+ * Get a backtest history entry by ID
+ */
 export async function getBacktestHistoryById(id: string): Promise<BacktestHistoryEntry | null> {
-  const entries = await getAllBacktestHistory();
-  return entries.find(entry => entry.id === id) || null;
+  return getStore().getById(id);
 }
 
+/**
+ * Create a new backtest history entry
+ */
 export async function createBacktestHistoryEntry(
+  storage: StorageProvider,
   entryData: Omit<BacktestHistoryEntry, 'id' | 'createdAt'>
 ): Promise<BacktestHistoryEntry> {
-  const entries = await getAllBacktestHistory();
-
-  const newEntry: BacktestHistoryEntry = {
-    ...entryData,
-    id: randomUUID(),
-    createdAt: new Date().toISOString(),
-  };
-
-  entries.push(newEntry);
-  await saveBacktestHistory(entries);
-
-  return newEntry;
+  return getStore(storage).create(entryData);
 }
 
+/**
+ * Update a backtest history entry
+ */
 export async function updateBacktestHistoryEntry(
   id: string,
   updates: Partial<Omit<BacktestHistoryEntry, 'id' | 'createdAt'>>
 ): Promise<BacktestHistoryEntry> {
-  const entries = await getAllBacktestHistory();
-  const index = entries.findIndex(entry => entry.id === id);
-
-  if (index === -1) {
-    throw new Error(`Backtest history entry with ID "${id}" not found`);
-  }
-
-  const updatedEntry: BacktestHistoryEntry = {
-    ...entries[index],
-    ...updates,
-  };
-
-  entries[index] = updatedEntry;
-  await saveBacktestHistory(entries);
-
-  return updatedEntry;
+  return getStore().update(id, updates);
 }
 
+/**
+ * Delete a backtest history entry
+ */
 export async function deleteBacktestHistoryEntry(id: string): Promise<void> {
-  const entries = await getAllBacktestHistory();
-  const filteredEntries = entries.filter(entry => entry.id !== id);
-
-  if (filteredEntries.length === entries.length) {
-    throw new Error(`Backtest history entry with ID "${id}" not found`);
-  }
-
-  await saveBacktestHistory(filteredEntries);
+  await getStore().delete(id);
 }
 
 // Specialized operations
 
+/**
+ * Star/unstar a backtest history entry
+ */
 export async function starBacktestHistoryEntry(id: string, starred: boolean): Promise<void> {
   await updateBacktestHistoryEntry(id, { starred });
 }
 
+/**
+ * Add notes to a backtest history entry
+ */
 export async function addNoteToBacktestHistoryEntry(id: string, notes: string): Promise<void> {
   await updateBacktestHistoryEntry(id, { notes });
 }
 
+/**
+ * Add tags to a backtest history entry
+ */
 export async function addTagsToBacktestHistoryEntry(id: string, tags: string[]): Promise<void> {
   await updateBacktestHistoryEntry(id, { tags });
 }

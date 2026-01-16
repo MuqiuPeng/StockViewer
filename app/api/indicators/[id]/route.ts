@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
-import { getIndicatorById, updateIndicator, deleteIndicator, loadIndicators, saveIndicators } from '@/lib/indicator-storage';
+import { getIndicatorById, updateIndicator, deleteIndicator, loadIndicators, saveIndicators, Indicator } from '@/lib/indicator-storage';
 import { validatePythonCode } from '@/lib/indicator-validator';
 import { findDependentIndicators, getCascadeDeleteList, findIndicatorsDependingOnColumns, replaceColumnInCode } from '@/lib/indicator-dependencies';
 import { detectDependencies } from '@/lib/detect-dependencies';
 import { renameGroupIndicatorColumns, removeGroupIndicatorColumns, cleanupOrphanedGroupColumns } from '@/lib/csv-updater';
+import { getApiStorage } from '@/lib/api-auth';
 
 // Helper to detect column name changes and find affected indicators
 interface ColumnRename {
@@ -80,7 +81,13 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const indicator = await getIndicatorById(params.id);
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const store = authResult.storage.getJsonStore<Indicator>('indicators');
+
+    const indicator = await store.getById(params.id);
 
     if (!indicator) {
       return NextResponse.json(
@@ -397,11 +404,17 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const store = authResult.storage.getJsonStore<Indicator>('indicators');
+
     const url = new URL(request.url);
     const cascade = url.searchParams.get('cascade') === 'true';
     const checkOnly = url.searchParams.get('checkOnly') === 'true';
 
-    const allIndicators = await loadIndicators();
+    const allIndicators = await store.getAll();
     const indicator = allIndicators.find(ind => ind.id === params.id);
 
     if (!indicator) {
@@ -440,9 +453,10 @@ export async function DELETE(
       const toDelete = getCascadeDeleteList(params.id, allIndicators);
       const idsToDelete = new Set(toDelete.map(ind => ind.id));
 
-      // Filter out all indicators to delete
-      const remaining = allIndicators.filter(ind => !idsToDelete.has(ind.id));
-      await saveIndicators(remaining);
+      // Delete each indicator
+      for (const ind of toDelete) {
+        await store.delete(ind.id);
+      }
 
       return NextResponse.json({
         success: true,
@@ -451,7 +465,7 @@ export async function DELETE(
       });
     } else {
       // Simple deletion (no dependents)
-      await deleteIndicator(params.id);
+      await store.delete(params.id);
       return NextResponse.json({ success: true });
     }
   } catch (error) {

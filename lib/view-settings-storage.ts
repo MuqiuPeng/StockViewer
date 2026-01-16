@@ -1,8 +1,10 @@
-import fs from 'fs';
-import path from 'path';
+/**
+ * View settings storage module
+ * Uses the storage abstraction layer for both local (file) and online (IndexedDB) modes
+ */
 
-const DATA_DIR = path.join(process.cwd(), 'data', 'view-settings');
-const SETTINGS_FILE = path.join(DATA_DIR, 'settings.json');
+import { getStorageProvider } from './storage';
+import type { JsonStorageProvider } from './storage/types';
 
 export interface ConstantLine {
   value: number;
@@ -21,71 +23,52 @@ export interface ViewSetting {
   updatedAt?: string;
 }
 
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-  }
+/**
+ * Get the view settings store instance
+ */
+function getStore(): JsonStorageProvider<ViewSetting> {
+  return getStorageProvider().getJsonStore<ViewSetting>('viewSettings');
 }
 
-function loadSettings(): ViewSetting[] {
-  ensureDataDir();
-  if (!fs.existsSync(SETTINGS_FILE)) {
-    return [];
-  }
+/**
+ * Get all view settings
+ */
+export function getAllViewSettings(): Promise<ViewSetting[]> {
+  return getStore().getAll();
+}
+
+/**
+ * Get a view setting by ID
+ */
+export async function getViewSetting(id: string): Promise<ViewSetting | null> {
+  return getStore().getById(id);
+}
+
+/**
+ * Create a new view setting
+ */
+export async function createViewSetting(setting: Omit<ViewSetting, 'id' | 'createdAt'>): Promise<ViewSetting> {
+  return getStore().create(setting);
+}
+
+/**
+ * Update a view setting
+ */
+export async function updateViewSetting(id: string, updates: Partial<Omit<ViewSetting, 'id' | 'createdAt'>>): Promise<ViewSetting | null> {
   try {
-    const data = fs.readFileSync(SETTINGS_FILE, 'utf-8');
-    return JSON.parse(data);
+    return await getStore().update(id, updates);
   } catch {
-    return [];
+    return null;
   }
 }
 
-function saveSettings(settings: ViewSetting[]) {
-  ensureDataDir();
-  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2));
-}
-
-export function getAllViewSettings(): ViewSetting[] {
-  return loadSettings();
-}
-
-export function getViewSetting(id: string): ViewSetting | null {
-  const settings = loadSettings();
-  return settings.find(s => s.id === id) || null;
-}
-
-export function createViewSetting(setting: Omit<ViewSetting, 'id' | 'createdAt'>): ViewSetting {
-  const settings = loadSettings();
-  const newSetting: ViewSetting = {
-    ...setting,
-    id: Date.now().toString(36) + Math.random().toString(36).substr(2, 9),
-    createdAt: new Date().toISOString(),
-  };
-  settings.push(newSetting);
-  saveSettings(settings);
-  return newSetting;
-}
-
-export function updateViewSetting(id: string, updates: Partial<Omit<ViewSetting, 'id' | 'createdAt'>>): ViewSetting | null {
-  const settings = loadSettings();
-  const index = settings.findIndex(s => s.id === id);
-  if (index === -1) return null;
-
-  settings[index] = {
-    ...settings[index],
-    ...updates,
-    updatedAt: new Date().toISOString(),
-  };
-  saveSettings(settings);
-  return settings[index];
-}
-
-export function deleteViewSetting(id: string): boolean {
-  const settings = loadSettings();
-  const index = settings.findIndex(s => s.id === id);
-  if (index === -1) return false;
-
-  settings.splice(index, 1);
-  saveSettings(settings);
-  return true;
+/**
+ * Delete a view setting
+ */
+export async function deleteViewSetting(id: string): Promise<boolean> {
+  try {
+    return await getStore().delete(id);
+  } catch {
+    return false;
+  }
 }

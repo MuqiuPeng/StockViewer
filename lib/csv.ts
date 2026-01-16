@@ -2,6 +2,7 @@ import Papa from 'papaparse';
 import { readFile } from 'fs/promises';
 import { getCsvFileStats, hasRequiredColumns } from './datasets';
 import { findDataset } from './dataset-metadata';
+import type { StorageProvider } from './storage/types';
 
 export interface CandleData {
   time: string; // YYYY-MM-DD format to avoid timezone issues
@@ -99,17 +100,31 @@ function parseNumber(value: string | number): number | null {
 
 /**
  * Load and parse a CSV dataset
+ * @param filename The filename of the dataset
+ * @param storage Optional storage provider (required for database mode)
  */
-export async function loadDataset(filename: string): Promise<DatasetData> {
-  const fileStats = await getCsvFileStats(filename);
-  if (!fileStats.exists) {
-    throw new Error(`Dataset file not found: ${filename}`);
+export async function loadDataset(filename: string, storage?: StorageProvider): Promise<DatasetData> {
+  let fileContent: string;
+
+  if (storage) {
+    // Use storage provider's file store (for database mode with user-scoped files)
+    const fileStore = storage.getFileStore();
+    const exists = await fileStore.exists(filename);
+    if (!exists) {
+      throw new Error(`Dataset file not found: ${filename}`);
+    }
+    fileContent = await fileStore.readText(filename);
+  } else {
+    // Use direct file system (for local mode)
+    const fileStats = await getCsvFileStats(filename);
+    if (!fileStats.exists) {
+      throw new Error(`Dataset file not found: ${filename}`);
+    }
+    fileContent = await readFile(fileStats.path, 'utf-8');
   }
 
-  const fileContent = await readFile(fileStats.path, 'utf-8');
-
   // Get custom name from metadata
-  const metadata = await findDataset(filename);
+  const metadata = await findDataset(filename, storage);
 
   return new Promise((resolve, reject) => {
     Papa.parse(fileContent, {

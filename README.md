@@ -268,6 +268,51 @@ Comprehensive documentation is organized by topic:
   setup.js              # Automated project setup
 ```
 
+## Data Folder Setup
+
+**Important**: Before using StockViewer, you need to set up a folder for your CSV stock data files.
+
+### Default Setup (Recommended for First-Time Users)
+
+The application will automatically use `{project_root}/data/csv` as the default data folder. This folder is created automatically when you run `npm run setup`.
+
+```bash
+# Verify the data folder exists
+ls data/csv
+```
+
+### Custom Data Folder
+
+If you have existing stock CSV files in another location, configure the path in `.env.local`:
+
+```bash
+# Point to your existing CSV data folder
+CSV_DATA_PATH=/path/to/your/stock-data
+```
+
+### Data Folder Structure
+
+Your CSV data folder should contain stock CSV files with OHLC data:
+- Files should have headers: `date`, `open`, `high`, `low`, `close`, `volume`
+- Date format: `YYYY-MM-DD`
+- One file per stock (e.g., `000001.csv`, `600519.csv`)
+
+Example CSV format:
+```csv
+date,open,high,low,close,volume
+2024-01-02,10.50,10.80,10.40,10.75,1234567
+2024-01-03,10.75,11.00,10.60,10.90,2345678
+```
+
+### Storage Architecture
+
+| Data Type | Storage Location |
+|-----------|------------------|
+| CSV files | Local folder (`CSV_DATA_PATH`) - shared |
+| Indicators | Server database (per-user in database mode) |
+| Strategies | Server database (per-user in database mode) |
+| Dataset metadata | Server database (for restoration if files deleted) |
+
 ## Configuration
 
 Configure via `.env.local`:
@@ -280,9 +325,11 @@ NEXT_PUBLIC_AKTOOLS_API_URL=http://127.0.0.1:8080
 PYTHON_EXECUTABLE=python3
 PYTHON_TIMEOUT_MS=300000  # 5 minutes
 
-# Data directories
-CSV_DIR=./data/csv
-INDICATORS_FILE=./data/indicators/indicators.json
+# CSV data folder (optional - defaults to ./data/csv)
+CSV_DATA_PATH=/path/to/your/stock-data
+
+# Storage mode: local | online | database
+NEXT_PUBLIC_STORAGE_MODE=local
 ```
 
 See [Architecture](docs/ARCHITECTURE.md) for complete configuration options.

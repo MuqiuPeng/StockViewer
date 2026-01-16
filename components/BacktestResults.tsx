@@ -2435,16 +2435,29 @@ export default function BacktestResults({
   const priceChartInitializedRef = useRef(false);
   const drawdownChartInitializedRef = useRef(false);
 
-  // Calculate Buy & Hold comparison
+  // Filter candles by date range if provided
+  const filteredCandles = useMemo(() => {
+    const startDate = dateRange?.startDate;
+    const endDate = dateRange?.endDate;
+    if (!startDate || !endDate) {
+      return candles;
+    }
+    return candles.filter(candle => {
+      const candleDate = candle.time;
+      return candleDate >= startDate && candleDate <= endDate;
+    });
+  }, [candles, dateRange]);
+
+  // Calculate Buy & Hold comparison (using filtered candles)
   const buyHoldMetrics = useMemo(() => {
-    if (candles.length < 2) return null;
-    const firstPrice = candles[0].open;
-    const lastPrice = candles[candles.length - 1].close;
+    if (filteredCandles.length < 2) return null;
+    const firstPrice = filteredCandles[0].open;
+    const lastPrice = filteredCandles[filteredCandles.length - 1].close;
     const buyHoldReturn = lastPrice - firstPrice;
     const buyHoldReturnPct = (buyHoldReturn / firstPrice) * 100;
     const outperformance = metrics.totalReturnPct - buyHoldReturnPct;
     return { buyHoldReturn, buyHoldReturnPct, outperformance };
-  }, [candles, metrics.totalReturnPct]);
+  }, [filteredCandles, metrics.totalReturnPct]);
 
   // Calculate Drawdown data
   const drawdownData = useMemo(() => {
@@ -3120,8 +3133,8 @@ export default function BacktestResults({
       wickDownColor: '#ef5350',
     });
 
-    // Set candlestick data
-    const candleData = candles.map(candle => ({
+    // Set candlestick data (filtered by date range)
+    const candleData = filteredCandles.map(candle => ({
       time: candle.time as any,
       open: candle.open,
       high: candle.high,
@@ -3218,7 +3231,7 @@ export default function BacktestResults({
       window.removeEventListener('resize', handleResize);
       // Don't remove chart on cleanup - keep it alive for tab switching
     };
-  }, [candles, tradeMarkers]);
+  }, [filteredCandles, tradeMarkers]);
 
   // Update price chart when tab changes to charts (to ensure it's visible and properly sized)
   useEffect(() => {

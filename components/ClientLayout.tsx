@@ -2,6 +2,8 @@
 
 import { ReactNode } from 'react';
 import ThemeProvider from './ThemeProvider';
+import SessionProvider from './SessionProvider';
+import { SetupCheck } from './SetupCheck';
 import Navbar from './Navbar';
 
 interface ClientLayoutProps {
@@ -10,11 +12,15 @@ interface ClientLayoutProps {
 
 export default function ClientLayout({ children }: ClientLayoutProps) {
   return (
-    <ThemeProvider>
-      <Navbar />
-      <div className="pt-14">
-        {children}
-      </div>
-    </ThemeProvider>
+    <SessionProvider>
+      <ThemeProvider>
+        <SetupCheck>
+          <Navbar />
+          <div className="pt-14">
+            {children}
+          </div>
+        </SetupCheck>
+      </ThemeProvider>
+    </SessionProvider>
   );
 }

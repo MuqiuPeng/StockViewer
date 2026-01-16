@@ -66,6 +66,34 @@ pythonFiles.forEach(file => {
   }
 });
 
+// Setup Python virtual environment
+console.log('\n🐍 Setting up Python virtual environment...');
+const { execSync } = require('child_process');
+const venvPath = path.join(process.cwd(), 'python-venv');
+const venvPython = process.platform === 'win32'
+  ? path.join(venvPath, 'Scripts', 'python.exe')
+  : path.join(venvPath, 'bin', 'python');
+
+if (!fs.existsSync(venvPython)) {
+  try {
+    console.log('  Creating virtual environment...');
+    execSync('python3 -m venv python-venv', { stdio: 'inherit', cwd: process.cwd() });
+    console.log('  Installing pandas and numpy...');
+    const pipCmd = process.platform === 'win32'
+      ? 'python-venv\\Scripts\\pip install pandas numpy'
+      : 'python-venv/bin/pip install pandas numpy';
+    execSync(pipCmd, { stdio: 'inherit', cwd: process.cwd() });
+    console.log('  ✓ Python environment ready');
+  } catch (error) {
+    console.log('  ⚠️  Failed to set up Python environment automatically.');
+    console.log('     Please run manually:');
+    console.log('     python3 -m venv python-venv');
+    console.log('     source python-venv/bin/activate && pip install pandas numpy');
+  }
+} else {
+  console.log('  ✓ Python environment already exists');
+}
+
 console.log('\n✅ Setup complete!\n');
 
 if (!pythonFilesOk) {
@@ -73,17 +101,12 @@ if (!pythonFilesOk) {
 }
 
 console.log('Next steps:');
-console.log('  1. Set up Python virtual environment:');
-console.log('     python -m venv venv');
-console.log('     source venv/bin/activate  # Windows: venv\\Scripts\\activate');
-console.log('     pip install pandas numpy');
-console.log('');
-console.log('  2. Install and run aktools API:');
-console.log('     python -m venv aktools-env');
+console.log('  1. Install and run aktools API (for stock data):');
+console.log('     python3 -m venv aktools-env');
 console.log('     source aktools-env/bin/activate');
 console.log('     pip install aktools');
 console.log('     python -m aktools');
 console.log('');
-console.log('  3. Start development server:');
+console.log('  2. Start development server:');
 console.log('     npm run dev');
 console.log('');

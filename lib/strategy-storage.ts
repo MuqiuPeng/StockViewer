@@ -1,6 +1,10 @@
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
-import { randomUUID } from 'crypto';
+/**
+ * Strategy storage module
+ * Uses the storage abstraction layer for both local (file) and online (IndexedDB) modes
+ */
+
+import { getStorageProvider, getStorageMode } from './storage';
+import type { JsonStorageProvider, StorageProvider } from './storage/types';
 import { PortfolioConstraints } from './types/portfolio';
 
 export interface Strategy {
@@ -8,76 +12,76 @@ export interface Strategy {
   name: string;
   description: string;
   pythonCode: string;
-  strategyType: 'single' | 'portfolio';  // NEW: Strategy type
-  constraints?: PortfolioConstraints;     // NEW: Portfolio constraints (only for portfolio type)
+  strategyType: 'single' | 'portfolio';  // Strategy type
+  constraints?: PortfolioConstraints;     // Portfolio constraints (only for portfolio type)
   parameters?: Record<string, any>;      // Configurable parameters
-  externalDatasets?: Record<string, { groupId: string; datasetName: string }>;  // External datasets to include in parameters
+  externalDatasets?: Record<string, { groupId: string; datasetName: string }>;  // External datasets
+  dependencies?: string[];               // Indicator names/IDs this strategy depends on
   createdAt: string;
   updatedAt?: string;
 }
 
-interface StrategiesFile {
-  strategies: Strategy[];
-}
-
-function getStrategiesDirectory(): string {
-  return join(process.cwd(), 'data', 'strategies');
-}
-
-function getStrategiesFilePath(): string {
-  return join(getStrategiesDirectory(), 'strategies.json');
-}
-
-export async function loadStrategies(): Promise<Strategy[]> {
-  try {
-    const filePath = getStrategiesFilePath();
-    const content = await readFile(filePath, 'utf-8');
-    const data: StrategiesFile = JSON.parse(content);
-    const strategies = data.strategies || [];
-
-    // Migration: Add default strategyType for existing strategies
-    let needsSave = false;
-    const migratedStrategies = strategies.map(strategy => {
-      if (!strategy.strategyType) {
-        needsSave = true;
-        return {
-          ...strategy,
-          strategyType: 'single' as const, // Default to single-stock for backward compatibility
-        };
-      }
-      return strategy;
-    });
-
-    // Save migrated strategies if needed
-    if (needsSave) {
-      await saveStrategies(migratedStrategies);
-    }
-
-    return migratedStrategies;
-  } catch (error) {
-    // If file doesn't exist or is invalid, return empty array
-    return [];
+/**
+ * Get the strategy store instance
+ */
+function getStore(storage?: StorageProvider): JsonStorageProvider<Strategy> {
+  if (storage) {
+    return storage.getJsonStore<Strategy>('strategies');
   }
+  if (getStorageMode() === 'database') {
+    throw new Error('Database mode requires passing a storage provider.');
+  }
+  return getStorageProvider().getJsonStore<Strategy>('strategies');
 }
 
+/**
+ * Load all strategies
+ */
+export async function loadStrategies(): Promise<Strategy[]> {
+  const strategies = await getStore().getAll();
+
+  // Migration: Add default strategyType for existing strategies
+  let needsSave = false;
+  const migratedStrategies = strategies.map(strategy => {
+    if (!strategy.strategyType) {
+      needsSave = true;
+      return {
+        ...strategy,
+        strategyType: 'single' as const,
+      };
+    }
+    return strategy;
+  });
+
+  if (needsSave) {
+    await saveStrategies(migratedStrategies);
+  }
+
+  return migratedStrategies;
+}
+
+/**
+ * Save all strategies (bulk replace)
+ */
 export async function saveStrategies(strategies: Strategy[]): Promise<void> {
-  const strategiesDir = getStrategiesDirectory();
-  await mkdir(strategiesDir, { recursive: true });
-
-  const filePath = getStrategiesFilePath();
-  const data: StrategiesFile = { strategies };
-  await writeFile(filePath, JSON.stringify(data, null, 2), 'utf-8');
+  return getStore().saveAll(strategies);
 }
 
-export async function getStrategyById(id: string): Promise<Strategy | null> {
-  const strategies = await loadStrategies();
-  return strategies.find(strategy => strategy.id === id) || null;
+/**
+ * Get a strategy by ID
+ */
+export async function getStrategyById(id: string, storage?: StorageProvider): Promise<Strategy | null> {
+  return getStore(storage).getById(id);
 }
 
+/**
+ * Create a new strategy
+ */
 export async function saveStrategy(
   strategyData: Omit<Strategy, 'id' | 'createdAt' | 'updatedAt'>
 ): Promise<Strategy> {
-  const strategies = await loadStrategies();
+  const store = getStore();
+  const strategies = await store.getAll();
 
   // Check for duplicate names
   const existingByName = strategies.find(
@@ -87,34 +91,28 @@ export async function saveStrategy(
     throw new Error(`Strategy with name "${strategyData.name}" already exists`);
   }
 
-  const newStrategy: Strategy = {
+  // Ensure defaults
+  const dataWithDefaults = {
     ...strategyData,
-    id: randomUUID(),
-    createdAt: new Date().toISOString(),
-    strategyType: strategyData.strategyType || 'single', // Default to single-stock
+    strategyType: strategyData.strategyType || 'single',
     parameters: strategyData.parameters || {},
-    constraints: strategyData.constraints, // Only set if provided (portfolio strategies)
   };
 
-  strategies.push(newStrategy);
-  await saveStrategies(strategies);
-
-  return newStrategy;
+  return store.create(dataWithDefaults);
 }
 
+/**
+ * Update an existing strategy
+ */
 export async function updateStrategy(
   id: string,
   updates: Partial<Omit<Strategy, 'id' | 'createdAt'>>
 ): Promise<Strategy> {
-  const strategies = await loadStrategies();
-  const index = strategies.findIndex(strategy => strategy.id === id);
-
-  if (index === -1) {
-    throw new Error(`Strategy with ID "${id}" not found`);
-  }
+  const store = getStore();
 
   // Check for duplicate names (if name is being updated)
   if (updates.name) {
+    const strategies = await store.getAll();
     const existingByName = strategies.find(
       strategy => strategy.id !== id && strategy.name.toLowerCase() === updates.name!.toLowerCase()
     );
@@ -123,26 +121,12 @@ export async function updateStrategy(
     }
   }
 
-  const updatedStrategy: Strategy = {
-    ...strategies[index],
-    ...updates,
-    updatedAt: new Date().toISOString(),
-  };
-
-  strategies[index] = updatedStrategy;
-  await saveStrategies(strategies);
-
-  return updatedStrategy;
+  return store.update(id, updates);
 }
 
+/**
+ * Delete a strategy by ID
+ */
 export async function deleteStrategy(id: string): Promise<void> {
-  const strategies = await loadStrategies();
-  const filteredStrategies = strategies.filter(strategy => strategy.id !== id);
-
-  if (filteredStrategies.length === strategies.length) {
-    throw new Error(`Strategy with ID "${id}" not found`);
-  }
-
-  await saveStrategies(filteredStrategies);
+  await getStore().delete(id);
 }
-

@@ -125,6 +125,8 @@ export default function StrategyManager({ isOpen, onClose }: StrategyManagerProp
             <thead>
               <tr className="bg-gray-100 dark:bg-gray-700">
                 <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Name</th>
+                <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Type</th>
+                <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Dependencies</th>
                 <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Description</th>
                 <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Actions</th>
               </tr>
@@ -133,6 +135,31 @@ export default function StrategyManager({ isOpen, onClose }: StrategyManagerProp
               {strategies.map((strategy) => (
                 <tr key={strategy.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                   <td className="border dark:border-gray-600 p-2 font-medium dark:text-white">{strategy.name}</td>
+                  <td className="border dark:border-gray-600 p-2 dark:text-gray-200">
+                    <span className={`px-2 py-0.5 rounded text-xs ${
+                      strategy.strategyType === 'portfolio'
+                        ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
+                        : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
+                    }`}>
+                      {strategy.strategyType || 'single'}
+                    </span>
+                  </td>
+                  <td className="border dark:border-gray-600 p-2 dark:text-gray-200">
+                    {strategy.dependencies && strategy.dependencies.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {strategy.dependencies.map((dep, idx) => (
+                          <span
+                            key={idx}
+                            className="px-2 py-0.5 bg-gray-200 dark:bg-gray-600 rounded text-xs text-gray-700 dark:text-gray-200"
+                          >
+                            {dep}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400 dark:text-gray-500 text-sm">None</span>
+                    )}
+                  </td>
                   <td className="border dark:border-gray-600 p-2 dark:text-gray-200">{strategy.description}</td>
                   <td className="border dark:border-gray-600 p-2">
                     <div className="flex gap-2">

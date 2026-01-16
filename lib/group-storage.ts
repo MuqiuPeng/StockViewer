@@ -1,5 +1,10 @@
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { join } from 'path';
+/**
+ * Group storage module
+ * Uses the storage abstraction layer for both local (file) and online (IndexedDB) modes
+ */
+
+import { getStorageProvider, getStorageMode } from './storage';
+import type { JsonStorageProvider, StorageProvider } from './storage/types';
 
 export interface StockGroup {
   id: string;
@@ -9,94 +14,70 @@ export interface StockGroup {
   createdAt: string;
   updatedAt?: string;
   isDataSource?: boolean; // True for auto-generated data source groups
+  dataSourceName?: string; // The data source identifier when isDataSource is true
 }
 
-const GROUPS_DIR = join(process.cwd(), 'data', 'groups');
-const GROUPS_FILE = join(GROUPS_DIR, 'groups.json');
-
 /**
- * Ensure the groups directory exists
+ * Get the group store instance
  */
-async function ensureGroupsDir(): Promise<void> {
-  try {
-    await mkdir(GROUPS_DIR, { recursive: true });
-  } catch (error) {
-    // Directory might already exist, ignore
+function getStore(storage?: StorageProvider): JsonStorageProvider<StockGroup> {
+  if (storage) {
+    return storage.getJsonStore<StockGroup>('groups');
   }
+  if (getStorageMode() === 'database') {
+    throw new Error('Database mode requires passing a storage provider.');
+  }
+  return getStorageProvider().getJsonStore<StockGroup>('groups');
 }
 
 /**
  * Load all groups from storage
  */
 export async function loadGroups(): Promise<StockGroup[]> {
-  try {
-    await ensureGroupsDir();
-    const content = await readFile(GROUPS_FILE, 'utf-8');
-    const data = JSON.parse(content);
-    return data.groups || [];
-  } catch (error) {
-    // File doesn't exist yet, return empty array
-    return [];
-  }
+  return getStore().getAll();
 }
 
 /**
- * Save groups to storage
+ * Save groups to storage (bulk replace)
  */
 async function saveGroups(groups: StockGroup[]): Promise<void> {
-  await ensureGroupsDir();
-  await writeFile(GROUPS_FILE, JSON.stringify({ groups }, null, 2), 'utf-8');
+  return getStore().saveAll(groups);
 }
 
 /**
  * Get a group by ID
  */
-export async function getGroupById(id: string): Promise<StockGroup | null> {
-  const groups = await loadGroups();
-  return groups.find(g => g.id === id) || null;
+export async function getGroupById(id: string, storage?: StorageProvider): Promise<StockGroup | null> {
+  return getStore(storage).getById(id);
 }
 
 /**
  * Create a new group
  */
 export async function createGroup(group: Omit<StockGroup, 'id' | 'createdAt' | 'updatedAt'>): Promise<StockGroup> {
-  const groups = await loadGroups();
-  const newGroup: StockGroup = {
-    ...group,
-    id: `group_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`,
-    createdAt: new Date().toISOString(),
-  };
-  groups.push(newGroup);
-  await saveGroups(groups);
-  return newGroup;
+  return getStore().create(group);
 }
 
 /**
  * Update an existing group
  */
 export async function updateGroup(id: string, updates: Partial<Omit<StockGroup, 'id' | 'createdAt'>>): Promise<StockGroup | null> {
-  const groups = await loadGroups();
-  const index = groups.findIndex(g => g.id === id);
-  if (index === -1) return null;
-
-  groups[index] = {
-    ...groups[index],
-    ...updates,
-    updatedAt: new Date().toISOString(),
-  };
-  await saveGroups(groups);
-  return groups[index];
+  try {
+    return await getStore().update(id, updates);
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Delete a group
  */
 export async function deleteGroup(id: string): Promise<boolean> {
-  const groups = await loadGroups();
-  const filtered = groups.filter(g => g.id !== id);
-  if (filtered.length === groups.length) return false; // Group not found
-  await saveGroups(filtered);
-  return true;
+  try {
+    return await getStore().delete(id);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -108,7 +89,7 @@ export async function getGroupsByDataset(datasetName: string): Promise<StockGrou
 }
 
 /**
- * Sync data source groups to groups.json
+ * Sync data source groups to storage
  * This creates/updates groups for each data source (e.g., datasource_stock_zh_a_hist)
  */
 export async function syncDataSourceGroups(datasets: any[]): Promise<void> {
@@ -204,4 +185,3 @@ export async function removeDatasetFromGroup(groupId: string, datasetName: strin
   await saveGroups(groups);
   return group;
 }
-

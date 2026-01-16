@@ -2,13 +2,20 @@ import { NextResponse } from 'next/server';
 import { loadIndicators, saveIndicator } from '@/lib/indicator-storage';
 import { validatePythonCode } from '@/lib/indicator-validator';
 import { detectDependencies } from '@/lib/detect-dependencies';
+import { getApiStorage } from '@/lib/api-auth';
+import type { Indicator } from '@/lib/indicator-storage';
 
 export const runtime = 'nodejs';
 
 // GET /api/indicators - List all indicators
 export async function GET() {
   try {
-    const indicators = await loadIndicators();
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+
+    const indicators = await authResult.storage.getJsonStore<Indicator>('indicators').getAll();
     return NextResponse.json({ indicators });
   } catch (error) {
     console.error('Error loading indicators:', error);
@@ -25,6 +32,12 @@ export async function GET() {
 // POST /api/indicators - Create new indicator
 export async function POST(request: Request) {
   try {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const store = authResult.storage.getJsonStore<Indicator>('indicators');
+
     const body = await request.json();
     const { name, description, pythonCode, outputColumn, isGroup, groupName, expectedOutputs, externalDatasets } = body;
 
@@ -72,15 +85,26 @@ export async function POST(request: Request) {
     }
 
     // Detect dependencies from Python code
-    const allIndicators = await loadIndicators();
+    const allIndicators = await store.getAll();
     const { dependencies, dependencyColumns } = detectDependencies(pythonCode, allIndicators);
 
+    // Check for duplicate names
+    const duplicate = allIndicators.find(
+      (ind) => ind.name.toLowerCase() === name.toLowerCase()
+    );
+    if (duplicate) {
+      return NextResponse.json(
+        { error: 'Duplicate name', message: `Indicator with name "${name}" already exists` },
+        { status: 400 }
+      );
+    }
+
     // Create indicator
-    const indicator = await saveIndicator({
+    const indicator = await store.create({
       name,
       description,
       pythonCode,
-      outputColumn: isGroup ? groupName : (outputColumn || name),  // Use groupName for groups
+      outputColumn: isGroup ? groupName : (outputColumn || name),
       dependencies,
       dependencyColumns,
       isGroup: isGroup || false,

@@ -17,12 +17,19 @@ interface Strategy {
   };
   parameters?: Record<string, any>;
   externalDatasets?: Record<string, { groupId: string; datasetName: string }>;
+  dependencies?: string[];
+}
+
+interface Indicator {
+  id: string;
+  name: string;
+  outputColumn: string;
 }
 
 interface StrategyEditorModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (savedItem?: Strategy, type?: 'strategy') => void;
   strategy?: Strategy | null;
 }
 
@@ -226,13 +233,15 @@ export default function StrategyEditorModal({
   const [editingDataset, setEditingDataset] = useState<string | null>(null);
   const [tempDatasetConfig, setTempDatasetConfig] = useState<{ paramName: string; groupId: string; datasetName: string } | null>(null);
   const [groups, setGroups] = useState<any[]>([]);
+  const [indicators, setIndicators] = useState<Indicator[]>([]);
+  const [dependencies, setDependencies] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<any>(null);
   const [isValidating, setIsValidating] = useState(false);
   const [validationSuccess, setValidationSuccess] = useState<string | null>(null);
 
-  // Load groups on mount (includes both custom and data source groups)
+  // Load groups and indicators on mount
   useEffect(() => {
     if (isOpen) {
       fetch('/api/groups')
@@ -242,6 +251,15 @@ export default function StrategyEditorModal({
         })
         .catch((err) => {
           console.error('Failed to load groups:', err);
+        });
+
+      fetch('/api/indicators')
+        .then((res) => res.json())
+        .then((data) => {
+          setIndicators(data.indicators || []);
+        })
+        .catch((err) => {
+          console.error('Failed to load indicators:', err);
         });
     }
   }, [isOpen]);
@@ -258,6 +276,7 @@ export default function StrategyEditorModal({
         reserveCash: strategy.constraints?.reserveCash ?? 10,
       });
       setExternalDatasets(strategy.externalDatasets || {});
+      setDependencies(strategy.dependencies || []);
     } else {
       setName('');
       setDescription('');
@@ -269,6 +288,7 @@ export default function StrategyEditorModal({
         reserveCash: 10,
       });
       setExternalDatasets({});
+      setDependencies([]);
     }
     setError(null);
     setValidationSuccess(null);
@@ -352,6 +372,7 @@ export default function StrategyEditorModal({
           strategyType,
           constraints: strategyType === 'portfolio' ? constraints : undefined,
           externalDatasets: Object.keys(validExternalDatasets).length > 0 ? validExternalDatasets : undefined,
+          dependencies: dependencies.length > 0 ? dependencies : undefined,
         }),
       });
 
@@ -361,7 +382,7 @@ export default function StrategyEditorModal({
         throw new Error(data.message || 'Failed to save strategy');
       }
 
-      onSuccess();
+      onSuccess(data.strategy || data, 'strategy');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save strategy');
       setErrorDetails(null);
@@ -491,6 +512,53 @@ export default function StrategyEditorModal({
               rows={3}
               required
             />
+          </div>
+
+          {/* Dependencies Selector */}
+          <div>
+            <label className="block text-sm font-medium mb-1 dark:text-white">
+              Dependencies (Indicators)
+            </label>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+              Select indicators that this strategy requires. These must be applied to datasets before running the strategy.
+            </p>
+            {indicators.length === 0 ? (
+              <p className="text-sm text-gray-400 dark:text-gray-500 italic">
+                No indicators available. Create indicators first.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 max-h-32 overflow-y-auto">
+                {indicators.map((indicator) => (
+                  <label
+                    key={indicator.id}
+                    className={`flex items-center px-3 py-1 rounded cursor-pointer text-sm transition-colors ${
+                      dependencies.includes(indicator.name)
+                        ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-600'
+                        : 'bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-500 hover:bg-gray-200 dark:hover:bg-gray-500'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={dependencies.includes(indicator.name)}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setDependencies([...dependencies, indicator.name]);
+                        } else {
+                          setDependencies(dependencies.filter((d) => d !== indicator.name));
+                        }
+                      }}
+                      className="sr-only"
+                    />
+                    {indicator.name}
+                  </label>
+                ))}
+              </div>
+            )}
+            {dependencies.length > 0 && (
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                Selected: {dependencies.join(', ')}
+              </p>
+            )}
           </div>
 
           {/* External Datasets Selector */}

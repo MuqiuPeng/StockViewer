@@ -1,16 +1,38 @@
 import { NextResponse } from 'next/server';
-import { getBacktestHistoryById } from '@/lib/backtest-history-storage';
-import { getStrategyById } from '@/lib/strategy-storage';
+import { getApiStorage } from '@/lib/api-auth';
+import type { BacktestHistoryEntry } from '@/lib/backtest-history-storage';
+import type { Strategy } from '@/lib/strategy-storage';
+import type { StockGroup } from '@/lib/group-storage';
+import type { DatasetMetadata } from '@/lib/dataset-metadata';
 import { executeBacktest } from '@/lib/backtest-executor';
-import { getGroupById } from '@/lib/group-storage';
-import { findDataset } from '@/lib/dataset-metadata';
-import { readFile } from 'fs/promises';
-import { getCsvFileStats } from '@/lib/datasets';
 import Papa from 'papaparse';
+import type { StorageProvider, FileStorageProvider } from '@/lib/storage';
 
 // Helper function to load a dataset
-async function loadDataset(datasetIdentifier: string) {
-  const metadata = await findDataset(datasetIdentifier);
+async function loadDataset(
+  datasetIdentifier: string,
+  storage: StorageProvider
+) {
+  const datasetStore = storage.getJsonStore<DatasetMetadata>('datasetMetadata');
+  const fileStore = storage.getFileStore();
+
+  // Find dataset metadata
+  const datasets = await datasetStore.getAll();
+  let metadata = datasets.find(ds => ds.id === datasetIdentifier);
+  if (!metadata) {
+    metadata = datasets.find(
+      ds => ds.filename === datasetIdentifier || ds.filename.replace(/\.csv$/i, '') === datasetIdentifier
+    );
+  }
+  if (!metadata) {
+    metadata = datasets.find(ds => ds.name === datasetIdentifier);
+  }
+  if (!metadata) {
+    const codeMatches = datasets.filter(ds => ds.code === datasetIdentifier);
+    if (codeMatches.length === 1) {
+      metadata = codeMatches[0];
+    }
+  }
 
   let filename: string;
   if (metadata) {
@@ -22,12 +44,13 @@ async function loadDataset(datasetIdentifier: string) {
     }
   }
 
-  const fileStats = await getCsvFileStats(filename);
-  if (!fileStats.exists) {
+  // Check if file exists
+  const exists = await fileStore.exists(filename);
+  if (!exists) {
     throw new Error(`Dataset "${datasetIdentifier}" not found`);
   }
 
-  const fileContent = await readFile(fileStats.path, 'utf-8');
+  const fileContent = await fileStore.readText(filename);
   const dataset = await new Promise<Record<string, any>[]>((resolve, reject) => {
     Papa.parse(fileContent, {
       header: true,
@@ -83,8 +106,18 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const storage = authResult.storage;
+
+    const historyStore = storage.getJsonStore<BacktestHistoryEntry>('backtestHistory');
+    const strategyStore = storage.getJsonStore<Strategy>('strategies');
+    const groupStore = storage.getJsonStore<StockGroup>('groups');
+
     // Get the original backtest entry
-    const entry = await getBacktestHistoryById(params.id);
+    const entry = await historyStore.getById(params.id);
     if (!entry) {
       return NextResponse.json(
         { error: 'Backtest history entry not found' },
@@ -93,7 +126,7 @@ export async function POST(
     }
 
     // Get the strategy
-    const strategy = await getStrategyById(entry.strategyId);
+    const strategy = await strategyStore.getById(entry.strategyId);
     if (!strategy) {
       return NextResponse.json(
         {
@@ -110,7 +143,7 @@ export async function POST(
 
     if (target.type === 'single' && target.datasetName) {
       // Single stock backtest
-      const dataset = await loadDataset(target.datasetName);
+      const dataset = await loadDataset(target.datasetName, storage);
       const filteredDataset = filterDatasetByDateRange(dataset, parameters.startDate, parameters.endDate);
 
       const result = await executeBacktest({
@@ -149,7 +182,7 @@ export async function POST(
 
       for (const symbol of target.symbols) {
         try {
-          const dataset = await loadDataset(symbol);
+          const dataset = await loadDataset(symbol, storage);
           const filteredDataset = filterDatasetByDateRange(dataset, parameters.startDate, parameters.endDate);
           dataMap[symbol] = filteredDataset;
         } catch (error) {
@@ -199,7 +232,7 @@ export async function POST(
       });
     } else if (target.type === 'group' && target.groupId) {
       // Group backtest
-      const group = await getGroupById(target.groupId);
+      const group = await groupStore.getById(target.groupId);
       if (!group) {
         return NextResponse.json(
           {
@@ -216,7 +249,7 @@ export async function POST(
 
       for (const datasetName of group.datasetNames) {
         try {
-          const dataset = await loadDataset(datasetName);
+          const dataset = await loadDataset(datasetName, storage);
           const filteredDataset = filterDatasetByDateRange(dataset, parameters.startDate, parameters.endDate);
 
           const result = await executeBacktest({

@@ -103,20 +103,30 @@ async function executeStrategyValidation(
   strategyCode: string
 ): Promise<{ valid: boolean; error?: string; details?: string; signalCount?: number }> {
   return new Promise((resolve) => {
-    // Get Python executable
-    let pythonExecutable: string;
+    // Get Python executable - check multiple venv names
+    let pythonExecutable: string = 'python3';
 
     if (PYTHON_CONFIG.EXECUTABLE !== 'python3') {
       pythonExecutable = PYTHON_CONFIG.EXECUTABLE;
     } else {
-      const venvPath = path.join(process.cwd(), 'venv');
-      const venvPython = process.platform === 'win32'
-        ? path.join(venvPath, 'Scripts', 'python.exe')
-        : path.join(venvPath, 'bin', 'python');
+      // Check multiple common venv names
+      const venvNames = ['python-venv', 'venv', '.venv', 'aktools-env'];
+      let foundVenv = false;
 
-      if (existsSync(venvPython)) {
-        pythonExecutable = venvPython;
-      } else {
+      for (const venvName of venvNames) {
+        const venvPath = path.join(process.cwd(), venvName);
+        const venvPython = process.platform === 'win32'
+          ? path.join(venvPath, 'Scripts', 'python.exe')
+          : path.join(venvPath, 'bin', 'python');
+
+        if (existsSync(venvPython)) {
+          pythonExecutable = venvPython;
+          foundVenv = true;
+          break;
+        }
+      }
+
+      if (!foundVenv) {
         pythonExecutable = 'python3';
       }
     }

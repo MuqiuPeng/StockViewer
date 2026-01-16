@@ -2,6 +2,7 @@ import { getIndicatorById } from '@/lib/indicator-storage';
 import { executePythonIndicator } from '@/lib/python-executor';
 import { addIndicatorColumn, addIndicatorGroupColumns } from '@/lib/csv-updater';
 import { loadDataset } from '@/lib/csv';
+import { getApiStorage } from '@/lib/api-auth';
 
 export const runtime = 'nodejs';
 
@@ -42,8 +43,22 @@ export async function POST(request: Request) {
           return;
         }
 
+        // Get authenticated storage
+        const authResult = await getApiStorage();
+        if (!authResult.success) {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({
+              type: 'error',
+              error: 'Unauthorized',
+              message: 'Authentication required'
+            })}\n\n`)
+          );
+          controller.close();
+          return;
+        }
+
         // Load indicator
-        const indicator = await getIndicatorById(indicatorId);
+        const indicator = await getIndicatorById(indicatorId, authResult.storage);
         if (!indicator) {
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify({
@@ -84,7 +99,7 @@ export async function POST(request: Request) {
             let datasetData;
 
             try {
-              datasetData = await loadDataset(filename);
+              datasetData = await loadDataset(filename, authResult.storage);
             } catch (error) {
               results[filename] = {
                 success: false,
@@ -203,7 +218,8 @@ export async function POST(request: Request) {
               await addIndicatorGroupColumns(
                 filename,
                 indicator.groupName!,
-                filteredValues
+                filteredValues,
+                authResult.storage
               );
 
               results[filename] = {
@@ -215,7 +231,8 @@ export async function POST(request: Request) {
               await addIndicatorColumn(
                 filename,
                 indicator.outputColumn,
-                executionResult.values as (number | null)[]
+                executionResult.values as (number | null)[],
+                authResult.storage
               );
 
               results[filename] = {
