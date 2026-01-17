@@ -32,16 +32,22 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   },
   callbacks: {
     jwt({ token, user }) {
-      // Include user ID in JWT token
+      // Include user info in JWT token
       if (user) {
         token.id = user.id;
+        token.image = user.image;
+        token.name = user.name;
+        token.email = user.email;
       }
       return token;
     },
     session({ session, token }) {
-      // Include user ID in session from JWT token
-      if (session.user && token.id) {
-        session.user.id = token.id as string;
+      // Include user info in session from JWT token
+      if (session.user) {
+        if (token.id) session.user.id = token.id as string;
+        if (token.image) session.user.image = token.image as string;
+        if (token.name) session.user.name = token.name as string;
+        if (token.email) session.user.email = token.email as string;
       }
       return session;
     },
