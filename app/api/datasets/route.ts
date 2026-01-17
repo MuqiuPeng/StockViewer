@@ -1,6 +1,7 @@
 /**
  * Datasets API (Compatibility Layer)
- * GET /api/datasets - List all datasets (transforms Stock table to DatasetInfo format)
+ * GET /api/datasets - List user's datasets (own + public)
+ * DELETE /api/datasets - Delete user's own dataset
  *
  * This endpoint provides backwards compatibility with the frontend
  * by transforming the new Stock database model to the old DatasetInfo format.
@@ -8,7 +9,7 @@
 
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { requireAuth } from '@/lib/api-auth';
+import { getApiStorage } from '@/lib/api-auth';
 
 export const runtime = 'nodejs';
 
@@ -27,31 +28,49 @@ interface DatasetInfo {
   firstDate?: string;
   lastDate?: string;
   lastUpdate?: string;
+  isOwner?: boolean;  // Whether current user owns this dataset
+  isPublic?: boolean; // Whether this dataset is public
 }
 
-// GET /api/datasets - List all datasets (from Stock table)
+// GET /api/datasets - List datasets (user's own + public)
 export async function GET(request: Request) {
   try {
-    // Check authentication
-    const authError = await requireAuth();
-    if (authError) return authError;
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const { userId } = authResult;
 
     const { searchParams } = new URL(request.url);
     const query = searchParams.get('q') || '';
     const dataSource = searchParams.get('dataSource') || '';
+    const showAll = searchParams.get('showAll') === 'true'; // Option to show all public datasets
 
-    // Build where clause
-    const where: any = {};
+    // Build where clause - show user's own stocks OR public stocks
+    const where: any = {
+      OR: [
+        { createdBy: userId },     // User's own stocks
+        { isPublic: true },        // Public stocks
+      ],
+    };
 
     if (query) {
-      where.OR = [
-        { symbol: { contains: query, mode: 'insensitive' } },
-        { name: { contains: query, mode: 'insensitive' } },
+      where.AND = [
+        {
+          OR: [
+            { symbol: { contains: query, mode: 'insensitive' } },
+            { name: { contains: query, mode: 'insensitive' } },
+          ],
+        },
       ];
     }
 
     if (dataSource) {
-      where.dataSource = dataSource;
+      if (where.AND) {
+        where.AND.push({ dataSource });
+      } else {
+        where.AND = [{ dataSource }];
+      }
     }
 
     // Get stocks from database
@@ -78,10 +97,18 @@ export async function GET(request: Request) {
       firstDate: stock.firstDate?.toISOString().split('T')[0],
       lastDate: stock.lastDate?.toISOString().split('T')[0],
       lastUpdate: stock.lastUpdate?.toISOString(),
+      isOwner: stock.createdBy === userId,
+      isPublic: stock.isPublic,
     }));
 
-    // Get unique data sources for filtering
+    // Get unique data sources for filtering (only from visible stocks)
     const dataSources = await prisma.stock.findMany({
+      where: {
+        OR: [
+          { createdBy: userId },
+          { isPublic: true },
+        ],
+      },
       select: { dataSource: true },
       distinct: ['dataSource'],
     });
@@ -99,12 +126,14 @@ export async function GET(request: Request) {
   }
 }
 
-// DELETE /api/datasets - Delete a dataset by identifier
+// DELETE /api/datasets - Delete user's own dataset
 export async function DELETE(request: Request) {
   try {
-    // Check authentication
-    const authError = await requireAuth();
-    if (authError) return authError;
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const { userId } = authResult;
 
     const body = await request.json();
     const { identifier } = body;
@@ -128,15 +157,15 @@ export async function DELETE(request: Request) {
         const symbol = parts[0];
         const dataSource = parts.slice(1).join('_');
         stock = await prisma.stock.findFirst({
-          where: { symbol, dataSource },
+          where: { symbol, dataSource, createdBy: userId },
         });
       }
     }
 
-    // Try by symbol only
+    // Try by symbol only (user's own)
     if (!stock) {
       stock = await prisma.stock.findFirst({
-        where: { symbol: identifier },
+        where: { symbol: identifier, createdBy: userId },
       });
     }
 
@@ -144,6 +173,14 @@ export async function DELETE(request: Request) {
       return NextResponse.json(
         { error: 'Dataset not found' },
         { status: 404 }
+      );
+    }
+
+    // Check ownership - only allow deleting own datasets
+    if (stock.createdBy !== userId) {
+      return NextResponse.json(
+        { error: 'Permission denied', message: 'You can only delete your own datasets' },
+        { status: 403 }
       );
     }
 

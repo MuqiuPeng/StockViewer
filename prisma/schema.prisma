@@ -58,6 +58,7 @@ model User {
   groups                  StockGroup[]
   viewSettings            ViewSetting[]
   settings                UserSettings?
+  stocks                  Stock[]                 // Stocks imported by this user
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -95,6 +96,10 @@ model Stock {
   category   String? // e.g., "A股", "港股", "指数"
   exchange   String? // e.g., "sh", "sz"
 
+  // Ownership
+  createdBy String?              // User who imported this stock
+  isPublic  Boolean @default(true) // Whether visible to all users
+
   // Metadata
   firstDate  DateTime?
   lastDate   DateTime?
@@ -106,12 +111,15 @@ model Stock {
 
   // Relations
   priceData StockPrice[]
+  creator   User?        @relation(fields: [createdBy], references: [id], onDelete: SetNull)
 
-  @@unique([symbol, dataSource])
+  @@unique([symbol, dataSource, createdBy]) // Same stock can be imported by different users
   @@index([symbol])
   @@index([dataSource])
   @@index([category])
   @@index([lastDate])
+  @@index([createdBy])
+  @@index([isPublic])
 }
 
 /// Stock OHLCV price data - time-series data
