@@ -64,11 +64,23 @@ async function main() {
 
   for (const ind of indicators) {
     const existing = await prisma.indicator.findFirst({
-      where: { name: ind.name, ownerId: user.id }
+      where: { name: ind.name, createdBy: user.id }
     });
     if (!existing) {
-      await prisma.indicator.create({
-        data: { ...ind, ownerId: user.id }
+      const indicator = await prisma.indicator.create({
+        data: {
+          ...ind,
+          createdBy: user.id,
+          visibleTo: [],  // Public
+          dependencies: [],
+          dependencyColumns: [],
+          expectedOutputs: [],
+          tags: [],
+        }
+      });
+      // Add to user's collection
+      await prisma.userIndicator.create({
+        data: { userId: user.id, indicatorId: indicator.id }
       });
       console.log('Created indicator:', ind.name);
     } else {
@@ -77,9 +89,9 @@ async function main() {
   }
 
   // Create MACD indicator (depends on EMA12 and EMA26)
-  const macdExists = await prisma.indicator.findFirst({ where: { name: 'MACD', ownerId: user.id } });
+  const macdExists = await prisma.indicator.findFirst({ where: { name: 'MACD', createdBy: user.id } });
   if (!macdExists) {
-    await prisma.indicator.create({
+    const macd = await prisma.indicator.create({
       data: {
         name: 'MACD',
         description: 'Moving Average Convergence Divergence',
@@ -87,8 +99,16 @@ async function main() {
         pythonCode: `def calculate(data):
     return data["ema12"] - data["ema26"]`,
         dependencies: ['EMA12', 'EMA26'],
-        ownerId: user.id,
+        dependencyColumns: [],
+        createdBy: user.id,
+        visibleTo: [],  // Public
+        expectedOutputs: [],
+        tags: [],
       }
+    });
+    // Add to user's collection
+    await prisma.userIndicator.create({
+      data: { userId: user.id, indicatorId: macd.id }
     });
     console.log('Created indicator: MACD');
   }
@@ -126,11 +146,19 @@ async function main() {
 
   for (const strat of strategies) {
     const existing = await prisma.strategy.findFirst({
-      where: { name: strat.name, userId: user.id }
+      where: { name: strat.name, createdBy: user.id }
     });
     if (!existing) {
-      await prisma.strategy.create({
-        data: { ...strat, userId: user.id }
+      const strategy = await prisma.strategy.create({
+        data: {
+          ...strat,
+          createdBy: user.id,
+          visibleTo: [],  // Public
+        }
+      });
+      // Add to user's collection
+      await prisma.userStrategy.create({
+        data: { userId: user.id, strategyId: strategy.id }
       });
       console.log('Created strategy:', strat.name);
     } else {

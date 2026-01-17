@@ -50,15 +50,23 @@ model User {
   accounts      Account[]
   sessions      Session[]
 
-  // User-scoped data relations
-  indicators              Indicator[]             @relation("IndicatorOwner")
-  indicatorValueCaches    IndicatorValueCache[]
-  strategies              Strategy[]
-  backtestHistory         BacktestHistoryEntry[]
-  groups                  StockGroup[]
-  viewSettings            ViewSetting[]
-  settings                UserSettings?
-  userStocks              UserStock[]             // User's dataset collection
+  // User's collections (what they're using)
+  userStocks       UserStock[]
+  userIndicators   UserIndicator[]
+  userStrategies   UserStrategy[]
+  userGroups       UserStockGroup[]
+  userViewSettings UserViewSetting[]
+
+  // User created content
+  createdIndicators Indicator[] @relation("IndicatorCreator")
+  createdStrategies Strategy[]  @relation("StrategyCreator")
+  createdGroups     StockGroup[] @relation("GroupCreator")
+  createdViewSettings ViewSetting[] @relation("ViewSettingCreator")
+
+  // Other user data
+  indicatorValueCaches IndicatorValueCache[]
+  backtestHistory      BacktestHistoryEntry[]
+  settings             UserSettings?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -84,19 +92,18 @@ model VerificationToken {
 }
 
 // ============================================================================
-// PUBLIC STOCK DATA (Shared Across All Users)
+// SHARED STOCK DATA
 // ============================================================================
 
-/// Stock master data - information about each stock
+/// Stock master data - shared across all users
 model Stock {
   id         String  @id @default(cuid())
-  symbol     String  // e.g., "000001"
-  name       String  // e.g., "平安银行"
-  dataSource String  // e.g., "stock_zh_a_hist"
-  category   String? // e.g., "A股", "港股", "指数"
-  exchange   String? // e.g., "sh", "sz"
+  symbol     String
+  name       String
+  dataSource String
+  category   String?
+  exchange   String?
 
-  // Metadata
   firstDate  DateTime?
   lastDate   DateTime?
   lastUpdate DateTime?
@@ -105,36 +112,32 @@ model Stock {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
   priceData  StockPrice[]
-  userStocks UserStock[]   // Users who have this stock in their collection
+  userStocks UserStock[]
 
   @@unique([symbol, dataSource])
   @@index([symbol])
   @@index([dataSource])
   @@index([category])
-  @@index([lastDate])
 }
 
-/// Stock OHLCV price data - time-series data
+/// Stock price time-series data
 model StockPrice {
   id      String   @id @default(cuid())
   stockId String
   date    DateTime @db.Date
 
-  // OHLCV data
   open   Decimal @db.Decimal(18, 4)
   high   Decimal @db.Decimal(18, 4)
   low    Decimal @db.Decimal(18, 4)
   close  Decimal @db.Decimal(18, 4)
   volume BigInt  @default(0)
 
-  // Extended data from AKShare
-  turnover     Decimal? @db.Decimal(24, 2) // 成交额 (可能很大)
-  amplitude    Decimal? @db.Decimal(12, 4) // 振幅 (%)
-  changePct    Decimal? @db.Decimal(12, 4) // 涨跌幅 (%)
-  changeAmount Decimal? @db.Decimal(18, 4) // 涨跌额
-  turnoverRate Decimal? @db.Decimal(12, 4) // 换手率 (%)
+  turnover     Decimal? @db.Decimal(24, 2)
+  amplitude    Decimal? @db.Decimal(12, 4)
+  changePct    Decimal? @db.Decimal(12, 4)
+  changeAmount Decimal? @db.Decimal(18, 4)
+  turnoverRate Decimal? @db.Decimal(12, 4)
 
   stock Stock @relation(fields: [stockId], references: [id], onDelete: Cascade)
 
@@ -143,8 +146,7 @@ model StockPrice {
   @@index([date])
 }
 
-/// User's dataset collection - tracks which stocks a user has added
-/// Stock data is shared, but each user has their own collection
+/// User's stock collection
 model UserStock {
   id      String   @id @default(cuid())
   userId  String
@@ -160,66 +162,70 @@ model UserStock {
 }
 
 // ============================================================================
-// INDICATOR SYSTEM (Flexible Visibility)
+// SHARED INDICATORS
 // ============================================================================
 
-/// Indicator definitions with flexible visibility
-/// visibleTo: [] = public (everyone), ['userId1', 'userId2'] = only these users
+/// Indicator definitions - can be shared
+/// visibleTo: [] = public, ['userId1'] = only those users
 model Indicator {
-  id String @id @default(cuid())
+  id        String   @id @default(cuid())
+  createdBy String
+  visibleTo String[]
 
-  // Ownership & Visibility
-  ownerId   String
-  visibleTo String[] // Empty = public, has values = only specified users can access
-
-  // Basic Info
   name         String
   description  String @db.Text
   pythonCode   String @db.Text
   outputColumn String
 
-  // Dependencies
-  dependencies      String[] // Array of indicator IDs
-  dependencyColumns String[] // Specific columns like "MACD:DIF", "SMA_20"
+  dependencies      String[]
+  dependencyColumns String[]
 
-  // Group indicator fields
   isGroup         Boolean  @default(false)
   groupName       String?
-  expectedOutputs String[] // e.g., ["DIF", "DEA", "MACD"]
+  expectedOutputs String[]
 
-  // External datasets (stored as JSON)
-  externalDatasets Json? // Record<string, { stockId: string }>
-
-  // Metadata (for browsing/discovery when public)
-  category String?  // e.g., "Trend", "Momentum", "Volume"
-  tags     String[]
+  externalDatasets Json?
+  category         String?
+  tags             String[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  // Relations
-  owner             User                  @relation("IndicatorOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  creator           User                  @relation("IndicatorCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  userIndicators    UserIndicator[]
   precomputedValues IndicatorValue[]
   userCaches        IndicatorValueCache[]
 
-  @@unique([ownerId, name])
-  @@index([ownerId])
+  @@unique([name]) // Globally unique names for shared indicators
+  @@index([createdBy])
   @@index([visibleTo])
   @@index([category])
 }
 
-/// Pre-computed indicator values for public indicators (shared cache)
+/// User's indicator collection (subscriptions)
+model UserIndicator {
+  id          String   @id @default(cuid())
+  userId      String
+  indicatorId String
+  addedAt     DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  indicator Indicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, indicatorId])
+  @@index([userId])
+  @@index([indicatorId])
+}
+
+/// Pre-computed indicator values (shared cache for public indicators)
 model IndicatorValue {
   id          String   @id @default(cuid())
   indicatorId String
   stockId     String
   date        DateTime @db.Date
 
-  // For single indicators
-  value Decimal? @db.Decimal(18, 6)
-
-  // For group indicators (JSONB for multiple outputs)
-  groupValues Json? // { "DIF": 1.23, "DEA": 2.34, "MACD": -1.11 }
+  value       Decimal? @db.Decimal(18, 6)
+  groupValues Json?
 
   computedAt DateTime @default(now())
 
@@ -230,7 +236,7 @@ model IndicatorValue {
   @@index([stockId, date])
 }
 
-/// User-specific indicator value cache (for private indicators)
+/// User-specific indicator value cache
 model IndicatorValueCache {
   id          String   @id @default(cuid())
   userId      String
@@ -252,55 +258,68 @@ model IndicatorValueCache {
 }
 
 // ============================================================================
-// USER-SPECIFIC DATA (Private)
+// SHARED STRATEGIES
 // ============================================================================
 
-/// Trading strategies (always private)
+/// Trading strategies - can be shared
+/// visibleTo: [] = public, ['userId1'] = only those users
 model Strategy {
-  id               String   @id @default(cuid())
-  userId           String
+  id        String   @id @default(cuid())
+  createdBy String
+  visibleTo String[]
+
   name             String
   description      String   @db.Text
   pythonCode       String   @db.Text
-  strategyType     String   @default("single") // 'single' | 'portfolio'
-  constraints      Json? // PortfolioConstraints
-  parameters       Json? // Record<string, any>
-  externalDatasets Json? // Record<string, { stockId: string }>
-  dependencies     String[] // Indicator names this strategy depends on
+  strategyType     String   @default("single")
+  constraints      Json?
+  parameters       Json?
+  externalDatasets Json?
+  dependencies     String[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creator         User                   @relation("StrategyCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  userStrategies  UserStrategy[]
   backtestHistory BacktestHistoryEntry[]
 
-  @@unique([userId, name])
-  @@index([userId])
+  @@unique([name]) // Globally unique names for shared strategies
+  @@index([createdBy])
+  @@index([visibleTo])
 }
 
-/// Backtest history entries
+/// User's strategy collection (subscriptions)
+model UserStrategy {
+  id         String   @id @default(cuid())
+  userId     String
+  strategyId String
+  addedAt    DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  strategy Strategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, strategyId])
+  @@index([userId])
+  @@index([strategyId])
+}
+
+/// Backtest history - always user-specific
 model BacktestHistoryEntry {
   id           String @id @default(cuid())
   userId       String
   strategyId   String
   strategyName String
-  strategyType String // 'single' | 'portfolio'
+  strategyType String
 
-  // Target information
-  target Json // { type, stockId?, stockIds?, groupId?, groupName? }
+  target     Json
+  parameters Json
+  result     Json
 
-  // Parameters
-  parameters Json // { initialCash, commission, startDate?, endDate?, etc. }
-
-  // Full backtest result
-  result Json
-
-  // Metadata
   starred Boolean  @default(false)
   notes   String?  @db.Text
   tags    String[]
 
-  // Denormalized summary for filtering/sorting
   totalReturn    Float
   totalReturnPct Float
   sharpeRatio    Float
@@ -318,42 +337,90 @@ model BacktestHistoryEntry {
   @@index([strategyId])
 }
 
-/// User-defined stock groups (watchlists, portfolios)
+// ============================================================================
+// SHARED STOCK GROUPS
+// ============================================================================
+
+/// Stock groups (watchlists, portfolios) - can be shared
+/// visibleTo: [] = public, ['userId1'] = only those users
 model StockGroup {
-  id             String   @id @default(cuid())
-  userId         String
+  id        String   @id @default(cuid())
+  createdBy String
+  visibleTo String[]
+
   name           String
   description    String?  @db.Text
-  stockIds       String[] // Array of Stock IDs
+  stockIds       String[]
   isDataSource   Boolean  @default(false)
   dataSourceName String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creator    User             @relation("GroupCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  userGroups UserStockGroup[]
 
-  @@unique([userId, name])
-  @@index([userId])
+  @@unique([name]) // Globally unique names for shared groups
+  @@index([createdBy])
+  @@index([visibleTo])
 }
 
-/// View settings for chart configurations
+/// User's group collection (subscriptions)
+model UserStockGroup {
+  id      String   @id @default(cuid())
+  userId  String
+  groupId String
+  addedAt DateTime @default(now())
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group StockGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupId])
+  @@index([userId])
+  @@index([groupId])
+}
+
+// ============================================================================
+// SHARED VIEW SETTINGS
+// ============================================================================
+
+/// View settings (chart configs) - can be shared as presets
+/// visibleTo: [] = public, ['userId1'] = only those users
 model ViewSetting {
-  id                 String   @id @default(cuid())
-  userId             String
+  id        String   @id @default(cuid())
+  createdBy String
+  visibleTo String[]
+
   name               String
   enabledIndicators1 String[]
   enabledIndicators2 String[]
-  constantLines1     Json // ConstantLine[]
-  constantLines2     Json // ConstantLine[]
+  constantLines1     Json
+  constantLines2     Json
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creator          User              @relation("ViewSettingCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  userViewSettings UserViewSetting[]
 
-  @@unique([userId, name])
+  @@unique([name]) // Globally unique names for shared presets
+  @@index([createdBy])
+  @@index([visibleTo])
+}
+
+/// User's view setting collection (subscriptions)
+model UserViewSetting {
+  id            String   @id @default(cuid())
+  userId        String
+  viewSettingId String
+  addedAt       DateTime @default(now())
+
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  viewSetting ViewSetting @relation(fields: [viewSettingId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, viewSettingId])
   @@index([userId])
+  @@index([viewSettingId])
 }
 
 // ============================================================================
@@ -367,22 +434,18 @@ enum ImportJobStatus {
   FAILED
 }
 
-/// Track data import jobs for background processing
 model DataImportJob {
   id         String          @id @default(cuid())
   symbol     String
   dataSource String
   status     ImportJobStatus @default(PENDING)
 
-  // Progress tracking
-  progress Int     @default(0) // 0-100
+  progress Int     @default(0)
   message  String?
 
-  // Error handling
   errorMessage String?
   retryCount   Int     @default(0)
 
-  // Timestamps
   startedAt   DateTime?
   completedAt DateTime?
   createdAt   DateTime  @default(now())

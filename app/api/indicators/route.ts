@@ -1,29 +1,59 @@
+/**
+ * Indicators API
+ * GET /api/indicators - List user's indicator collection
+ * POST /api/indicators - Create new indicator
+ */
+
 import { NextResponse } from 'next/server';
-import { loadIndicators, saveIndicator } from '@/lib/indicator-storage';
+import { prisma } from '@/lib/prisma';
+import { getApiStorage } from '@/lib/api-auth';
 import { validatePythonCode } from '@/lib/indicator-validator';
 import { detectDependencies } from '@/lib/detect-dependencies';
-import { getApiStorage } from '@/lib/api-auth';
-import type { Indicator } from '@/lib/indicator-storage';
 
 export const runtime = 'nodejs';
 
-// GET /api/indicators - List all indicators
+// GET /api/indicators - List user's indicator collection
 export async function GET() {
   try {
     const authResult = await getApiStorage();
     if (!authResult.success) {
       return authResult.response;
     }
+    const { userId } = authResult;
 
-    const indicators = await authResult.storage.getJsonStore<Indicator>('indicators').getAll();
+    // Get user's indicator collection with indicator details
+    const userIndicators = await prisma.userIndicator.findMany({
+      where: { userId },
+      include: { indicator: true },
+      orderBy: { indicator: { name: 'asc' } },
+    });
+
+    // Transform to expected format
+    const indicators = userIndicators.map(ui => ({
+      id: ui.indicator.id,
+      name: ui.indicator.name,
+      description: ui.indicator.description,
+      pythonCode: ui.indicator.pythonCode,
+      outputColumn: ui.indicator.outputColumn,
+      dependencies: ui.indicator.dependencies,
+      dependencyColumns: ui.indicator.dependencyColumns,
+      isGroup: ui.indicator.isGroup,
+      groupName: ui.indicator.groupName,
+      expectedOutputs: ui.indicator.expectedOutputs,
+      externalDatasets: ui.indicator.externalDatasets,
+      category: ui.indicator.category,
+      tags: ui.indicator.tags,
+      createdAt: ui.indicator.createdAt.toISOString(),
+      updatedAt: ui.indicator.updatedAt.toISOString(),
+      isOwner: ui.indicator.createdBy === userId,
+      visibleTo: ui.indicator.visibleTo,
+    }));
+
     return NextResponse.json({ indicators });
   } catch (error) {
     console.error('Error loading indicators:', error);
     return NextResponse.json(
-      {
-        error: 'Failed to load indicators',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
+      { error: 'Failed to load indicators', message: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
@@ -36,10 +66,14 @@ export async function POST(request: Request) {
     if (!authResult.success) {
       return authResult.response;
     }
-    const store = authResult.storage.getJsonStore<Indicator>('indicators');
+    const { userId } = authResult;
 
     const body = await request.json();
-    const { name, description, pythonCode, outputColumn, isGroup, groupName, expectedOutputs, externalDatasets } = body;
+    const {
+      name, description, pythonCode, outputColumn,
+      isGroup, groupName, expectedOutputs, externalDatasets,
+      category, tags, visibleTo
+    } = body;
 
     // Validate required fields
     if (!name || !description || !pythonCode) {
@@ -64,15 +98,17 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
+    }
 
-      // Filter out empty strings
-      const filteredOutputs = expectedOutputs.filter((output: string) => output.trim() !== '');
-      if (filteredOutputs.length === 0) {
-        return NextResponse.json(
-          { error: 'Invalid expectedOutputs', message: 'expectedOutputs must contain at least one non-empty string' },
-          { status: 400 }
-        );
-      }
+    // Check for duplicate names (globally unique now)
+    const existing = await prisma.indicator.findUnique({
+      where: { name },
+    });
+    if (existing) {
+      return NextResponse.json(
+        { error: 'Duplicate name', message: `Indicator with name "${name}" already exists` },
+        { status: 400 }
+      );
     }
 
     // Validate Python code
@@ -85,45 +121,52 @@ export async function POST(request: Request) {
     }
 
     // Detect dependencies from Python code
-    const allIndicators = await store.getAll();
+    const allIndicators = await prisma.indicator.findMany({
+      select: { id: true, name: true, outputColumn: true, isGroup: true, groupName: true, expectedOutputs: true },
+    });
     const { dependencies, dependencyColumns } = detectDependencies(pythonCode, allIndicators);
 
-    // Check for duplicate names
-    const duplicate = allIndicators.find(
-      (ind) => ind.name.toLowerCase() === name.toLowerCase()
-    );
-    if (duplicate) {
-      return NextResponse.json(
-        { error: 'Duplicate name', message: `Indicator with name "${name}" already exists` },
-        { status: 400 }
-      );
-    }
-
     // Create indicator
-    const indicator = await store.create({
-      name,
-      description,
-      pythonCode,
-      outputColumn: isGroup ? groupName : (outputColumn || name),
-      dependencies,
-      dependencyColumns,
-      isGroup: isGroup || false,
-      groupName: isGroup ? groupName : undefined,
-      expectedOutputs: isGroup ? expectedOutputs.filter((output: string) => output.trim() !== '') : undefined,
-      externalDatasets: externalDatasets || undefined,
+    const indicator = await prisma.indicator.create({
+      data: {
+        createdBy: userId,
+        visibleTo: visibleTo || [], // Empty = public by default
+        name,
+        description,
+        pythonCode,
+        outputColumn: isGroup ? groupName : (outputColumn || name),
+        dependencies,
+        dependencyColumns,
+        isGroup: isGroup || false,
+        groupName: isGroup ? groupName : null,
+        expectedOutputs: isGroup ? expectedOutputs.filter((o: string) => o.trim() !== '') : [],
+        externalDatasets: externalDatasets || undefined,
+        category: category || null,
+        tags: tags || [],
+      },
+    });
+
+    // Add to user's collection
+    await prisma.userIndicator.create({
+      data: {
+        userId,
+        indicatorId: indicator.id,
+      },
     });
 
     return NextResponse.json({
       success: true,
-      indicator,
+      indicator: {
+        ...indicator,
+        createdAt: indicator.createdAt.toISOString(),
+        updatedAt: indicator.updatedAt.toISOString(),
+        isOwner: true,
+      },
     });
   } catch (error) {
     console.error('Error creating indicator:', error);
     return NextResponse.json(
-      {
-        error: 'Failed to create indicator',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
+      { error: 'Failed to create indicator', message: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }

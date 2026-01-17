@@ -27,7 +27,7 @@ export interface IndicatorMeta {
   expectedOutputs?: string[];
   externalDatasets?: Record<string, { groupId: string; datasetName: string }>;
   visibleTo: string[];  // Empty = public, has values = only those users can access
-  ownerId: string;
+  createdBy: string;
 }
 
 /**
@@ -82,7 +82,7 @@ export async function loadIndicator(indicatorId: string): Promise<IndicatorMeta 
     expectedOutputs: indicator.expectedOutputs.length > 0 ? indicator.expectedOutputs : undefined,
     externalDatasets: indicator.externalDatasets as Record<string, { groupId: string; datasetName: string }> | undefined,
     visibleTo: indicator.visibleTo,
-    ownerId: indicator.ownerId,
+    createdBy: indicator.createdBy,
   };
 }
 
@@ -319,7 +319,7 @@ export async function computeIndicator(
     }
 
     // Check access permissions
-    const isOwner = indicator.ownerId === userId;
+    const isOwner = indicator.createdBy === userId;
     const isPublic = indicator.visibleTo.length === 0;  // Empty array = public
     const hasAccess = userId ? indicator.visibleTo.includes(userId) : false;
 

@@ -1,4 +1,14 @@
-import { Indicator } from './indicator-storage';
+/**
+ * Minimal indicator info needed for dependency detection
+ */
+export interface IndicatorForDependency {
+  id: string;
+  name?: string;
+  outputColumn: string;
+  isGroup: boolean;
+  groupName?: string | null;
+  expectedOutputs?: string[];
+}
 
 export interface DependencyResult {
   dependencies: string[];         // Indicator IDs
@@ -13,7 +23,7 @@ export interface DependencyResult {
  */
 export function detectDependencies(
   pythonCode: string,
-  allIndicators: Indicator[],
+  allIndicators: IndicatorForDependency[],
   currentIndicatorId?: string
 ): DependencyResult {
   const dependencies: string[] = [];

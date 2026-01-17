@@ -26,7 +26,7 @@ export async function GET() {
     const indicators = await prisma.indicator.findMany({
       where: {
         AND: [
-          { ownerId: { not: userId } },  // Not owned by user
+          { createdBy: { not: userId } },  // Not owned by user
           {
             OR: [
               { visibleTo: { isEmpty: true } },  // Public
@@ -52,7 +52,7 @@ export async function GET() {
         visibleTo: true,
         createdAt: true,
         updatedAt: true,
-        owner: {
+        creator: {
           select: {
             id: true,
             name: true,

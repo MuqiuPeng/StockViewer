@@ -129,10 +129,14 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check ownership
-    if (strategy.userId !== userId) {
+    // Check access - user must own the strategy or have access to it
+    const isOwner = strategy.createdBy === userId;
+    const isPublic = strategy.visibleTo.length === 0;
+    const hasAccess = strategy.visibleTo.includes(userId);
+
+    if (!isOwner && !isPublic && !hasAccess) {
       return NextResponse.json(
-        { error: 'Forbidden', message: 'You can only use your own strategies' },
+        { error: 'Forbidden', message: 'You do not have access to this strategy' },
         { status: 403 }
       );
     }

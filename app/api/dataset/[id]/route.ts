@@ -129,7 +129,7 @@ export async function GET(
     const allIndicators = await prisma.indicator.findMany({
       where: {
         OR: [
-          { ownerId: userId },                    // Own indicators
+          { createdBy: userId },                  // Own indicators
           { visibleTo: { isEmpty: true } },       // Public indicators
           { visibleTo: { has: userId } },         // Shared with this user
         ],

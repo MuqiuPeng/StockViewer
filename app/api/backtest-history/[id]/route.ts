@@ -6,12 +6,8 @@
  */
 
 import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
-import {
-  getBacktestHistoryById,
-  updateBacktestHistoryEntry,
-  deleteBacktestHistoryEntry,
-} from '@/lib/backtest-history-storage';
 
 export const runtime = 'nodejs';
 
@@ -25,9 +21,14 @@ export async function GET(
     if (!authResult.success) {
       return authResult.response;
     }
-    const { storage } = authResult;
+    const { userId } = authResult;
 
-    const entry = await getBacktestHistoryById(params.id, storage);
+    const entry = await prisma.backtestHistoryEntry.findFirst({
+      where: {
+        id: params.id,
+        userId,  // Ensure user can only access their own entries
+      },
+    });
 
     if (!entry) {
       return NextResponse.json(
@@ -36,14 +37,16 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({ entry });
+    return NextResponse.json({
+      entry: {
+        ...entry,
+        createdAt: entry.createdAt.toISOString(),
+      },
+    });
   } catch (error) {
     console.error('Error getting backtest history entry:', error);
     return NextResponse.json(
-      {
-        error: 'Failed to get backtest history entry',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
+      { error: 'Failed to get backtest history entry', message: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
@@ -59,13 +62,19 @@ export async function PUT(
     if (!authResult.success) {
       return authResult.response;
     }
-    const { storage } = authResult;
+    const { userId } = authResult;
 
     const body = await request.json();
     const { starred, notes, tags } = body;
 
-    // Check if entry exists
-    const existing = await getBacktestHistoryById(params.id, storage);
+    // Check if entry exists and belongs to user
+    const existing = await prisma.backtestHistoryEntry.findFirst({
+      where: {
+        id: params.id,
+        userId,
+      },
+    });
+
     if (!existing) {
       return NextResponse.json(
         { error: 'Backtest history entry not found' },
@@ -74,19 +83,22 @@ export async function PUT(
     }
 
     // Build updates
-    const updates: any = {};
-    if (starred !== undefined) updates.starred = starred;
-    if (notes !== undefined) updates.notes = notes;
-    if (tags !== undefined) updates.tags = tags;
+    const updateData: any = {};
+    if (starred !== undefined) updateData.starred = starred;
+    if (notes !== undefined) updateData.notes = notes;
+    if (tags !== undefined) updateData.tags = tags;
 
-    if (Object.keys(updates).length === 0) {
+    if (Object.keys(updateData).length === 0) {
       return NextResponse.json(
         { error: 'No valid updates provided' },
         { status: 400 }
       );
     }
 
-    const entry = await updateBacktestHistoryEntry(params.id, updates, storage);
+    const entry = await prisma.backtestHistoryEntry.update({
+      where: { id: params.id },
+      data: updateData,
+    });
 
     return NextResponse.json({
       success: true,
@@ -100,10 +112,7 @@ export async function PUT(
   } catch (error) {
     console.error('Error updating backtest history entry:', error);
     return NextResponse.json(
-      {
-        error: 'Failed to update backtest history entry',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
+      { error: 'Failed to update backtest history entry', message: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
@@ -119,10 +128,16 @@ export async function DELETE(
     if (!authResult.success) {
       return authResult.response;
     }
-    const { storage } = authResult;
+    const { userId } = authResult;
 
-    // Check if entry exists
-    const existing = await getBacktestHistoryById(params.id, storage);
+    // Check if entry exists and belongs to user
+    const existing = await prisma.backtestHistoryEntry.findFirst({
+      where: {
+        id: params.id,
+        userId,
+      },
+    });
+
     if (!existing) {
       return NextResponse.json(
         { error: 'Backtest history entry not found' },
@@ -130,7 +145,9 @@ export async function DELETE(
       );
     }
 
-    await deleteBacktestHistoryEntry(params.id, storage);
+    await prisma.backtestHistoryEntry.delete({
+      where: { id: params.id },
+    });
 
     return NextResponse.json({
       success: true,
@@ -139,10 +156,7 @@ export async function DELETE(
   } catch (error) {
     console.error('Error deleting backtest history entry:', error);
     return NextResponse.json(
-      {
-        error: 'Failed to delete backtest history entry',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
+      { error: 'Failed to delete backtest history entry', message: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }

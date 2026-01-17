@@ -78,7 +78,7 @@ export async function GET(request: Request) {
           category: true,
           tags: true,
           createdAt: true,
-          owner: {
+          creator: {
             select: {
               id: true,
               name: true,
