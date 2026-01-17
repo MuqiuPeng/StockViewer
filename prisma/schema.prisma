@@ -52,7 +52,6 @@ model User {
 
   // User-scoped data relations
   indicators              Indicator[]             @relation("IndicatorOwner")
-  indicatorSubscriptions  IndicatorSubscription[]
   indicatorValueCaches    IndicatorValueCache[]
   strategies              Strategy[]
   backtestHistory         BacktestHistoryEntry[]
@@ -143,23 +142,17 @@ model StockPrice {
 }
 
 // ============================================================================
-// INDICATOR SYSTEM (Public + Private)
+// INDICATOR SYSTEM (Flexible Visibility)
 // ============================================================================
 
-enum IndicatorVisibility {
-  PRIVATE  // Only owner can see/use
-  PUBLIC   // Published to library
-  UNLISTED // Shareable via link but not in library
-}
-
-/// Indicator definitions - both private and public
+/// Indicator definitions with flexible visibility
+/// visibleTo: [] = public (everyone), ['userId1', 'userId2'] = only these users
 model Indicator {
   id String @id @default(cuid())
 
   // Ownership & Visibility
-  ownerId     String
-  visibility  IndicatorVisibility @default(PRIVATE)
-  publishedAt DateTime?
+  ownerId   String
+  visibleTo String[] // Empty = public, has values = only specified users can access
 
   // Basic Info
   name         String
@@ -179,47 +172,22 @@ model Indicator {
   // External datasets (stored as JSON)
   externalDatasets Json? // Record<string, { stockId: string }>
 
-  // Library metadata (for public indicators)
-  category      String?  // e.g., "Trend", "Momentum", "Volume"
-  tags          String[]
-  version       String   @default("1.0.0")
-  downloadCount Int      @default(0)
-  rating        Float    @default(0)
-  ratingCount   Int      @default(0)
+  // Metadata (for browsing/discovery when public)
+  category String?  // e.g., "Trend", "Momentum", "Volume"
+  tags     String[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // Relations
-  owner               User                    @relation("IndicatorOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  subscriptions       IndicatorSubscription[]
-  precomputedValues   IndicatorValue[]
-  userCaches          IndicatorValueCache[]
+  owner             User                  @relation("IndicatorOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  precomputedValues IndicatorValue[]
+  userCaches        IndicatorValueCache[]
 
   @@unique([ownerId, name])
   @@index([ownerId])
-  @@index([visibility])
+  @@index([visibleTo])
   @@index([category])
-  @@index([publishedAt])
-  @@index([downloadCount])
-}
-
-/// User subscriptions to public indicators
-model IndicatorSubscription {
-  id          String   @id @default(cuid())
-  userId      String
-  indicatorId String
-
-  // Subscription metadata
-  subscribedAt DateTime @default(now())
-  autoUpdate   Boolean  @default(true) // Auto-apply to new stocks
-
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  indicator Indicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, indicatorId])
-  @@index([userId])
-  @@index([indicatorId])
 }
 
 /// Pre-computed indicator values for public indicators (shared cache)
