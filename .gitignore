@@ -84,3 +84,4 @@ docker-compose.override.yml
 *.tar.gz
 
 /lib/generated/prisma
+docker-compose.yml
