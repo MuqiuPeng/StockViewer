@@ -56,8 +56,8 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Install Python packages
 RUN pip install --no-cache-dir pandas numpy aktools
 
-# Install Prisma CLI for migrations
-RUN npm install -g prisma
+# Install Prisma CLI for migrations (pin to v5 to avoid breaking changes)
+RUN npm install -g prisma@5
 
 # Copy built application
 COPY --from=builder /app/.next/standalone ./
