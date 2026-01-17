@@ -42,6 +42,7 @@ services:
       dockerfile: docker/Dockerfile.combined
       args:
         - NEXT_PUBLIC_BASE_PATH=${NEXT_PUBLIC_BASE_PATH:-}
+        - NEXT_PUBLIC_STORAGE_MODE=database
     container_name: stockviewer-app
     ports:
       - "3000:3000"

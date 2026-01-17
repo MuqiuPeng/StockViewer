@@ -28,9 +28,11 @@ COPY . .
 # Use Docker-specific Next.js config
 COPY docker/next.config.docker.js ./next.config.js
 
-# Build args for base path (set during docker build)
+# Build args (set during docker build)
 ARG NEXT_PUBLIC_BASE_PATH=""
+ARG NEXT_PUBLIC_STORAGE_MODE="database"
 ENV NEXT_PUBLIC_BASE_PATH=${NEXT_PUBLIC_BASE_PATH}
+ENV NEXT_PUBLIC_STORAGE_MODE=${NEXT_PUBLIC_STORAGE_MODE}
 
 # Generate Prisma Client (dummy URL for build, real URL at runtime)
 RUN DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" npx prisma generate
