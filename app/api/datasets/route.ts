@@ -98,3 +98,69 @@ export async function GET(request: Request) {
     );
   }
 }
+
+// DELETE /api/datasets - Delete a dataset by identifier
+export async function DELETE(request: Request) {
+  try {
+    // Check authentication
+    const authError = await requireAuth();
+    if (authError) return authError;
+
+    const body = await request.json();
+    const { identifier } = body;
+
+    if (!identifier) {
+      return NextResponse.json(
+        { error: 'Invalid input', message: 'identifier is required' },
+        { status: 400 }
+      );
+    }
+
+    // Find stock by ID first
+    let stock = await prisma.stock.findUnique({
+      where: { id: identifier },
+    });
+
+    // If not found by ID, try to parse as filename (symbol_dataSource)
+    if (!stock) {
+      const parts = identifier.split('_');
+      if (parts.length >= 2) {
+        const symbol = parts[0];
+        const dataSource = parts.slice(1).join('_');
+        stock = await prisma.stock.findFirst({
+          where: { symbol, dataSource },
+        });
+      }
+    }
+
+    // Try by symbol only
+    if (!stock) {
+      stock = await prisma.stock.findFirst({
+        where: { symbol: identifier },
+      });
+    }
+
+    if (!stock) {
+      return NextResponse.json(
+        { error: 'Dataset not found' },
+        { status: 404 }
+      );
+    }
+
+    // Delete stock (cascade will delete price data)
+    await prisma.stock.delete({
+      where: { id: stock.id },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: `Deleted dataset ${stock.symbol}`,
+    });
+  } catch (error) {
+    console.error('Error deleting dataset:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete dataset', message: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    );
+  }
+}
