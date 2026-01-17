@@ -35,6 +35,9 @@ ENV NEXT_PUBLIC_BASE_PATH=${NEXT_PUBLIC_BASE_PATH}
 # Generate Prisma Client (dummy URL for build, real URL at runtime)
 RUN DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" npx prisma generate
 
+# Ensure public folder exists
+RUN mkdir -p public
+
 # Build Next.js application
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
@@ -59,7 +62,10 @@ RUN npm install -g prisma
 # Copy built application
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/public ./public 2>/dev/null || mkdir -p ./public
+
+# Copy public folder (create empty if not exists)
+RUN mkdir -p ./public
+COPY --from=builder /app/public ./public
 
 # Copy Prisma files for database mode
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
