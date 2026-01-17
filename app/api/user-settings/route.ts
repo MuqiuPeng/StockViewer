@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { stat, mkdir } from 'fs/promises';
-import { join } from 'path';
 
 export const runtime = 'nodejs';
 
@@ -21,7 +19,6 @@ export async function GET() {
     // Return settings or defaults
     return NextResponse.json({
       settings: settings || {
-        csvDataPath: null,
         setupComplete: false,
       },
     });
@@ -43,62 +40,16 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { csvDataPath, setupComplete } = body;
+    const { setupComplete } = body;
 
-    // Validate CSV path if provided
-    if (csvDataPath) {
-      // Normalize path - expand ~ to home directory on Unix
-      let normalizedPath = csvDataPath;
-      if (normalizedPath.startsWith('~')) {
-        const homeDir = process.env.HOME || process.env.USERPROFILE || '';
-        normalizedPath = normalizedPath.replace(/^~/, homeDir);
-      }
-
-      try {
-        // Check if path exists
-        const stats = await stat(normalizedPath);
-        if (!stats.isDirectory()) {
-          return NextResponse.json(
-            { error: 'Invalid path', message: 'The specified path is not a directory' },
-            { status: 400 }
-          );
-        }
-      } catch (err: any) {
-        if (err.code === 'ENOENT') {
-          // Path doesn't exist - try to create it
-          try {
-            await mkdir(normalizedPath, { recursive: true });
-            console.log(`Created CSV directory: ${normalizedPath}`);
-          } catch (mkdirErr: any) {
-            console.error(`Failed to create directory ${normalizedPath}:`, mkdirErr);
-            return NextResponse.json(
-              { error: 'Invalid path', message: `Cannot create directory: ${mkdirErr.message}` },
-              { status: 400 }
-            );
-          }
-        } else {
-          console.error(`Cannot access path ${normalizedPath}:`, err);
-          return NextResponse.json(
-            { error: 'Invalid path', message: `Cannot access path: ${err.message}` },
-            { status: 400 }
-          );
-        }
-      }
-
-      // Use normalized path for storage
-      body.csvDataPath = normalizedPath;
-    }
-
-    // Upsert user settings (use body.csvDataPath which may be normalized)
+    // Upsert user settings
     const settings = await prisma.userSettings.upsert({
       where: { userId: session.user.id },
       update: {
-        ...(body.csvDataPath !== undefined && { csvDataPath: body.csvDataPath }),
         ...(setupComplete !== undefined && { setupComplete }),
       },
       create: {
         userId: session.user.id,
-        csvDataPath: body.csvDataPath || null,
         setupComplete: setupComplete || false,
       },
     });

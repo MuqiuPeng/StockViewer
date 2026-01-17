@@ -64,11 +64,11 @@ async function main() {
 
   for (const ind of indicators) {
     const existing = await prisma.indicator.findFirst({
-      where: { name: ind.name, userId: user.id }
+      where: { name: ind.name, ownerId: user.id }
     });
     if (!existing) {
       await prisma.indicator.create({
-        data: { ...ind, userId: user.id }
+        data: { ...ind, ownerId: user.id }
       });
       console.log('Created indicator:', ind.name);
     } else {
@@ -77,7 +77,7 @@ async function main() {
   }
 
   // Create MACD indicator (depends on EMA12 and EMA26)
-  const macdExists = await prisma.indicator.findFirst({ where: { name: 'MACD', userId: user.id } });
+  const macdExists = await prisma.indicator.findFirst({ where: { name: 'MACD', ownerId: user.id } });
   if (!macdExists) {
     await prisma.indicator.create({
       data: {
@@ -87,7 +87,7 @@ async function main() {
         pythonCode: `def calculate(data):
     return data["ema12"] - data["ema26"]`,
         dependencies: ['EMA12', 'EMA26'],
-        userId: user.id,
+        ownerId: user.id,
       }
     });
     console.log('Created indicator: MACD');

@@ -1,10 +1,9 @@
 /**
  * View settings storage module
- * Uses the storage abstraction layer for both local (file) and online (IndexedDB) modes
+ * Uses the database storage abstraction layer
  */
 
-import { getStorageProvider } from './storage';
-import type { JsonStorageProvider } from './storage/types';
+import type { JsonStorageProvider, StorageProvider } from './storage/types';
 
 export interface ConstantLine {
   value: number;
@@ -25,38 +24,54 @@ export interface ViewSetting {
 
 /**
  * Get the view settings store instance
+ * @param storage Storage provider (required)
  */
-function getStore(): JsonStorageProvider<ViewSetting> {
-  return getStorageProvider().getJsonStore<ViewSetting>('viewSettings');
+function getStore(storage: StorageProvider): JsonStorageProvider<ViewSetting> {
+  return storage.getJsonStore<ViewSetting>('viewSettings');
 }
 
 /**
  * Get all view settings
+ * @param storage Storage provider (required)
  */
-export function getAllViewSettings(): Promise<ViewSetting[]> {
-  return getStore().getAll();
+export function getAllViewSettings(storage: StorageProvider): Promise<ViewSetting[]> {
+  return getStore(storage).getAll();
 }
 
 /**
  * Get a view setting by ID
+ * @param id View setting ID
+ * @param storage Storage provider (required)
  */
-export async function getViewSetting(id: string): Promise<ViewSetting | null> {
-  return getStore().getById(id);
+export async function getViewSetting(id: string, storage: StorageProvider): Promise<ViewSetting | null> {
+  return getStore(storage).getById(id);
 }
 
 /**
  * Create a new view setting
+ * @param setting View setting data (without id, createdAt)
+ * @param storage Storage provider (required)
  */
-export async function createViewSetting(setting: Omit<ViewSetting, 'id' | 'createdAt'>): Promise<ViewSetting> {
-  return getStore().create(setting);
+export async function createViewSetting(
+  setting: Omit<ViewSetting, 'id' | 'createdAt'>,
+  storage: StorageProvider
+): Promise<ViewSetting> {
+  return getStore(storage).create(setting);
 }
 
 /**
  * Update a view setting
+ * @param id View setting ID
+ * @param updates Partial view setting updates
+ * @param storage Storage provider (required)
  */
-export async function updateViewSetting(id: string, updates: Partial<Omit<ViewSetting, 'id' | 'createdAt'>>): Promise<ViewSetting | null> {
+export async function updateViewSetting(
+  id: string,
+  updates: Partial<Omit<ViewSetting, 'id' | 'createdAt'>>,
+  storage: StorageProvider
+): Promise<ViewSetting | null> {
   try {
-    return await getStore().update(id, updates);
+    return await getStore(storage).update(id, updates);
   } catch {
     return null;
   }
@@ -64,10 +79,12 @@ export async function updateViewSetting(id: string, updates: Partial<Omit<ViewSe
 
 /**
  * Delete a view setting
+ * @param id View setting ID
+ * @param storage Storage provider (required)
  */
-export async function deleteViewSetting(id: string): Promise<boolean> {
+export async function deleteViewSetting(id: string, storage: StorageProvider): Promise<boolean> {
   try {
-    return await getStore().delete(id);
+    return await getStore(storage).delete(id);
   } catch {
     return false;
   }

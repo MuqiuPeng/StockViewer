@@ -1,105 +1,99 @@
+/**
+ * Datasets API (Compatibility Layer)
+ * GET /api/datasets - List all datasets (transforms Stock table to DatasetInfo format)
+ *
+ * This endpoint provides backwards compatibility with the frontend
+ * by transforming the new Stock database model to the old DatasetInfo format.
+ */
+
 import { NextResponse } from 'next/server';
-import { getApiStorage } from '@/lib/api-auth';
-import type { DatasetMetadata } from '@/lib/dataset-metadata';
+import { prisma } from '@/lib/prisma';
+import { requireAuth } from '@/lib/api-auth';
 
 export const runtime = 'nodejs';
 
-export async function GET() {
+/**
+ * DatasetInfo format expected by frontend
+ */
+interface DatasetInfo {
+  id: string;
+  name: string;
+  code: string;
+  filename: string;  // For compatibility, we'll use symbol_dataSource
+  columns: string[];
+  indicators: string[];
+  rowCount: number;
+  dataSource?: string;
+  firstDate?: string;
+  lastDate?: string;
+  lastUpdate?: string;
+}
+
+// GET /api/datasets - List all datasets (from Stock table)
+export async function GET(request: Request) {
   try {
-    const authResult = await getApiStorage();
-    if (!authResult.success) {
-      return authResult.response;
+    // Check authentication
+    const authError = await requireAuth();
+    if (authError) return authError;
+
+    const { searchParams } = new URL(request.url);
+    const query = searchParams.get('q') || '';
+    const dataSource = searchParams.get('dataSource') || '';
+
+    // Build where clause
+    const where: any = {};
+
+    if (query) {
+      where.OR = [
+        { symbol: { contains: query, mode: 'insensitive' } },
+        { name: { contains: query, mode: 'insensitive' } },
+      ];
     }
 
-    const store = authResult.storage.getJsonStore<DatasetMetadata>('datasetMetadata');
-    const fileStore = authResult.storage.getFileStore();
-    const datasets = await store.getAll();
+    if (dataSource) {
+      where.dataSource = dataSource;
+    }
 
-    // Check if each dataset's file exists locally
-    const datasetsWithStatus = await Promise.all(
-      datasets.map(async (dataset) => {
-        const fileExists = await fileStore.exists(dataset.filename);
-        return {
-          ...dataset,
-          fileMissing: !fileExists,
-        };
-      })
-    );
+    // Get stocks from database
+    const stocks = await prisma.stock.findMany({
+      where,
+      orderBy: { symbol: 'asc' },
+      take: 500, // Limit for performance
+    });
 
-    return NextResponse.json(datasetsWithStatus);
+    // Get computed indicator columns for each stock
+    // For now, we'll return basic OHLCV columns + any cached indicators
+    const baseColumns = ['date', 'open', 'high', 'low', 'close', 'volume'];
+
+    // Transform to DatasetInfo format
+    const datasets: DatasetInfo[] = stocks.map(stock => ({
+      id: stock.id,
+      name: stock.name,
+      code: stock.symbol,
+      filename: `${stock.symbol}_${stock.dataSource}`,
+      columns: [...baseColumns],
+      indicators: [], // Will be populated when user applies indicators
+      rowCount: stock.rowCount,
+      dataSource: stock.dataSource,
+      firstDate: stock.firstDate?.toISOString().split('T')[0],
+      lastDate: stock.lastDate?.toISOString().split('T')[0],
+      lastUpdate: stock.lastUpdate?.toISOString(),
+    }));
+
+    // Get unique data sources for filtering
+    const dataSources = await prisma.stock.findMany({
+      select: { dataSource: true },
+      distinct: ['dataSource'],
+    });
+
+    return NextResponse.json({
+      datasets,
+      dataSources: dataSources.map(d => d.dataSource),
+    });
   } catch (error) {
     console.error('Error listing datasets:', error);
     return NextResponse.json(
       { error: 'Failed to list datasets', message: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    );
-  }
-}
-
-// DELETE /api/datasets - Delete a dataset
-export async function DELETE(request: Request) {
-  try {
-    const authResult = await getApiStorage();
-    if (!authResult.success) {
-      return authResult.response;
-    }
-
-    const store = authResult.storage.getJsonStore<DatasetMetadata>('datasetMetadata');
-    const fileStore = authResult.storage.getFileStore();
-
-    const body = await request.json();
-    const { identifier, name } = body; // Accept both identifier (new) and name (legacy)
-
-    const lookupValue = identifier || name;
-    if (!lookupValue) {
-      return NextResponse.json(
-        { error: 'Missing required field', message: 'identifier or name is required' },
-        { status: 400 }
-      );
-    }
-
-    // Find dataset by ID (or name/filename for backward compatibility)
-    const datasets = await store.getAll();
-    let dataset = datasets.find(ds => ds.id === lookupValue);
-    if (!dataset) {
-      dataset = datasets.find(
-        ds => ds.filename === lookupValue || ds.filename.replace(/\.csv$/i, '') === lookupValue
-      );
-    }
-    if (!dataset) {
-      dataset = datasets.find(ds => ds.name === lookupValue);
-    }
-    if (!dataset) {
-      const codeMatches = datasets.filter(ds => ds.code === lookupValue);
-      if (codeMatches.length === 1) {
-        dataset = codeMatches[0];
-      }
-    }
-
-    if (!dataset) {
-      return NextResponse.json(
-        { error: 'Dataset not found' },
-        { status: 404 }
-      );
-    }
-
-    // Delete CSV file
-    const exists = await fileStore.exists(dataset.filename);
-    if (exists) {
-      await fileStore.delete(dataset.filename);
-    }
-
-    // Remove from metadata
-    await store.delete(dataset.id);
-
-    return NextResponse.json({ success: true, message: `Dataset ${dataset.name} deleted successfully` });
-  } catch (error) {
-    console.error('Error deleting dataset:', error);
-    return NextResponse.json(
-      {
-        error: 'Failed to delete dataset',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
       { status: 500 }
     );
   }

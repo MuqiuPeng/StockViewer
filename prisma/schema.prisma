@@ -51,23 +51,23 @@ model User {
   sessions      Session[]
 
   // User-scoped data relations
-  indicators       Indicator[]
-  strategies       Strategy[]
-  backtestHistory  BacktestHistoryEntry[]
-  groups           StockGroup[]
-  datasetMetadata  DatasetMetadata[]
-  viewSettings     ViewSetting[]
-  settings         UserSettings?
+  indicators              Indicator[]             @relation("IndicatorOwner")
+  indicatorSubscriptions  IndicatorSubscription[]
+  indicatorValueCaches    IndicatorValueCache[]
+  strategies              Strategy[]
+  backtestHistory         BacktestHistoryEntry[]
+  groups                  StockGroup[]
+  viewSettings            ViewSetting[]
+  settings                UserSettings?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model UserSettings {
-  id          String  @id @default(cuid())
-  userId      String  @unique
-  csvDataPath String? // User's local CSV data folder path
-  setupComplete Boolean @default(false) // Whether user has completed initial setup
+  id            String  @id @default(cuid())
+  userId        String  @unique
+  setupComplete Boolean @default(false)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -84,18 +84,92 @@ model VerificationToken {
 }
 
 // ============================================================================
-// Application Data Models (User-Scoped)
+// PUBLIC STOCK DATA (Shared Across All Users)
 // ============================================================================
 
+/// Stock master data - information about each stock
+model Stock {
+  id         String  @id @default(cuid())
+  symbol     String  // e.g., "000001"
+  name       String  // e.g., "平安银行"
+  dataSource String  // e.g., "stock_zh_a_hist"
+  category   String? // e.g., "A股", "港股", "指数"
+  exchange   String? // e.g., "sh", "sz"
+
+  // Metadata
+  firstDate  DateTime?
+  lastDate   DateTime?
+  lastUpdate DateTime?
+  rowCount   Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  priceData StockPrice[]
+
+  @@unique([symbol, dataSource])
+  @@index([symbol])
+  @@index([dataSource])
+  @@index([category])
+  @@index([lastDate])
+}
+
+/// Stock OHLCV price data - time-series data
+model StockPrice {
+  id      String   @id @default(cuid())
+  stockId String
+  date    DateTime @db.Date
+
+  // OHLCV data
+  open   Decimal @db.Decimal(18, 4)
+  high   Decimal @db.Decimal(18, 4)
+  low    Decimal @db.Decimal(18, 4)
+  close  Decimal @db.Decimal(18, 4)
+  volume BigInt  @default(0)
+
+  // Extended data from AKShare
+  turnover     Decimal? @db.Decimal(20, 2) // 成交额
+  amplitude    Decimal? @db.Decimal(8, 4) // 振幅 (%)
+  changePct    Decimal? @db.Decimal(8, 4) // 涨跌幅 (%)
+  changeAmount Decimal? @db.Decimal(18, 4) // 涨跌额
+  turnoverRate Decimal? @db.Decimal(8, 4) // 换手率 (%)
+
+  stock Stock @relation(fields: [stockId], references: [id], onDelete: Cascade)
+
+  @@unique([stockId, date])
+  @@index([stockId, date])
+  @@index([date])
+}
+
+// ============================================================================
+// INDICATOR SYSTEM (Public + Private)
+// ============================================================================
+
+enum IndicatorVisibility {
+  PRIVATE  // Only owner can see/use
+  PUBLIC   // Published to library
+  UNLISTED // Shareable via link but not in library
+}
+
+/// Indicator definitions - both private and public
 model Indicator {
-  id                String   @id @default(cuid())
-  userId            String
-  name              String
-  description       String   @db.Text
-  pythonCode        String   @db.Text
-  outputColumn      String
+  id String @id @default(cuid())
+
+  // Ownership & Visibility
+  ownerId     String
+  visibility  IndicatorVisibility @default(PRIVATE)
+  publishedAt DateTime?
+
+  // Basic Info
+  name         String
+  description  String @db.Text
+  pythonCode   String @db.Text
+  outputColumn String
+
+  // Dependencies
   dependencies      String[] // Array of indicator IDs
-  dependencyColumns String[] // Specific columns like "KDJ:K", "SMA_20"
+  dependencyColumns String[] // Specific columns like "MACD:DIF", "SMA_20"
 
   // Group indicator fields
   isGroup         Boolean  @default(false)
@@ -103,17 +177,99 @@ model Indicator {
   expectedOutputs String[] // e.g., ["DIF", "DEA", "MACD"]
 
   // External datasets (stored as JSON)
-  externalDatasets Json? // Record<string, { groupId: string; datasetName: string }>
+  externalDatasets Json? // Record<string, { stockId: string }>
+
+  // Library metadata (for public indicators)
+  category      String?  // e.g., "Trend", "Momentum", "Volume"
+  tags          String[]
+  version       String   @default("1.0.0")
+  downloadCount Int      @default(0)
+  rating        Float    @default(0)
+  ratingCount   Int      @default(0)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Relations
+  owner               User                    @relation("IndicatorOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  subscriptions       IndicatorSubscription[]
+  precomputedValues   IndicatorValue[]
+  userCaches          IndicatorValueCache[]
 
-  @@unique([userId, name]) // Unique name per user
-  @@index([userId])
+  @@unique([ownerId, name])
+  @@index([ownerId])
+  @@index([visibility])
+  @@index([category])
+  @@index([publishedAt])
+  @@index([downloadCount])
 }
 
+/// User subscriptions to public indicators
+model IndicatorSubscription {
+  id          String   @id @default(cuid())
+  userId      String
+  indicatorId String
+
+  // Subscription metadata
+  subscribedAt DateTime @default(now())
+  autoUpdate   Boolean  @default(true) // Auto-apply to new stocks
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  indicator Indicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, indicatorId])
+  @@index([userId])
+  @@index([indicatorId])
+}
+
+/// Pre-computed indicator values for public indicators (shared cache)
+model IndicatorValue {
+  id          String   @id @default(cuid())
+  indicatorId String
+  stockId     String
+  date        DateTime @db.Date
+
+  // For single indicators
+  value Decimal? @db.Decimal(18, 6)
+
+  // For group indicators (JSONB for multiple outputs)
+  groupValues Json? // { "DIF": 1.23, "DEA": 2.34, "MACD": -1.11 }
+
+  computedAt DateTime @default(now())
+
+  indicator Indicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+
+  @@unique([indicatorId, stockId, date])
+  @@index([indicatorId, stockId, date])
+  @@index([stockId, date])
+}
+
+/// User-specific indicator value cache (for private indicators)
+model IndicatorValueCache {
+  id          String   @id @default(cuid())
+  userId      String
+  indicatorId String
+  stockId     String
+  date        DateTime @db.Date
+
+  value       Decimal? @db.Decimal(18, 6)
+  groupValues Json?
+
+  computedAt DateTime @default(now())
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  indicator Indicator @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, indicatorId, stockId, date])
+  @@index([userId, stockId, date])
+  @@index([indicatorId, stockId])
+}
+
+// ============================================================================
+// USER-SPECIFIC DATA (Private)
+// ============================================================================
+
+/// Trading strategies (always private)
 model Strategy {
   id               String   @id @default(cuid())
   userId           String
@@ -123,18 +279,20 @@ model Strategy {
   strategyType     String   @default("single") // 'single' | 'portfolio'
   constraints      Json? // PortfolioConstraints
   parameters       Json? // Record<string, any>
-  externalDatasets Json? // Record<string, { groupId: string; datasetName: string }>
+  externalDatasets Json? // Record<string, { stockId: string }>
   dependencies     String[] // Indicator names this strategy depends on
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user            User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  backtestHistory BacktestHistoryEntry[]
 
-  @@unique([userId, name]) // Unique name per user
+  @@unique([userId, name])
   @@index([userId])
 }
 
+/// Backtest history entries
 model BacktestHistoryEntry {
   id           String @id @default(cuid())
   userId       String
@@ -142,13 +300,13 @@ model BacktestHistoryEntry {
   strategyName String
   strategyType String // 'single' | 'portfolio'
 
-  // Target information (stored as JSON)
-  target Json // { type, datasetName?, symbols?, groupId?, groupName? }
+  // Target information
+  target Json // { type, stockId?, stockIds?, groupId?, groupName? }
 
-  // Parameters (stored as JSON)
+  // Parameters
   parameters Json // { initialCash, commission, startDate?, endDate?, etc. }
 
-  // Full backtest result (stored as JSON)
+  // Full backtest result
   result Json
 
   // Metadata
@@ -165,56 +323,37 @@ model BacktestHistoryEntry {
 
   createdAt DateTime @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  strategy Strategy @relation(fields: [strategyId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([userId, createdAt])
   @@index([userId, starred])
+  @@index([strategyId])
 }
 
+/// User-defined stock groups (watchlists, portfolios)
 model StockGroup {
   id             String   @id @default(cuid())
   userId         String
   name           String
   description    String?  @db.Text
-  datasetNames   String[] // Array of dataset filenames
-  isDataSource   Boolean  @default(false) // True for auto-generated
-  dataSourceName String?  // For data source groups
+  stockIds       String[] // Array of Stock IDs
+  isDataSource   Boolean  @default(false)
+  dataSourceName String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, name]) // Unique name per user
+  @@unique([userId, name])
   @@index([userId])
 }
 
-model DatasetMetadata {
-  id         String   @id @default(cuid())
-  userId     String
-  code       String
-  name       String
-  filename   String
-  dataSource String
-  firstDate  String?
-  lastDate   String?
-  lastUpdate String?
-  rowCount   Int?
-  columns    String[]
-  indicators String[]
-
-  createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, filename]) // Unique filename per user
-  @@index([userId])
-  @@index([userId, code])
-}
-
+/// View settings for chart configurations
 model ViewSetting {
-  id                 String @id @default(cuid())
+  id                 String   @id @default(cuid())
   userId             String
   name               String
   enabledIndicators1 String[]
@@ -227,6 +366,42 @@ model ViewSetting {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, name]) // Unique name per user
+  @@unique([userId, name])
   @@index([userId])
+}
+
+// ============================================================================
+// DATA IMPORT JOB TRACKING
+// ============================================================================
+
+enum ImportJobStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
+
+/// Track data import jobs for background processing
+model DataImportJob {
+  id         String          @id @default(cuid())
+  symbol     String
+  dataSource String
+  status     ImportJobStatus @default(PENDING)
+
+  // Progress tracking
+  progress Int     @default(0) // 0-100
+  message  String?
+
+  // Error handling
+  errorMessage String?
+  retryCount   Int     @default(0)
+
+  // Timestamps
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status])
+  @@index([symbol, dataSource])
 }

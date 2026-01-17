@@ -10,6 +10,7 @@ interface ApplyIndicatorModalProps {
 }
 
 interface DatasetInfo {
+  id: string;
   name: string;
   code: string;
   filename: string;
@@ -66,11 +67,12 @@ export default function ApplyIndicatorModal({
       if (data.error) {
         setError(data.message || 'Failed to load datasets');
       } else {
-        setDatasets(data || []);
-        // Auto-select all stocks (use filename, not name)
-        const allDatasetFiles = (data || []).map((ds: DatasetInfo) => ds.filename);
+        const datasets = data.datasets || [];
+        setDatasets(datasets);
+        // Auto-select all stocks (use id, not filename)
+        const allDatasetIds = datasets.map((ds: DatasetInfo) => ds.id);
         setApplyToAll(true);
-        setSelectedStocks(new Set(allDatasetFiles));
+        setSelectedStocks(new Set(allDatasetIds));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load datasets');
@@ -79,12 +81,12 @@ export default function ApplyIndicatorModal({
     }
   };
 
-  const handleToggleStock = (datasetFilename: string) => {
+  const handleToggleStock = (datasetId: string) => {
     const newSelected = new Set(selectedStocks);
-    if (newSelected.has(datasetFilename)) {
-      newSelected.delete(datasetFilename);
+    if (newSelected.has(datasetId)) {
+      newSelected.delete(datasetId);
     } else {
-      newSelected.add(datasetFilename);
+      newSelected.add(datasetId);
     }
     setSelectedStocks(newSelected);
   };
@@ -92,7 +94,7 @@ export default function ApplyIndicatorModal({
   const handleApplyToAllChange = (checked: boolean) => {
     setApplyToAll(checked);
     if (checked) {
-      setSelectedStocks(new Set(datasets.map(ds => ds.filename)));
+      setSelectedStocks(new Set(datasets.map(ds => ds.id)));
     } else {
       setSelectedStocks(new Set());
     }
@@ -111,72 +113,39 @@ export default function ApplyIndicatorModal({
     setProgress({ current: 0, total: stocksToApply.length });
 
     try {
-      const response = await fetch('/api/apply-indicator-stream', {
+      const response = await fetch('/api/apply-indicator', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           indicatorId,
-          datasetNames: stocksToApply,
+          stockIds: stocksToApply,
         }),
       });
 
-      if (!response.ok) {
-        setError('Failed to apply indicator');
+      const data = await response.json();
+
+      if (!response.ok || data.error) {
+        setError(data.message || data.error || 'Failed to apply indicator');
         setIsApplying(false);
         return;
       }
 
-      // Read the stream
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
+      // Transform results to use stock names for display
       const resultsMap: Record<string, ApplyResult> = {};
-
-      if (!reader) {
-        setError('Failed to read response stream');
-        setIsApplying(false);
-        return;
+      for (const [stockId, result] of Object.entries(data.results || {})) {
+        const dataset = datasets.find(d => d.id === stockId);
+        const displayName = dataset?.name || stockId;
+        resultsMap[displayName] = result as ApplyResult;
       }
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      setResults(resultsMap);
+      setProgress({ current: stocksToApply.length, total: stocksToApply.length });
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-
-              if (data.type === 'total') {
-                setProgress({ current: 0, total: data.total });
-              } else if (data.type === 'progress') {
-                setProgress({ current: data.current, total: data.total });
-              } else if (data.type === 'result') {
-                resultsMap[data.filename] = data.result;
-                setResults({ ...resultsMap });
-                setProgress({ current: data.current || Object.keys(resultsMap).length, total: data.total || stocksToApply.length });
-              } else if (data.type === 'complete') {
-                setResults(data.results);
-                setProgress({ current: stocksToApply.length, total: stocksToApply.length });
-
-                // Call onSuccess callback if there were successful applications
-                if (onSuccess && data.results) {
-                  const hasSuccess = Object.values(data.results).some((r: any) => r.success);
-                  if (hasSuccess) {
-                    onSuccess();
-                  }
-                }
-              } else if (data.type === 'error') {
-                setError(data.message || data.error || 'Failed to apply indicator');
-              }
-            } catch (parseErr) {
-              console.error('Failed to parse SSE data:', parseErr);
-            }
-          }
+      // Call onSuccess callback if there were successful applications
+      if (onSuccess && data.results) {
+        const hasSuccess = Object.values(data.results).some((r: any) => r.success);
+        if (hasSuccess) {
+          onSuccess();
         }
       }
     } catch (err) {
@@ -235,13 +204,13 @@ export default function ApplyIndicatorModal({
                 <div className="space-y-1">
                   {datasets.map((dataset) => (
                     <label
-                      key={dataset.filename}
+                      key={dataset.id}
                       className="flex items-center gap-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-700 p-1 rounded dark:text-white"
                     >
                       <input
                         type="checkbox"
-                        checked={selectedStocks.has(dataset.filename)}
-                        onChange={() => handleToggleStock(dataset.filename)}
+                        checked={selectedStocks.has(dataset.id)}
+                        onChange={() => handleToggleStock(dataset.id)}
                         disabled={isApplying}
                       />
                       <span>{dataset.name}</span>

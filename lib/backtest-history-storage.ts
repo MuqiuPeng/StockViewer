@@ -1,9 +1,8 @@
 /**
  * Backtest history storage module
- * Uses the storage abstraction layer for both local (file) and online (IndexedDB) modes
+ * Uses the database storage abstraction layer
  */
 
-import { getStorageProvider, getStorageMode } from './storage';
 import type { JsonStorageProvider, StorageProvider } from './storage/types';
 import { BacktestResult } from './backtest-executor';
 import { PortfolioConstraints } from './types/portfolio';
@@ -21,7 +20,7 @@ export interface BacktestHistoryEntry {
   // Target information
   target: {
     type: 'single' | 'portfolio' | 'group';
-    datasetName?: string;
+    stockId?: string;           // Reference to Stock table
     symbols?: string[];
     groupId?: string;
     groupName?: string;
@@ -57,22 +56,18 @@ export interface BacktestHistoryEntry {
 
 /**
  * Get the backtest history store instance
+ * @param storage Storage provider (required)
  */
-function getStore(storage?: StorageProvider): JsonStorageProvider<BacktestHistoryEntry> {
-  if (storage) {
-    return storage.getJsonStore<BacktestHistoryEntry>('backtestHistory');
-  }
-  if (getStorageMode() === 'database') {
-    throw new Error('Database mode requires passing a storage provider.');
-  }
-  return getStorageProvider().getJsonStore<BacktestHistoryEntry>('backtestHistory');
+function getStore(storage: StorageProvider): JsonStorageProvider<BacktestHistoryEntry> {
+  return storage.getJsonStore<BacktestHistoryEntry>('backtestHistory');
 }
 
 /**
  * Get all backtest history entries (sorted by date, newest first)
+ * @param storage Storage provider (required)
  */
-export async function getAllBacktestHistory(): Promise<BacktestHistoryEntry[]> {
-  const entries = await getStore().getAll();
+export async function getAllBacktestHistory(storage: StorageProvider): Promise<BacktestHistoryEntry[]> {
+  const entries = await getStore(storage).getAll();
 
   // Sort by createdAt descending (newest first)
   return entries.sort((a, b) =>
@@ -82,57 +77,94 @@ export async function getAllBacktestHistory(): Promise<BacktestHistoryEntry[]> {
 
 /**
  * Get a backtest history entry by ID
+ * @param id Entry ID
+ * @param storage Storage provider (required)
  */
-export async function getBacktestHistoryById(id: string): Promise<BacktestHistoryEntry | null> {
-  return getStore().getById(id);
+export async function getBacktestHistoryById(
+  id: string,
+  storage: StorageProvider
+): Promise<BacktestHistoryEntry | null> {
+  return getStore(storage).getById(id);
 }
 
 /**
  * Create a new backtest history entry
+ * @param entryData Entry data (without id, createdAt)
+ * @param storage Storage provider (required)
  */
 export async function createBacktestHistoryEntry(
-  storage: StorageProvider,
-  entryData: Omit<BacktestHistoryEntry, 'id' | 'createdAt'>
+  entryData: Omit<BacktestHistoryEntry, 'id' | 'createdAt'>,
+  storage: StorageProvider
 ): Promise<BacktestHistoryEntry> {
   return getStore(storage).create(entryData);
 }
 
 /**
  * Update a backtest history entry
+ * @param id Entry ID
+ * @param updates Partial entry updates
+ * @param storage Storage provider (required)
  */
 export async function updateBacktestHistoryEntry(
   id: string,
-  updates: Partial<Omit<BacktestHistoryEntry, 'id' | 'createdAt'>>
+  updates: Partial<Omit<BacktestHistoryEntry, 'id' | 'createdAt'>>,
+  storage: StorageProvider
 ): Promise<BacktestHistoryEntry> {
-  return getStore().update(id, updates);
+  return getStore(storage).update(id, updates);
 }
 
 /**
  * Delete a backtest history entry
+ * @param id Entry ID
+ * @param storage Storage provider (required)
  */
-export async function deleteBacktestHistoryEntry(id: string): Promise<void> {
-  await getStore().delete(id);
+export async function deleteBacktestHistoryEntry(
+  id: string,
+  storage: StorageProvider
+): Promise<void> {
+  await getStore(storage).delete(id);
 }
 
 // Specialized operations
 
 /**
  * Star/unstar a backtest history entry
+ * @param id Entry ID
+ * @param starred Star status
+ * @param storage Storage provider (required)
  */
-export async function starBacktestHistoryEntry(id: string, starred: boolean): Promise<void> {
-  await updateBacktestHistoryEntry(id, { starred });
+export async function starBacktestHistoryEntry(
+  id: string,
+  starred: boolean,
+  storage: StorageProvider
+): Promise<void> {
+  await updateBacktestHistoryEntry(id, { starred }, storage);
 }
 
 /**
  * Add notes to a backtest history entry
+ * @param id Entry ID
+ * @param notes Notes text
+ * @param storage Storage provider (required)
  */
-export async function addNoteToBacktestHistoryEntry(id: string, notes: string): Promise<void> {
-  await updateBacktestHistoryEntry(id, { notes });
+export async function addNoteToBacktestHistoryEntry(
+  id: string,
+  notes: string,
+  storage: StorageProvider
+): Promise<void> {
+  await updateBacktestHistoryEntry(id, { notes }, storage);
 }
 
 /**
  * Add tags to a backtest history entry
+ * @param id Entry ID
+ * @param tags Array of tags
+ * @param storage Storage provider (required)
  */
-export async function addTagsToBacktestHistoryEntry(id: string, tags: string[]): Promise<void> {
-  await updateBacktestHistoryEntry(id, { tags });
+export async function addTagsToBacktestHistoryEntry(
+  id: string,
+  tags: string[],
+  storage: StorageProvider
+): Promise<void> {
+  await updateBacktestHistoryEntry(id, { tags }, storage);
 }

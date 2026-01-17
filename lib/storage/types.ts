@@ -1,17 +1,14 @@
 /**
- * Storage abstraction types for both file-based and browser-based storage
+ * Storage abstraction types for database-based storage
  *
  * Note: Entity types (Indicator, Strategy, etc.) are exported from their
  * respective storage modules, not from here, to avoid circular dependencies.
  */
 
 /**
- * Storage mode - determines which storage backend to use
- * - local: File-based storage (Node.js fs) for local/Docker deployment
- * - online: Browser IndexedDB storage for demo/single-user
- * - database: PostgreSQL storage for multi-user production deployment
+ * Storage mode - now only database is supported
  */
-export type StorageMode = 'local' | 'online' | 'database';
+export type StorageMode = 'database';
 
 /**
  * Store names for JSON-based storage
@@ -21,7 +18,6 @@ export type StoreName =
   | 'strategies'
   | 'backtestHistory'
   | 'groups'
-  | 'datasetMetadata'
   | 'viewSettings';
 
 /**
@@ -69,56 +65,6 @@ export interface JsonStorageProvider<T extends { id: string }> {
 }
 
 /**
- * Interface for binary/text file storage (CSV datasets)
- */
-export interface FileStorageProvider {
-  /**
-   * List all files in the store
-   */
-  listFiles(): Promise<string[]>;
-
-  /**
-   * Check if a file exists
-   */
-  exists(filename: string): Promise<boolean>;
-
-  /**
-   * Read file content as text
-   */
-  readText(filename: string): Promise<string>;
-
-  /**
-   * Read file content as binary (ArrayBuffer)
-   */
-  readBinary(filename: string): Promise<ArrayBuffer>;
-
-  /**
-   * Write text content to a file
-   */
-  writeText(filename: string, content: string): Promise<void>;
-
-  /**
-   * Write binary content to a file
-   */
-  writeBinary(filename: string, content: ArrayBuffer): Promise<void>;
-
-  /**
-   * Delete a file
-   */
-  delete(filename: string): Promise<boolean>;
-
-  /**
-   * Get file stats (size, modified date if available)
-   */
-  getStats(filename: string): Promise<FileStats | null>;
-}
-
-export interface FileStats {
-  size: number;
-  modifiedAt?: Date;
-}
-
-/**
  * Combined storage provider interface
  */
 export interface StorageProvider {
@@ -131,11 +77,6 @@ export interface StorageProvider {
    * Get a JSON storage provider for a specific store
    */
   getJsonStore<T extends { id: string }>(storeName: StoreName): JsonStorageProvider<T>;
-
-  /**
-   * Get the file storage provider for CSV datasets
-   */
-  getFileStore(): FileStorageProvider;
 
   /**
    * Initialize storage (create necessary structures)

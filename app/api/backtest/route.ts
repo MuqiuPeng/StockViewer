@@ -1,144 +1,127 @@
+/**
+ * Backtest API
+ * POST /api/backtest - Run a backtest on stock(s)
+ */
+
 import { NextResponse } from 'next/server';
-import { executeBacktest } from '@/lib/backtest-executor';
-import { getStrategyById } from '@/lib/strategy-storage';
-import { getGroupById } from '@/lib/group-storage';
-import { findDataset } from '@/lib/dataset-metadata';
-import Papa from 'papaparse';
-import { createBacktestHistoryEntry } from '@/lib/backtest-history-storage';
+import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
-import type { StorageProvider } from '@/lib/storage';
+import { executeBacktest, BacktestInput, BacktestResult } from '@/lib/backtest-executor';
+import { getStockPrices } from '@/lib/stock-storage';
+import { createBacktestHistoryEntry, BacktestHistoryEntry } from '@/lib/backtest-history-storage';
 
-// Helper function to load and parse a dataset
-async function loadDatasetWithStorage(datasetIdentifier: string, storage: StorageProvider) {
-  // Try to find dataset using metadata (supports code, name, or filename)
-  const metadata = await findDataset(datasetIdentifier, storage);
+export const runtime = 'nodejs';
 
-  let filename: string;
-  if (metadata) {
-    // Found in metadata, use the filename
-    filename = metadata.filename;
-  } else {
-    // Fallback to legacy behavior for backward compatibility
-    filename = datasetIdentifier;
-    if (!filename.toLowerCase().endsWith('.csv')) {
-      filename = `${filename}.csv`;
+interface BacktestRequest {
+  strategyId: string;
+  target: {
+    type: 'single' | 'portfolio' | 'group';
+    stockId?: string;
+    stockIds?: string[];
+    groupId?: string;
+  };
+  parameters: {
+    initialCash?: number;
+    commission?: number;
+    startDate?: string;
+    endDate?: string;
+    strategyParameters?: Record<string, any>;
+    constraints?: any;
+  };
+  saveToHistory?: boolean;
+}
+
+// Build data records from stock prices for backtest
+async function buildDataRecords(
+  stockId: string,
+  startDate?: Date,
+  endDate?: Date
+): Promise<Record<string, any>[]> {
+  const prices = await getStockPrices(stockId, { startDate, endDate });
+
+  // Get cached indicator values for this stock
+  const indicatorValues = await prisma.indicatorValue.findMany({
+    where: {
+      stockId,
+      date: {
+        gte: startDate,
+        lte: endDate,
+      },
+    },
+    include: {
+      indicator: {
+        select: { outputColumn: true, isGroup: true, groupName: true },
+      },
+    },
+  });
+
+  // Build value maps by date
+  const valuesByDate = new Map<string, Record<string, number | null>>();
+  for (const iv of indicatorValues) {
+    const dateKey = iv.date.toISOString().split('T')[0];
+    if (!valuesByDate.has(dateKey)) {
+      valuesByDate.set(dateKey, {});
+    }
+    const values = valuesByDate.get(dateKey)!;
+
+    if (iv.indicator.isGroup && iv.groupValues) {
+      const groupValues = iv.groupValues as Record<string, number | null>;
+      for (const [key, val] of Object.entries(groupValues)) {
+        values[`${iv.indicator.groupName}:${key}`] = val;
+      }
+    } else if (iv.value !== null) {
+      values[iv.indicator.outputColumn] = Number(iv.value);
     }
   }
 
-  const fileStore = storage.getFileStore();
-  const exists = await fileStore.exists(filename);
-  if (!exists) {
-    throw new Error(`Dataset "${datasetIdentifier}" not found`);
-  }
+  return prices.map(price => {
+    const dateKey = price.date.toISOString().split('T')[0];
+    const indicators = valuesByDate.get(dateKey) || {};
 
-  const fileContent = await fileStore.readText(filename);
-  const dataset = await new Promise<Record<string, any>[]>((resolve, reject) => {
-    Papa.parse(fileContent, {
-      header: true,
-      skipEmptyLines: true,
-      transformHeader: (header) => header.trim(),
-      complete: (results) => {
-        resolve(results.data as Record<string, any>[]);
-      },
-      error: (error: Error) => {
-        reject(new Error(`CSV parsing error: ${error.message}`));
-      },
-    });
+    return {
+      date: dateKey,
+      open: price.open,
+      high: price.high,
+      low: price.low,
+      close: price.close,
+      volume: Number(price.volume),
+      ...indicators,
+    };
   });
-
-  if (!dataset || dataset.length === 0) {
-    throw new Error(`Dataset "${datasetIdentifier}" is empty`);
-  }
-
-  return dataset;
 }
 
-// Helper function to filter dataset by date range
-function filterDatasetByDateRange(
-  dataset: Record<string, any>[],
-  startDate?: string,
-  endDate?: string
-): Record<string, any>[] {
-  if (!startDate && !endDate) {
-    return dataset;
-  }
-
-  const filtered = dataset.filter((row) => {
-    const rowDate = row.date || row['日期'];
-    if (!rowDate) return true;
-
-    const normalizedDate = rowDate.split(' ')[0];
-
-    if (startDate && normalizedDate < startDate) return false;
-    if (endDate && normalizedDate > endDate) return false;
-    return true;
-  });
-
-  if (filtered.length === 0) {
-    throw new Error(`No data found between ${startDate || 'start'} and ${endDate || 'end'}`);
-  }
-
-  return filtered;
-}
-
-// POST /api/backtest - Run backtest (single stock or group)
+// POST /api/backtest - Run backtest
 export async function POST(request: Request) {
   try {
-    // Get authenticated storage
     const authResult = await getApiStorage();
     if (!authResult.success) {
       return authResult.response;
     }
-    const storage = authResult.storage;
+    const { storage, userId } = authResult;
 
-    const body = await request.json();
-    const { strategyId, target, initialCash, commission, parameters, startDate, endDate } = body;
+    const body: BacktestRequest = await request.json();
+    const { strategyId, target, parameters, saveToHistory = true } = body;
 
-    // Support legacy format (datasetName directly)
-    const isLegacyFormat = body.datasetName && !body.target;
-    const actualTarget = isLegacyFormat
-      ? { type: 'single', datasetName: body.datasetName }
-      : target;
-
-    // Validate required fields
-    if (!strategyId || !actualTarget) {
+    // Validate request
+    if (!strategyId) {
       return NextResponse.json(
-        { error: 'Missing required fields', message: 'strategyId and target are required' },
+        { error: 'Invalid request', message: 'strategyId is required' },
         { status: 400 }
       );
     }
 
-    if (actualTarget.type === 'single' && !actualTarget.datasetName) {
+    if (!target || !target.type) {
       return NextResponse.json(
-        { error: 'Missing required fields', message: 'datasetName is required for single stock backtest' },
-        { status: 400 }
-      );
-    }
-
-    if (actualTarget.type === 'group' && !actualTarget.groupId) {
-      return NextResponse.json(
-        { error: 'Missing required fields', message: 'groupId is required for group backtest' },
-        { status: 400 }
-      );
-    }
-
-    if (actualTarget.type === 'portfolio' && (!actualTarget.symbols || actualTarget.symbols.length === 0)) {
-      return NextResponse.json(
-        { error: 'Missing required fields', message: 'symbols array is required for portfolio backtest' },
-        { status: 400 }
-      );
-    }
-
-    // Validate date range if provided
-    if (startDate && endDate && startDate > endDate) {
-      return NextResponse.json(
-        { error: 'Invalid date range', message: 'Start date must be before end date' },
+        { error: 'Invalid request', message: 'target with type is required' },
         { status: 400 }
       );
     }
 
     // Load strategy
-    const strategy = await getStrategyById(strategyId, storage);
+    const strategy = await prisma.strategy.findUnique({
+      where: { id: strategyId },
+    });
+
     if (!strategy) {
       return NextResponse.json(
         { error: 'Strategy not found' },
@@ -146,404 +129,183 @@ export async function POST(request: Request) {
       );
     }
 
-    // Handle single stock vs portfolio vs group backtest
-    if (actualTarget.type === 'single') {
-      // Single stock backtest
-      if (strategy.strategyType === 'portfolio') {
+    // Check ownership
+    if (strategy.userId !== userId) {
+      return NextResponse.json(
+        { error: 'Forbidden', message: 'You can only use your own strategies' },
+        { status: 403 }
+      );
+    }
+
+    // Parse dates
+    const startDate = parameters.startDate ? new Date(parameters.startDate) : undefined;
+    const endDate = parameters.endDate ? new Date(parameters.endDate) : undefined;
+
+    // Build backtest input based on target type
+    let backtestInput: BacktestInput;
+    let stockIds: string[] = [];
+    let symbols: string[] = [];
+
+    if (target.type === 'single') {
+      if (!target.stockId) {
         return NextResponse.json(
-          { error: 'Strategy type mismatch', message: 'Portfolio strategies cannot run on single stock targets. Please select multiple stocks.' },
+          { error: 'Invalid request', message: 'stockId is required for single backtest' },
           { status: 400 }
         );
       }
 
-      const dataset = await loadDatasetWithStorage(actualTarget.datasetName, storage);
-      const filteredDataset = filterDatasetByDateRange(dataset, startDate, endDate);
+      stockIds = [target.stockId];
 
-      // Get dataset metadata for display name
-      const datasetMetadata = await findDataset(actualTarget.datasetName, storage);
-      const displayName = datasetMetadata?.name || actualTarget.datasetName;
-
-      const startTime = Date.now();
-      const result = await executeBacktest({
-        strategyCode: strategy.pythonCode,
-        data: filteredDataset,
-        strategyType: 'single',
-        initialCash: initialCash || 100000,
-        commission: commission || 0.001,
-        parameters: parameters || strategy.parameters || {},
-        externalDatasets: strategy.externalDatasets,
+      // Get stock info
+      const stock = await prisma.stock.findUnique({
+        where: { id: target.stockId },
       });
-      const executionTime = Date.now() - startTime;
 
-      if (!result.success) {
-        const errorMessage = result.error || result.type || 'Unknown error';
-        console.error('Backtest failed:', errorMessage);
+      if (!stock) {
         return NextResponse.json(
-          {
-            error: 'Backtest failed',
-            message: errorMessage,
-            errorType: result.type,
-            details: result.details,
-          },
+          { error: 'Stock not found' },
+          { status: 404 }
+        );
+      }
+
+      symbols = [stock.symbol];
+
+      // Build data records
+      const data = await buildDataRecords(target.stockId, startDate, endDate);
+
+      if (data.length === 0) {
+        return NextResponse.json(
+          { error: 'No data available for backtest' },
           { status: 400 }
         );
       }
 
-      const resultWithMetadata = {
-        ...result,
-        type: 'single',
-        datasetName: actualTarget.datasetName,
-        dateRange: {
-          startDate: startDate || (filteredDataset[0]?.date || filteredDataset[0]?.['日期'] || null),
-          endDate: endDate || (filteredDataset[filteredDataset.length - 1]?.date || filteredDataset[filteredDataset.length - 1]?.['日期'] || null),
-          dataPoints: filteredDataset.length,
-        },
+      backtestInput = {
+        strategyCode: strategy.pythonCode,
+        data,
+        strategyType: 'single',
+        initialCash: parameters.initialCash || 100000,
+        commission: parameters.commission || 0.001,
+        parameters: parameters.strategyParameters || strategy.parameters as Record<string, any> || {},
+        externalDatasets: strategy.externalDatasets as Record<string, { groupId: string; datasetName: string }> | undefined,
       };
-
-      // Auto-save to history
-      try {
-        await createBacktestHistoryEntry(storage, {
-          strategyId,
-          strategyName: strategy.name,
-          strategyType: strategy.strategyType || 'single',
-          target: {
-            type: 'single',
-            datasetName: displayName,
-          },
-          parameters: {
-            initialCash: initialCash || 100000,
-            commission: commission || 0.001,
-            startDate,
-            endDate,
-            strategyParameters: parameters || strategy.parameters || {},
-          },
-          result: resultWithMetadata,
-          starred: false,
-          summary: {
-            totalReturn: result.metrics?.totalReturn || 0,
-            totalReturnPct: result.metrics?.totalReturnPct || 0,
-            sharpeRatio: result.metrics?.sharpeRatio || 0,
-            tradeCount: result.metrics?.tradeCount || 0,
-            duration: executionTime,
-          },
+    } else if (target.type === 'portfolio' || target.type === 'group') {
+      // Get stock IDs from group or direct list
+      if (target.type === 'group' && target.groupId) {
+        const group = await prisma.stockGroup.findUnique({
+          where: { id: target.groupId },
         });
-      } catch (error) {
-        console.error('Failed to save backtest to history:', error);
-        // Don't fail the request if history save fails
+
+        if (!group) {
+          return NextResponse.json(
+            { error: 'Group not found' },
+            { status: 404 }
+          );
+        }
+
+        stockIds = group.stockIds;
+      } else if (target.stockIds) {
+        stockIds = target.stockIds;
       }
 
-      return NextResponse.json({ result: resultWithMetadata });
-    } else if (actualTarget.type === 'portfolio') {
-      // Portfolio backtest - multiple stocks with shared capital
-      if (strategy.strategyType !== 'portfolio') {
+      if (stockIds.length === 0) {
         return NextResponse.json(
-          { error: 'Strategy type mismatch', message: 'Single-stock strategies cannot run on portfolio targets. Please create a portfolio strategy.' },
+          { error: 'Invalid request', message: 'No stocks specified for portfolio backtest' },
           { status: 400 }
         );
       }
 
-      // Load multiple datasets
+      // Get stock info and build data map
+      const stocks = await prisma.stock.findMany({
+        where: { id: { in: stockIds } },
+      });
+
+      symbols = stocks.map(s => s.symbol);
+
       const dataMap: Record<string, Record<string, any>[]> = {};
-      const loadErrors: string[] = [];
-      const symbolMapping: Record<string, string> = {}; // filename -> stock code
-      const datasetFilenames: Record<string, string> = {}; // stock code -> original filename
 
-      // Helper function to extract stock code from filename
-      const extractStockCode = (filename: string): string => {
-        // Remove .csv extension
-        const withoutExt = filename.replace(/\.csv$/i, '');
-        // Extract stock code (before first underscore, or the whole name if no underscore)
-        const parts = withoutExt.split('_');
-        return parts[0];
-      };
-
-      for (const filename of actualTarget.symbols) {
-        try {
-          const dataset = await loadDatasetWithStorage(filename, storage);
-          const filteredDataset = filterDatasetByDateRange(dataset, startDate, endDate);
-
-          // Use stock code as key instead of full filename
-          const stockCode = extractStockCode(filename);
-          dataMap[stockCode] = filteredDataset;
-          symbolMapping[filename] = stockCode;
-          datasetFilenames[stockCode] = filename; // Preserve the original filename
-        } catch (error) {
-          loadErrors.push(`${filename}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      for (const stock of stocks) {
+        const data = await buildDataRecords(stock.id, startDate, endDate);
+        if (data.length > 0) {
+          dataMap[stock.symbol] = data;
         }
       }
 
       if (Object.keys(dataMap).length === 0) {
         return NextResponse.json(
-          {
-            error: 'Failed to load datasets',
-            message: `Could not load any of the selected stocks. Errors: ${loadErrors.join(', ')}`
-          },
+          { error: 'No data available for backtest' },
           { status: 400 }
         );
       }
 
-      // Execute portfolio backtest with shared capital
-      const startTime = Date.now();
-      const result = await executeBacktest({
+      backtestInput = {
         strategyCode: strategy.pythonCode,
         dataMap,
         strategyType: 'portfolio',
-        initialCash: initialCash || 100000,
-        commission: commission || 0.001,
-        parameters: parameters || strategy.parameters || {},
-        constraints: strategy.constraints,
-        externalDatasets: strategy.externalDatasets,
-      });
-      const executionTime = Date.now() - startTime;
-
-      if (!result.success) {
-        const errorMessage = result.error || result.type || 'Unknown error';
-        console.error('Portfolio backtest failed:', errorMessage);
-        return NextResponse.json(
-          {
-            error: 'Portfolio backtest failed',
-            message: errorMessage,
-            errorType: result.type,
-            details: result.details,
-          },
-          { status: 400 }
-        );
-      }
-
-      // Calculate actual date range from the data if not specified
-      let actualStartDate = startDate;
-      let actualEndDate = endDate;
-      let dataPoints = 0;
-
-      if (!actualStartDate || !actualEndDate) {
-        // Get date range from the first symbol's data
-        const firstSymbol = Object.keys(dataMap)[0];
-        const firstDataset = dataMap[firstSymbol];
-        if (firstDataset && firstDataset.length > 0) {
-          actualStartDate = actualStartDate || (firstDataset[0]?.date || firstDataset[0]?.['日期'] || null);
-          actualEndDate = actualEndDate || (firstDataset[firstDataset.length - 1]?.date || firstDataset[firstDataset.length - 1]?.['日期'] || null);
-          dataPoints = firstDataset.length;
-        }
-      } else {
-        // Calculate data points from first symbol
-        const firstSymbol = Object.keys(dataMap)[0];
-        const firstDataset = dataMap[firstSymbol];
-        if (firstDataset) {
-          dataPoints = firstDataset.length;
-        }
-      }
-
-      const resultWithMetadata = {
-        ...result,
-        type: 'portfolio',
-        symbols: Object.keys(dataMap), // Use stock codes, not filenames
-        successfulSymbols: Object.keys(dataMap),
-        datasetFilenames, // Mapping from stock code to original dataset filename
-        loadErrors: loadErrors.length > 0 ? loadErrors : undefined,
-        dateRange: {
-          startDate: actualStartDate,
-          endDate: actualEndDate,
-          dataPoints,
-        },
+        initialCash: parameters.initialCash || 100000,
+        commission: parameters.commission || 0.001,
+        parameters: parameters.strategyParameters || strategy.parameters as Record<string, any> || {},
+        constraints: parameters.constraints || strategy.constraints as any || {},
+        externalDatasets: strategy.externalDatasets as Record<string, { groupId: string; datasetName: string }> | undefined,
       };
-
-      // Auto-save to history
-      try {
-        await createBacktestHistoryEntry(storage, {
-          strategyId,
-          strategyName: strategy.name,
-          strategyType: strategy.strategyType || 'portfolio',
-          target: {
-            type: 'portfolio',
-            symbols: actualTarget.symbols,
-          },
-          parameters: {
-            initialCash: initialCash || 100000,
-            commission: commission || 0.001,
-            startDate,
-            endDate,
-            strategyParameters: parameters || strategy.parameters || {},
-            constraints: strategy.constraints,
-          },
-          result: resultWithMetadata,
-          starred: false,
-          summary: {
-            totalReturn: result.metrics?.totalReturn || 0,
-            totalReturnPct: result.metrics?.totalReturnPct || 0,
-            sharpeRatio: result.metrics?.sharpeRatio || 0,
-            tradeCount: result.metrics?.tradeCount || 0,
-            duration: executionTime,
-          },
-        });
-      } catch (error) {
-        console.error('Failed to save backtest to history:', error);
-        // Don't fail the request if history save fails
-      }
-
-      return NextResponse.json({ result: resultWithMetadata });
     } else {
-      // Group backtest
-      const group = await getGroupById(actualTarget.groupId, storage);
-      if (!group) {
-        return NextResponse.json(
-          { error: 'Group not found' },
-          { status: 404 }
-        );
-      }
-
-      if (group.datasetNames.length === 0) {
-        return NextResponse.json(
-          { error: 'Empty group', message: 'Group has no datasets' },
-          { status: 400 }
-        );
-      }
-
-      // Run backtest on each dataset in the group
-      const stockResults = [];
-      const errors = [];
-
-      for (const datasetName of group.datasetNames) {
-        try {
-          const dataset = await loadDatasetWithStorage(datasetName, storage);
-          const filteredDataset = filterDatasetByDateRange(dataset, startDate, endDate);
-
-          const stockStartTime = Date.now();
-          const result = await executeBacktest({
-            strategyCode: strategy.pythonCode,
-            data: filteredDataset,
-            strategyType: 'single',
-            initialCash: initialCash || 100000,
-            commission: commission || 0.001,
-            parameters: parameters || strategy.parameters || {},
-            externalDatasets: strategy.externalDatasets,
-          });
-          const stockExecutionTime = Date.now() - stockStartTime;
-
-          if (result.success && result.metrics) {
-            stockResults.push({
-              datasetName,
-              metrics: result.metrics,
-              equityCurve: result.equityCurve,
-              tradeMarkers: result.tradeMarkers,
-              dataPoints: filteredDataset.length,
-              executionTime: stockExecutionTime,
-            });
-          } else {
-            errors.push({
-              datasetName,
-              error: result.error || 'Unknown error',
-              errorType: result.type,
-              details: result.details,
-            });
-          }
-        } catch (error) {
-          errors.push({
-            datasetName,
-            error: error instanceof Error ? error.message : 'Unknown error',
-          });
-        }
-      }
-
-      if (stockResults.length === 0) {
-        return NextResponse.json(
-          {
-            error: 'All backtests failed',
-            message: 'No successful backtests in group',
-            errors,
-          },
-          { status: 400 }
-        );
-      }
-
-      // Calculate aggregated metrics
-      const aggregatedMetrics = {
-        totalReturn: stockResults.reduce((sum, r) => sum + r.metrics.totalReturn, 0),
-        totalReturnPct: stockResults.reduce((sum, r) => sum + r.metrics.totalReturnPct, 0) / stockResults.length,
-        avgFinalValue: stockResults.reduce((sum, r) => sum + r.metrics.finalValue, 0) / stockResults.length,
-        avgMaxDrawdownPct: stockResults.reduce((sum, r) => sum + r.metrics.maxDrawdownPct, 0) / stockResults.length,
-        avgSharpeRatio: stockResults.reduce((sum, r) => sum + r.metrics.sharpeRatio, 0) / stockResults.length,
-        avgSortinoRatio: stockResults.reduce((sum, r) => sum + r.metrics.sortinoRatio, 0) / stockResults.length,
-        avgWinRate: stockResults.reduce((sum, r) => sum + r.metrics.winRate, 0) / stockResults.length,
-        totalTrades: stockResults.reduce((sum, r) => sum + r.metrics.tradeCount, 0),
-        stockCount: stockResults.length,
-      };
-
-      // Calculate actual date range from the first successful result if not specified
-      let actualStartDate = startDate;
-      let actualEndDate = endDate;
-      let totalDataPoints = 0;
-
-      if (stockResults.length > 0) {
-        totalDataPoints = stockResults.reduce((sum, r) => sum + (r.dataPoints || 0), 0);
-
-        if (!actualStartDate || !actualEndDate) {
-          // Load the first dataset to get date range
-          try {
-            const firstDataset = await loadDatasetWithStorage(stockResults[0].datasetName, storage);
-            const filteredFirstDataset = filterDatasetByDateRange(firstDataset, startDate, endDate);
-            actualStartDate = actualStartDate || (filteredFirstDataset[0]?.date || filteredFirstDataset[0]?.['日期'] || null);
-            actualEndDate = actualEndDate || (filteredFirstDataset[filteredFirstDataset.length - 1]?.date || filteredFirstDataset[filteredFirstDataset.length - 1]?.['日期'] || null);
-          } catch (error) {
-            console.error('Failed to get date range from first dataset:', error);
-          }
-        }
-      }
-
-      const groupResult = {
-        success: true,
-        type: 'group',
-        groupId: actualTarget.groupId,
-        groupName: group.name,
-        aggregatedMetrics,
-        stockResults,
-        errors: errors.length > 0 ? errors : undefined,
-        dateRange: {
-          startDate: actualStartDate,
-          endDate: actualEndDate,
-          dataPoints: totalDataPoints,
-        },
-      };
-
-      // Auto-save to history
-      try {
-        // Calculate total execution time (sum of all individual backtests)
-        const totalDuration = stockResults.reduce((sum, r) => sum + (r.executionTime || 0), 0);
-
-        await createBacktestHistoryEntry(storage, {
-          strategyId,
-          strategyName: strategy.name,
-          strategyType: strategy.strategyType || 'single',
-          target: {
-            type: 'group',
-            groupId: actualTarget.groupId,
-            groupName: group.name,
-          },
-          parameters: {
-            initialCash: initialCash || 100000,
-            commission: commission || 0.001,
-            startDate,
-            endDate,
-            strategyParameters: parameters || strategy.parameters || {},
-          },
-          result: groupResult,
-          starred: false,
-          summary: {
-            totalReturn: aggregatedMetrics.totalReturn,
-            totalReturnPct: aggregatedMetrics.totalReturnPct,
-            sharpeRatio: aggregatedMetrics.avgSharpeRatio,
-            tradeCount: aggregatedMetrics.totalTrades,
-            duration: totalDuration,
-          },
-        });
-      } catch (error) {
-        console.error('Failed to save backtest to history:', error);
-        // Don't fail the request if history save fails
-      }
-
-      return NextResponse.json({ result: groupResult });
+      return NextResponse.json(
+        { error: 'Invalid request', message: 'Invalid target type' },
+        { status: 400 }
+      );
     }
+
+    // Execute backtest
+    const result: BacktestResult = await executeBacktest(backtestInput);
+
+    // Save to history if requested and successful
+    let historyEntry: BacktestHistoryEntry | null = null;
+
+    if (saveToHistory && result.success && result.metrics) {
+      // Calculate duration
+      const firstDate = result.equityCurve?.[0]?.date;
+      const lastDate = result.equityCurve?.[result.equityCurve.length - 1]?.date;
+      const duration = firstDate && lastDate
+        ? Math.ceil((new Date(lastDate).getTime() - new Date(firstDate).getTime()) / (1000 * 60 * 60 * 24))
+        : 0;
+
+      historyEntry = await createBacktestHistoryEntry({
+        strategyId: strategy.id,
+        strategyName: strategy.name,
+        strategyType: strategy.strategyType as 'single' | 'portfolio',
+        target: {
+          type: target.type,
+          stockId: target.stockId,
+          symbols,
+          groupId: target.groupId,
+        },
+        parameters: {
+          initialCash: parameters.initialCash || 100000,
+          commission: parameters.commission || 0.001,
+          startDate: parameters.startDate,
+          endDate: parameters.endDate,
+          strategyParameters: parameters.strategyParameters,
+          constraints: parameters.constraints,
+        },
+        result,
+        starred: false,
+        summary: {
+          totalReturn: result.metrics.totalReturn,
+          totalReturnPct: result.metrics.totalReturnPct,
+          sharpeRatio: result.metrics.sharpeRatio,
+          tradeCount: result.metrics.tradeCount,
+          duration,
+        },
+      }, storage);
+    }
+
+    return NextResponse.json({
+      success: result.success,
+      result,
+      historyEntry: historyEntry ? { id: historyEntry.id } : null,
+    });
   } catch (error) {
-    console.error('Backtest API error:', error);
+    console.error('Error running backtest:', error);
     return NextResponse.json(
       {
         error: 'Failed to run backtest',
@@ -553,4 +315,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

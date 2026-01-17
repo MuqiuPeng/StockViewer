@@ -1,8 +1,115 @@
+/**
+ * Individual Backtest History Entry API
+ * GET /api/backtest-history/:id - Get full backtest entry with results
+ * PUT /api/backtest-history/:id - Update entry (starred, notes, tags)
+ * DELETE /api/backtest-history/:id - Delete entry
+ */
+
 import { NextResponse } from 'next/server';
 import { getApiStorage } from '@/lib/api-auth';
-import type { BacktestHistoryEntry } from '@/lib/backtest-history-storage';
+import {
+  getBacktestHistoryById,
+  updateBacktestHistoryEntry,
+  deleteBacktestHistoryEntry,
+} from '@/lib/backtest-history-storage';
 
-// DELETE /api/backtest-history/[id] - Delete a backtest history entry
+export const runtime = 'nodejs';
+
+// GET /api/backtest-history/:id - Get full entry with results
+export async function GET(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const { storage } = authResult;
+
+    const entry = await getBacktestHistoryById(params.id, storage);
+
+    if (!entry) {
+      return NextResponse.json(
+        { error: 'Backtest history entry not found' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ entry });
+  } catch (error) {
+    console.error('Error getting backtest history entry:', error);
+    return NextResponse.json(
+      {
+        error: 'Failed to get backtest history entry',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// PUT /api/backtest-history/:id - Update entry
+export async function PUT(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const { storage } = authResult;
+
+    const body = await request.json();
+    const { starred, notes, tags } = body;
+
+    // Check if entry exists
+    const existing = await getBacktestHistoryById(params.id, storage);
+    if (!existing) {
+      return NextResponse.json(
+        { error: 'Backtest history entry not found' },
+        { status: 404 }
+      );
+    }
+
+    // Build updates
+    const updates: any = {};
+    if (starred !== undefined) updates.starred = starred;
+    if (notes !== undefined) updates.notes = notes;
+    if (tags !== undefined) updates.tags = tags;
+
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json(
+        { error: 'No valid updates provided' },
+        { status: 400 }
+      );
+    }
+
+    const entry = await updateBacktestHistoryEntry(params.id, updates, storage);
+
+    return NextResponse.json({
+      success: true,
+      entry: {
+        id: entry.id,
+        starred: entry.starred,
+        notes: entry.notes,
+        tags: entry.tags,
+      },
+    });
+  } catch (error) {
+    console.error('Error updating backtest history entry:', error);
+    return NextResponse.json(
+      {
+        error: 'Failed to update backtest history entry',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/backtest-history/:id - Delete entry
 export async function DELETE(
   request: Request,
   { params }: { params: { id: string } }
@@ -12,10 +119,10 @@ export async function DELETE(
     if (!authResult.success) {
       return authResult.response;
     }
-    const store = authResult.storage.getJsonStore<BacktestHistoryEntry>('backtestHistory');
+    const { storage } = authResult;
 
-    // Check if exists
-    const existing = await store.getById(params.id);
+    // Check if entry exists
+    const existing = await getBacktestHistoryById(params.id, storage);
     if (!existing) {
       return NextResponse.json(
         { error: 'Backtest history entry not found' },
@@ -23,56 +130,17 @@ export async function DELETE(
       );
     }
 
-    await store.delete(params.id);
-    return NextResponse.json({ success: true });
+    await deleteBacktestHistoryEntry(params.id, storage);
+
+    return NextResponse.json({
+      success: true,
+      message: 'Backtest history entry deleted',
+    });
   } catch (error) {
-    console.error('Failed to delete backtest history entry:', error);
+    console.error('Error deleting backtest history entry:', error);
     return NextResponse.json(
       {
         error: 'Failed to delete backtest history entry',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
-      { status: 500 }
-    );
-  }
-}
-
-// PATCH /api/backtest-history/[id] - Update backtest history entry metadata
-export async function PATCH(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const authResult = await getApiStorage();
-    if (!authResult.success) {
-      return authResult.response;
-    }
-    const store = authResult.storage.getJsonStore<BacktestHistoryEntry>('backtestHistory');
-
-    const body = await request.json();
-    const { starred, notes, tags } = body;
-
-    // Check if exists
-    const existing = await store.getById(params.id);
-    if (!existing) {
-      return NextResponse.json(
-        { error: 'Backtest history entry not found' },
-        { status: 404 }
-      );
-    }
-
-    const updates: Partial<BacktestHistoryEntry> = {};
-    if (starred !== undefined) updates.starred = starred;
-    if (notes !== undefined) updates.notes = notes;
-    if (tags !== undefined) updates.tags = tags;
-
-    const updatedEntry = await store.update(params.id, updates);
-    return NextResponse.json({ entry: updatedEntry });
-  } catch (error) {
-    console.error('Failed to update backtest history entry:', error);
-    return NextResponse.json(
-      {
-        error: 'Failed to update backtest history entry',
         message: error instanceof Error ? error.message : 'Unknown error',
       },
       { status: 500 }

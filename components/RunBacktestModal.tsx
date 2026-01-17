@@ -26,7 +26,7 @@ interface StockGroup {
   id: string;
   name: string;
   description?: string;
-  datasetNames: string[];
+  stockIds: string[];
 }
 
 // Helper to format dataset display as {groupname}-{symbol}-{name}
@@ -42,7 +42,7 @@ interface RunBacktestModalProps {
   onRun: (
     strategyId: string,
     target:
-      | { type: 'single'; datasetName: string }
+      | { type: 'single'; stockId: string }
       | { type: 'group'; groupId: string }
       | { type: 'portfolio'; symbols: string[] },
     initialCash: number,
@@ -64,7 +64,7 @@ interface RunBacktestModalProps {
     startDate?: string;
     endDate?: string;
     parameters?: Record<string, any>;
-    datasetName?: string;
+    stockId?: string;
     symbols?: string[];
     groupId?: string;
   };
@@ -117,8 +117,8 @@ export default function RunBacktestModal({
         if (initialValues.endDate) {
           setEndDate(initialValues.endDate);
         }
-        if (initialValues.datasetName) {
-          setSelectedDataset(initialValues.datasetName);
+        if (initialValues.stockId) {
+          setSelectedDataset(initialValues.stockId);
         }
         if (initialValues.symbols) {
           setSelectedSymbols(initialValues.symbols);
@@ -226,7 +226,7 @@ export default function RunBacktestModal({
 
     const target =
       mode === 'single'
-        ? { type: 'single' as const, datasetName: selectedDataset }
+        ? { type: 'single' as const, stockId: selectedDataset }
         : mode === 'group'
         ? { type: 'group' as const, groupId: selectedGroupId }
         : { type: 'portfolio' as const, symbols: selectedSymbols };
@@ -380,7 +380,7 @@ export default function RunBacktestModal({
                 >
                   {groups.map((group) => (
                     <option key={group.id} value={group.id}>
-                      {group.name} ({group.datasetNames.length} stocks)
+                      {group.name} ({group.stockIds.length} stocks)
                     </option>
                   ))}
                 </select>
@@ -410,7 +410,7 @@ export default function RunBacktestModal({
                         key={group.id}
                         type="button"
                         onClick={() => {
-                          const groupStocks = group.datasetNames.map(name => {
+                          const groupStocks = group.stockIds.map(name => {
                             const ds = datasets.find(d => d.name === name || d.filename === name);
                             return ds?.filename || name;
                           });
@@ -418,7 +418,7 @@ export default function RunBacktestModal({
                         }}
                         className="text-xs px-3 py-1.5 bg-white dark:bg-gray-700 border border-blue-300 dark:border-blue-600 rounded hover:bg-blue-100 dark:hover:bg-gray-600 transition-colors dark:text-white"
                       >
-                        📁 {group.name} ({group.datasetNames.length})
+                        📁 {group.name} ({group.stockIds.length})
                       </button>
                     ))}
                   </div>

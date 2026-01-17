@@ -72,7 +72,7 @@ interface StockGroup {
   id: string;
   name: string;
   description?: string;
-  datasetNames: string[];
+  stockIds: string[];
   createdAt: string;
   updatedAt?: string;
   isDataSource?: boolean;
@@ -196,8 +196,7 @@ export default function StockViewer() {
           result = [];
         } else {
           result = datasets.filter(ds => {
-            const datasetKey = ds.filename || ds.name;
-            return customGroup.datasetNames.includes(datasetKey);
+            return customGroup.stockIds.includes(ds.id);
           });
         }
       } else {
@@ -376,7 +375,7 @@ export default function StockViewer() {
           setError(data.message || 'Failed to load datasets');
           return;
         }
-        setDatasets(data);
+        setDatasets(data.datasets || []);
       })
       .catch((err) => {
         setError(`Failed to load datasets: ${err.message}`);
@@ -739,13 +738,17 @@ export default function StockViewer() {
       }
 
       // Check if dataset is already in the group
-      if (group.datasetNames.includes(datasetData.meta.filename)) {
+      // Get the current dataset's ID from the selectedDataset or find it by filename
+      const currentDataset = datasets.find(ds => ds.filename === datasetData.meta.filename || ds.id === selectedDataset);
+      const currentDatasetId = currentDataset?.id || selectedDataset;
+
+      if (group.stockIds.includes(currentDatasetId)) {
         alert('This dataset is already in the selected group');
         return;
       }
 
       // Add dataset to group
-      const updatedDatasetNames = [...group.datasetNames, datasetData.meta.filename];
+      const updatedStockIds = [...group.stockIds, currentDatasetId];
 
       const response = await fetch('/api/groups', {
         method: 'PUT',
@@ -754,7 +757,7 @@ export default function StockViewer() {
           id: groupId,
           name: group.name,
           description: group.description,
-          datasetNames: updatedDatasetNames,
+          stockIds: updatedStockIds,
         }),
       });
 
@@ -1082,7 +1085,7 @@ export default function StockViewer() {
                         <div className="text-sm text-gray-600 dark:text-gray-400 mt-1">{group.description}</div>
                       )}
                       <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        {group.datasetNames.length} dataset(s)
+                        {group.stockIds.length} dataset(s)
                       </div>
                     </button>
                   ))}

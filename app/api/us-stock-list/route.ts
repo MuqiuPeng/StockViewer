@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { API_CONFIG } from '@/lib/env';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/us-stock-list

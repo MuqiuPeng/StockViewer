@@ -95,8 +95,8 @@ export default function BacktestHistoryDetailModal({
               <div className="flex items-center text-sm">
                 <span className="text-gray-600 dark:text-gray-400 w-24">Target:</span>
                 <span className="font-medium text-gray-900 dark:text-white">
-                  {entry.target.type === 'single' && entry.target.datasetName && (
-                    <span>📊 {entry.target.datasetName}</span>
+                  {entry.target.type === 'single' && entry.target.stockId && (
+                    <span>📊 {entry.target.stockId}</span>
                   )}
                   {entry.target.type === 'portfolio' && entry.target.symbols && (
                     <span>📈 {entry.target.symbols.length} stocks: {entry.target.symbols.join(', ')}</span>

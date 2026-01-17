@@ -1,10 +1,14 @@
 /**
  * Indicator storage module
- * Uses the storage abstraction layer for both local (file) and online (IndexedDB) modes
+ * Uses the database storage abstraction layer
  */
 
-import { getStorageProvider, isServerSide, getStorageMode } from './storage';
 import type { JsonStorageProvider, StorageProvider } from './storage/types';
+
+/**
+ * Indicator visibility levels
+ */
+export type IndicatorVisibility = 'PRIVATE' | 'PUBLIC' | 'UNLISTED';
 
 export interface Indicator {
   id: string;
@@ -17,64 +21,67 @@ export interface Indicator {
   dependencies: string[];         // Indicator IDs this depends on
   dependencyColumns?: string[];   // Specific columns used, e.g., ["KDJ:K", "SMA_20"]
 
-  // NEW FIELDS for indicator groups
+  // Indicator groups (e.g., MACD with DIF, DEA, MACD)
   isGroup?: boolean;              // true for MyTT group indicators
   groupName?: string;             // e.g., "MACD" (same as outputColumn for groups)
   expectedOutputs?: string[];     // e.g., ["DIF", "DEA", "MACD"]
 
   // External datasets to include in parameters
   externalDatasets?: Record<string, { groupId: string; datasetName: string }>;
+
+  // Public indicator library fields
+  visibility?: IndicatorVisibility;
+  publishedAt?: string;
+  category?: string;
+  tags?: string[];
+  version?: string;
+  downloadCount?: number;
+  rating?: number;
+  ratingCount?: number;
 }
 
 /**
  * Get the indicator store instance
- * @param storage Optional storage provider (required for database mode)
+ * @param storage Storage provider (required)
  */
-function getStore(storage?: StorageProvider): JsonStorageProvider<Indicator> {
-  if (storage) {
-    return storage.getJsonStore<Indicator>('indicators');
-  }
-  // For local/online mode, use default storage
-  if (getStorageMode() === 'database') {
-    throw new Error('Database mode requires passing a storage provider. Use getApiStorage() in API routes.');
-  }
-  return getStorageProvider().getJsonStore<Indicator>('indicators');
+function getStore(storage: StorageProvider): JsonStorageProvider<Indicator> {
+  return storage.getJsonStore<Indicator>('indicators');
 }
 
 /**
- * Load all indicators
- * @param storage Optional storage provider (required for database mode)
+ * Load all indicators for the current user
+ * @param storage Storage provider (required)
  */
-export async function loadIndicators(storage?: StorageProvider): Promise<Indicator[]> {
+export async function loadIndicators(storage: StorageProvider): Promise<Indicator[]> {
   return getStore(storage).getAll();
 }
 
 /**
  * Save all indicators (bulk replace)
  * @param indicators Array of indicators to save
- * @param storage Optional storage provider (required for database mode)
+ * @param storage Storage provider (required)
  */
-export async function saveIndicators(indicators: Indicator[], storage?: StorageProvider): Promise<void> {
+export async function saveIndicators(indicators: Indicator[], storage: StorageProvider): Promise<void> {
   return getStore(storage).saveAll(indicators);
 }
 
 /**
  * Get an indicator by ID
  * @param id Indicator ID
- * @param storage Optional storage provider (required for database mode)
+ * @param storage Storage provider (required)
  */
-export async function getIndicatorById(id: string, storage?: StorageProvider): Promise<Indicator | null> {
+export async function getIndicatorById(id: string, storage: StorageProvider): Promise<Indicator | null> {
   return getStore(storage).getById(id);
 }
 
 /**
  * Create a new indicator
  * @param indicatorData Indicator data (without id, createdAt, updatedAt)
- * @param storage Optional storage provider (required for database mode)
+ * @param storage Storage provider (required)
  */
 export async function saveIndicator(
   indicatorData: Omit<Indicator, 'id' | 'createdAt' | 'updatedAt'>,
-  storage?: StorageProvider
+  storage: StorageProvider
 ): Promise<Indicator> {
   const store = getStore(storage);
   const indicators = await store.getAll();
@@ -87,10 +94,11 @@ export async function saveIndicator(
     throw new Error(`Indicator with name "${indicatorData.name}" already exists`);
   }
 
-  // Ensure dependencies array exists
+  // Ensure defaults
   const dataWithDefaults = {
     ...indicatorData,
     dependencies: indicatorData.dependencies || [],
+    visibility: indicatorData.visibility || 'PRIVATE',
   };
 
   return store.create(dataWithDefaults);
@@ -100,12 +108,12 @@ export async function saveIndicator(
  * Update an existing indicator
  * @param id Indicator ID
  * @param updates Partial indicator updates
- * @param storage Optional storage provider (required for database mode)
+ * @param storage Storage provider (required)
  */
 export async function updateIndicator(
   id: string,
   updates: Partial<Omit<Indicator, 'id' | 'createdAt'>>,
-  storage?: StorageProvider
+  storage: StorageProvider
 ): Promise<Indicator> {
   const store = getStore(storage);
 
@@ -126,8 +134,8 @@ export async function updateIndicator(
 /**
  * Delete an indicator by ID
  * @param id Indicator ID
- * @param storage Optional storage provider (required for database mode)
+ * @param storage Storage provider (required)
  */
-export async function deleteIndicator(id: string, storage?: StorageProvider): Promise<void> {
+export async function deleteIndicator(id: string, storage: StorageProvider): Promise<void> {
   await getStore(storage).delete(id);
 }

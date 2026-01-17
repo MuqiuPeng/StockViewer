@@ -1,172 +1,78 @@
+/**
+ * Apply indicator API
+ * POST /api/apply-indicator - Compute and cache indicator values for stocks
+ */
+
 import { NextResponse } from 'next/server';
-import { getIndicatorById } from '@/lib/indicator-storage';
-import { executePythonIndicator } from '@/lib/python-executor';
-import { addIndicatorColumn, addIndicatorGroupColumns } from '@/lib/csv-updater';
-import { loadDataset } from '@/lib/csv';
+import { getApiStorage } from '@/lib/api-auth';
+import { computeIndicator, computeIndicators, ComputeResult } from '@/lib/indicator-compute';
 
 export const runtime = 'nodejs';
 
-interface ApplyResult {
-  success: boolean;
-  rowsProcessed?: number;
-  error?: string;
-  errorType?: string;
-  details?: {
-    message?: string;
-    type?: string;
-    code_line?: string;
-    hints?: string[];
-    traceback?: string;
-    warnings?: string[];
-  };
-}
-
-// POST /api/apply-indicator - Apply indicator to dataset(s)
+// POST /api/apply-indicator - Apply indicator to stock(s)
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
-    const { indicatorId, datasetNames } = body;
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const { userId } = authResult;
 
-    if (!indicatorId || !datasetNames || !Array.isArray(datasetNames)) {
+    const body = await request.json();
+    const { indicatorId, stockIds, forceRecompute, startDate, endDate } = body;
+
+    // Validate request
+    if (!indicatorId) {
       return NextResponse.json(
-        { error: 'Invalid request', message: 'indicatorId and datasetNames (array) are required' },
+        { error: 'Invalid request', message: 'indicatorId is required' },
         { status: 400 }
       );
     }
 
-    // Load indicator
-    const indicator = await getIndicatorById(indicatorId);
-    if (!indicator) {
+    if (!stockIds || !Array.isArray(stockIds) || stockIds.length === 0) {
       return NextResponse.json(
-        { error: 'Indicator not found' },
-        { status: 404 }
+        { error: 'Invalid request', message: 'stockIds (non-empty array) is required' },
+        { status: 400 }
       );
     }
 
-    // Apply indicator to each dataset
-    const results: Record<string, ApplyResult> = {};
+    // Parse date options
+    const options: {
+      forceRecompute?: boolean;
+      startDate?: Date;
+      endDate?: Date;
+    } = {};
 
-    for (const filename of datasetNames) {
-      try {
-        // Load dataset data
-        let datasetData;
-
-        try {
-          datasetData = await loadDataset(filename);
-        } catch (error) {
-          results[filename] = {
-            success: false,
-            error: 'Dataset not found',
-          };
-          continue;
-        }
-
-        // Prepare data for Python (convert to array of records)
-        const dataRecords = datasetData.candles.map((candle, index) => {
-          const record: Record<string, any> = {
-            date: candle.time, // Already in YYYY-MM-DD format
-            open: candle.open,
-            high: candle.high,
-            low: candle.low,
-            close: candle.close,
-          };
-
-          // Add all indicators
-          for (const [indicatorName, indicatorDataArray] of Object.entries(datasetData.indicators)) {
-            if (indicatorDataArray[index]) {
-              record[indicatorName] = indicatorDataArray[index].value;
-            }
-          }
-
-          return record;
-        });
-
-        // Execute Python indicator
-        const executionResult = await executePythonIndicator({
-          code: indicator.pythonCode,
-          data: dataRecords,
-          isGroup: indicator.isGroup || false,
-          externalDatasets: indicator.externalDatasets,
-        });
-
-        if (!executionResult.success) {
-          results[filename] = {
-            success: false,
-            error: executionResult.error || 'Python execution failed',
-            errorType: executionResult.type,
-            details: executionResult.details,
-          };
-          continue;
-        }
-
-        // Apply to CSV based on indicator type
-        if (indicator.isGroup) {
-          // Group indicator - validate and add multiple columns
-          const valuesDict = executionResult.values as Record<string, (number | null)[]>;
-
-          // Validate returned keys match expected outputs
-          if (!valuesDict || typeof valuesDict !== 'object') {
-            results[filename] = {
-              success: false,
-              error: 'Group indicator must return a dictionary of values',
-            };
-            continue;
-          }
-
-          const returnedKeys = Object.keys(valuesDict);
-          const expectedKeys = indicator.expectedOutputs || [];
-          const missingKeys = expectedKeys.filter(k => !returnedKeys.includes(k));
-
-          if (missingKeys.length > 0) {
-            results[filename] = {
-              success: false,
-              error: `Missing expected outputs: ${missingKeys.join(', ')}`,
-            };
-            continue;
-          }
-
-          // Filter to only include expected outputs (ignore extra returned keys)
-          const filteredValues: Record<string, (number | null)[]> = {};
-          for (const key of expectedKeys) {
-            if (key in valuesDict) {
-              filteredValues[key] = valuesDict[key];
-            }
-          }
-
-          // Add group columns to CSV
-          await addIndicatorGroupColumns(
-            filename,
-            indicator.groupName!,
-            filteredValues
-          );
-
-          results[filename] = {
-            success: true,
-            rowsProcessed: dataRecords.length,
-          };
-        } else {
-          // Single indicator - add one column
-          await addIndicatorColumn(
-            filename,
-            indicator.outputColumn,
-            executionResult.values as (number | null)[]
-          );
-
-          results[filename] = {
-            success: true,
-            rowsProcessed: dataRecords.length,
-          };
-        }
-      } catch (error) {
-        results[filename] = {
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        };
-      }
+    if (forceRecompute === true) {
+      options.forceRecompute = true;
     }
 
+    if (startDate) {
+      options.startDate = new Date(startDate);
+    }
+
+    if (endDate) {
+      options.endDate = new Date(endDate);
+    }
+
+    // Compute indicator for each stock
+    const results: Record<string, ComputeResult> = {};
+
+    for (const stockId of stockIds) {
+      const result = await computeIndicator(indicatorId, stockId, userId, options);
+      results[stockId] = result;
+    }
+
+    // Check if all succeeded
+    const allSuccess = Object.values(results).every(r => r.success);
+    const successCount = Object.values(results).filter(r => r.success).length;
+    const failCount = stockIds.length - successCount;
+
     return NextResponse.json({
-      success: true,
+      success: allSuccess,
+      message: allSuccess
+        ? `Successfully computed indicator for ${successCount} stock(s)`
+        : `Computed for ${successCount} stock(s), failed for ${failCount}`,
       results,
     });
   } catch (error) {

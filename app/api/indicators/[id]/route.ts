@@ -3,8 +3,21 @@ import { getIndicatorById, updateIndicator, deleteIndicator, loadIndicators, sav
 import { validatePythonCode } from '@/lib/indicator-validator';
 import { findDependentIndicators, getCascadeDeleteList, findIndicatorsDependingOnColumns, replaceColumnInCode } from '@/lib/indicator-dependencies';
 import { detectDependencies } from '@/lib/detect-dependencies';
-import { renameGroupIndicatorColumns, removeGroupIndicatorColumns, cleanupOrphanedGroupColumns } from '@/lib/csv-updater';
 import { getApiStorage } from '@/lib/api-auth';
+
+// Stubs for deprecated CSV column operations - will be reimplemented for database storage
+async function renameGroupIndicatorColumns(_oldName: string, _newName: string): Promise<{ updatedCount: number; errors: string[] }> {
+  console.warn('renameGroupIndicatorColumns: deprecated, will be reimplemented for database storage');
+  return { updatedCount: 0, errors: [] };
+}
+async function removeGroupIndicatorColumns(_groupName: string, _columns: string[]): Promise<{ updatedCount: number; errors: string[] }> {
+  console.warn('removeGroupIndicatorColumns: deprecated, will be reimplemented for database storage');
+  return { updatedCount: 0, errors: [] };
+}
+async function cleanupOrphanedGroupColumns(_groupName: string, _expectedOutputs: string[]): Promise<{ removedColumns: string[]; errors: string[] }> {
+  console.warn('cleanupOrphanedGroupColumns: deprecated, will be reimplemented for database storage');
+  return { removedColumns: [], errors: [] };
+}
 
 // Helper to detect column name changes and find affected indicators
 interface ColumnRename {
@@ -156,8 +169,14 @@ export async function PUT(
       }
     }
 
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const { storage } = authResult;
+
     // Get the existing indicator to check for group name changes
-    const existingIndicator = await getIndicatorById(params.id);
+    const existingIndicator = await getIndicatorById(params.id, storage);
     if (!existingIndicator) {
       return NextResponse.json(
         { error: 'Indicator not found' },
@@ -193,7 +212,7 @@ export async function PUT(
 
     // If there are column renames, check for dependent indicators
     if (columnRenames.length > 0) {
-      const allIndicators = await loadIndicators();
+      const allIndicators = await loadIndicators(storage);
       const oldColumnNames = columnRenames.map(r => r.oldName);
       const columnDependents = findIndicatorsDependingOnColumns(oldColumnNames, allIndicators);
 
@@ -278,13 +297,13 @@ export async function PUT(
         }
 
         // Save all updated indicators
-        await saveIndicators(allIndicators);
+        await saveIndicators(allIndicators, storage);
       }
     }
 
     // Re-detect dependencies if Python code is being updated
     if (pythonCode !== undefined) {
-      const allIndicators = await loadIndicators();
+      const allIndicators = await loadIndicators(storage);
       const { dependencies, dependencyColumns } = detectDependencies(pythonCode, allIndicators, params.id);
       updates.dependencies = dependencies;
       updates.dependencyColumns = dependencyColumns;
@@ -327,7 +346,7 @@ export async function PUT(
         const removedColumnNames = removedOutputs.map(output => `${currentGroupName}:${output}`);
 
         // Check if any other indicators depend on these columns
-        const allIndicators = await loadIndicators();
+        const allIndicators = await loadIndicators(storage);
         const columnDependents = findIndicatorsDependingOnColumns(removedColumnNames, allIndicators);
 
         // Check if force removal is requested
@@ -365,7 +384,7 @@ export async function PUT(
       }
     }
 
-    const indicator = await updateIndicator(params.id, updates);
+    const indicator = await updateIndicator(params.id, updates, storage);
 
     // Clean up any orphaned columns for group indicators
     // This handles cases where columns exist in CSV but aren't in expectedOutputs

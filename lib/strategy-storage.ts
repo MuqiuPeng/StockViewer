@@ -1,9 +1,8 @@
 /**
  * Strategy storage module
- * Uses the storage abstraction layer for both local (file) and online (IndexedDB) modes
+ * Uses the database storage abstraction layer
  */
 
-import { getStorageProvider, getStorageMode } from './storage';
 import type { JsonStorageProvider, StorageProvider } from './storage/types';
 import { PortfolioConstraints } from './types/portfolio';
 
@@ -23,22 +22,18 @@ export interface Strategy {
 
 /**
  * Get the strategy store instance
+ * @param storage Storage provider (required)
  */
-function getStore(storage?: StorageProvider): JsonStorageProvider<Strategy> {
-  if (storage) {
-    return storage.getJsonStore<Strategy>('strategies');
-  }
-  if (getStorageMode() === 'database') {
-    throw new Error('Database mode requires passing a storage provider.');
-  }
-  return getStorageProvider().getJsonStore<Strategy>('strategies');
+function getStore(storage: StorageProvider): JsonStorageProvider<Strategy> {
+  return storage.getJsonStore<Strategy>('strategies');
 }
 
 /**
  * Load all strategies
+ * @param storage Storage provider (required)
  */
-export async function loadStrategies(): Promise<Strategy[]> {
-  const strategies = await getStore().getAll();
+export async function loadStrategies(storage: StorageProvider): Promise<Strategy[]> {
+  const strategies = await getStore(storage).getAll();
 
   // Migration: Add default strategyType for existing strategies
   let needsSave = false;
@@ -54,7 +49,7 @@ export async function loadStrategies(): Promise<Strategy[]> {
   });
 
   if (needsSave) {
-    await saveStrategies(migratedStrategies);
+    await saveStrategies(migratedStrategies, storage);
   }
 
   return migratedStrategies;
@@ -62,25 +57,32 @@ export async function loadStrategies(): Promise<Strategy[]> {
 
 /**
  * Save all strategies (bulk replace)
+ * @param strategies Array of strategies to save
+ * @param storage Storage provider (required)
  */
-export async function saveStrategies(strategies: Strategy[]): Promise<void> {
-  return getStore().saveAll(strategies);
+export async function saveStrategies(strategies: Strategy[], storage: StorageProvider): Promise<void> {
+  return getStore(storage).saveAll(strategies);
 }
 
 /**
  * Get a strategy by ID
+ * @param id Strategy ID
+ * @param storage Storage provider (required)
  */
-export async function getStrategyById(id: string, storage?: StorageProvider): Promise<Strategy | null> {
+export async function getStrategyById(id: string, storage: StorageProvider): Promise<Strategy | null> {
   return getStore(storage).getById(id);
 }
 
 /**
  * Create a new strategy
+ * @param strategyData Strategy data (without id, createdAt, updatedAt)
+ * @param storage Storage provider (required)
  */
 export async function saveStrategy(
-  strategyData: Omit<Strategy, 'id' | 'createdAt' | 'updatedAt'>
+  strategyData: Omit<Strategy, 'id' | 'createdAt' | 'updatedAt'>,
+  storage: StorageProvider
 ): Promise<Strategy> {
-  const store = getStore();
+  const store = getStore(storage);
   const strategies = await store.getAll();
 
   // Check for duplicate names
@@ -103,12 +105,16 @@ export async function saveStrategy(
 
 /**
  * Update an existing strategy
+ * @param id Strategy ID
+ * @param updates Partial strategy updates
+ * @param storage Storage provider (required)
  */
 export async function updateStrategy(
   id: string,
-  updates: Partial<Omit<Strategy, 'id' | 'createdAt'>>
+  updates: Partial<Omit<Strategy, 'id' | 'createdAt'>>,
+  storage: StorageProvider
 ): Promise<Strategy> {
-  const store = getStore();
+  const store = getStore(storage);
 
   // Check for duplicate names (if name is being updated)
   if (updates.name) {
@@ -126,7 +132,9 @@ export async function updateStrategy(
 
 /**
  * Delete a strategy by ID
+ * @param id Strategy ID
+ * @param storage Storage provider (required)
  */
-export async function deleteStrategy(id: string): Promise<void> {
-  await getStore().delete(id);
+export async function deleteStrategy(id: string, storage: StorageProvider): Promise<void> {
+  await getStore(storage).delete(id);
 }

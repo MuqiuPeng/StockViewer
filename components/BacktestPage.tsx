@@ -20,7 +20,7 @@ interface StockGroup {
   id: string;
   name: string;
   description?: string;
-  datasetNames: string[];
+  stockIds: string[];
 }
 
 export default function BacktestPage() {
@@ -80,7 +80,7 @@ export default function BacktestPage() {
     startDate?: string;
     endDate?: string;
     parameters: Record<string, any>;
-    datasetName?: string;
+    stockId?: string;
     targetType?: 'single' | 'portfolio' | 'group';
     symbols?: string[];
     groupId?: string;
@@ -94,8 +94,8 @@ export default function BacktestPage() {
     setBacktestResults(entry.result);
 
     // Load dataset for single stock backtests (for chart display)
-    if (entry.target.type === 'single' && entry.target.datasetName) {
-      const datasetApiName = entry.target.datasetName.replace(/\.csv$/i, '');
+    if (entry.target.type === 'single' && entry.target.stockId) {
+      const datasetApiName = entry.target.stockId.replace(/\.csv$/i, '');
       const datasetRes = await fetch(`/api/dataset/${encodeURIComponent(datasetApiName)}`);
       const datasetResult = await datasetRes.json();
       if (!datasetResult.error) {
@@ -112,7 +112,7 @@ export default function BacktestPage() {
       initialCash: entry.parameters.initialCash,
       commission: entry.parameters.commission,
       parameters: entry.parameters.strategyParameters || {},
-      datasetName: entry.target.type === 'single' ? entry.target.datasetName : undefined,
+      stockId: entry.target.type === 'single' ? entry.target.stockId : undefined,
     });
   };
 
@@ -137,7 +137,7 @@ export default function BacktestPage() {
       startDate: entry.parameters.startDate,
       endDate: entry.parameters.endDate,
       parameters: entry.parameters.strategyParameters || {},
-      datasetName: entry.target.type === 'single' ? entry.target.datasetName : undefined,
+      stockId: entry.target.type === 'single' ? entry.target.stockId : undefined,
       targetType: entry.target.type,
       symbols: entry.target.type === 'portfolio' ? entry.target.symbols : undefined,
       groupId: entry.target.type === 'group' ? entry.target.groupId : undefined,
@@ -150,7 +150,7 @@ export default function BacktestPage() {
   const handleRunBacktest = async (
     strategyId: string,
     target:
-      | { type: 'single'; datasetName: string }
+      | { type: 'single'; stockId: string }
       | { type: 'group'; groupId: string }
       | { type: 'portfolio'; symbols: string[] },
     initialCash: number,
@@ -173,13 +173,13 @@ export default function BacktestPage() {
       startDate,
       endDate,
       parameters,
-      datasetName: target.type === 'single' ? target.datasetName : undefined,
+      stockId: target.type === 'single' ? target.stockId : undefined,
     });
 
     try {
       // Load dataset for candles (needed for BacktestPanel) - only for single stock
       if (target.type === 'single') {
-        let datasetApiName = target.datasetName;
+        let datasetApiName = target.stockId;
         if (!datasetApiName.toLowerCase().endsWith('.csv')) {
           datasetApiName = `${datasetApiName}.csv`;
         }
@@ -317,7 +317,7 @@ export default function BacktestPage() {
           startDate: backtestParams.startDate,
           endDate: backtestParams.endDate,
           parameters: backtestParams.parameters,
-          datasetName: backtestParams.datasetName,
+          stockId: backtestParams.stockId,
           symbols: backtestParams.symbols,
           groupId: backtestParams.groupId,
         } : undefined}
@@ -366,7 +366,7 @@ export default function BacktestPage() {
                 parameters: backtestParams?.parameters,
                 initialCash: backtestParams?.initialCash,
                 commission: backtestParams?.commission,
-                datasetName: backtestParams?.datasetName,
+                stockId: backtestParams?.stockId,
               }}
             />
           ) : null}

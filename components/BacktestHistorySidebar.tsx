@@ -274,8 +274,8 @@ export default function BacktestHistorySidebar({
                     {entry.strategyName}
                   </div>
                   <div className="text-xs text-gray-600 dark:text-gray-300 mt-0.5">
-                    {entry.target.type === 'single' && entry.target.datasetName && (
-                      <div>📊 {entry.target.datasetName}</div>
+                    {entry.target.type === 'single' && entry.target.stockId && (
+                      <div>📊 {entry.target.stockId}</div>
                     )}
                     {entry.target.type === 'portfolio' && entry.target.symbols && (
                       <div>📈 Portfolio ({entry.target.symbols.length} stocks)</div>

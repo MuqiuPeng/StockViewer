@@ -1,47 +1,46 @@
 import { NextResponse } from 'next/server';
 import { getApiStorage } from '@/lib/api-auth';
 import type { StockGroup } from '@/lib/group-storage';
-import type { DatasetMetadata } from '@/lib/dataset-metadata';
+import { loadAllStocks, type StockMetadata } from '@/lib/stock-storage';
 
 export const runtime = 'nodejs';
 
 // Helper function to sync data source groups
 async function syncDataSourceGroups(
-  groupStore: any,
-  datasetStore: any
+  groupStore: any
 ): Promise<void> {
-  const datasets = await datasetStore.getAll() as DatasetMetadata[];
+  const stocks = await loadAllStocks();
   const groups = await groupStore.getAll() as StockGroup[];
 
   // Get all unique data sources
   const dataSources = new Set<string>();
-  for (const dataset of datasets) {
-    if (dataset.dataSource) {
-      dataSources.add(dataset.dataSource);
+  for (const stock of stocks) {
+    if (stock.dataSource) {
+      dataSources.add(stock.dataSource);
     }
   }
 
   // Create/update data source groups
   for (const dataSource of dataSources) {
-    const datasetNames = datasets
-      .filter(d => d.dataSource === dataSource)
-      .map(d => d.name);
+    const stockIds = stocks
+      .filter((s: StockMetadata) => s.dataSource === dataSource)
+      .map((s: StockMetadata) => s.id);
 
     const existingGroup = groups.find(
       g => g.isDataSource && g.dataSourceName === dataSource
     );
 
     if (existingGroup) {
-      // Update if datasets changed
-      if (JSON.stringify(existingGroup.datasetNames.sort()) !== JSON.stringify(datasetNames.sort())) {
-        await groupStore.update(existingGroup.id, { datasetNames });
+      // Update if stocks changed
+      if (JSON.stringify(existingGroup.stockIds.sort()) !== JSON.stringify(stockIds.sort())) {
+        await groupStore.update(existingGroup.id, { stockIds });
       }
     } else {
       // Create new data source group
       await groupStore.create({
         name: `[${dataSource}]`,
         description: `Auto-generated group for ${dataSource} data source`,
-        datasetNames,
+        stockIds,
         isDataSource: true,
         dataSourceName: dataSource,
       });
@@ -65,10 +64,9 @@ export async function GET() {
     }
 
     const groupStore = authResult.storage.getJsonStore<StockGroup>('groups');
-    const datasetStore = authResult.storage.getJsonStore<DatasetMetadata>('datasetMetadata');
 
     // Sync data source groups before returning
-    await syncDataSourceGroups(groupStore, datasetStore);
+    await syncDataSourceGroups(groupStore);
 
     const groups = await groupStore.getAll();
     return NextResponse.json({ groups });
@@ -91,7 +89,7 @@ export async function POST(request: Request) {
     const store = authResult.storage.getJsonStore<StockGroup>('groups');
 
     const body = await request.json();
-    const { name, description, datasetNames } = body;
+    const { name, description, stockIds } = body;
 
     if (!name || typeof name !== 'string' || name.trim() === '') {
       return NextResponse.json(
@@ -103,7 +101,7 @@ export async function POST(request: Request) {
     const group = await store.create({
       name: name.trim(),
       description: description?.trim() || '',
-      datasetNames: Array.isArray(datasetNames) ? datasetNames : [],
+      stockIds: Array.isArray(stockIds) ? stockIds : [],
     });
 
     return NextResponse.json({ group });
@@ -126,7 +124,7 @@ export async function PUT(request: Request) {
     const store = authResult.storage.getJsonStore<StockGroup>('groups');
 
     const body = await request.json();
-    const { id, name, description, datasetNames } = body;
+    const { id, name, description, stockIds } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -163,14 +161,14 @@ export async function PUT(request: Request) {
     if (description !== undefined) {
       updates.description = description?.trim() || '';
     }
-    if (datasetNames !== undefined) {
-      if (!Array.isArray(datasetNames)) {
+    if (stockIds !== undefined) {
+      if (!Array.isArray(stockIds)) {
         return NextResponse.json(
-          { error: 'Invalid input', message: 'datasetNames must be an array' },
+          { error: 'Invalid input', message: 'stockIds must be an array' },
           { status: 400 }
         );
       }
-      updates.datasetNames = datasetNames;
+      updates.stockIds = stockIds;
     }
 
     const group = await store.update(id, updates);

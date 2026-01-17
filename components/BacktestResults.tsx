@@ -64,11 +64,11 @@ interface StrategyInfo {
   parameters?: Record<string, any>;
   initialCash?: number;
   commission?: number;
-  datasetName?: string;
+  stockId?: string;
 }
 
 interface StockResult {
-  datasetName: string;
+  stockId: string;
   metrics: BacktestMetrics;
   equityCurve?: EquityPoint[];
   tradeMarkers?: TradeMarker[];
@@ -90,7 +90,7 @@ interface GroupBacktestResult {
     stockCount: number;
   };
   stockResults: StockResult[];
-  errors?: Array<{ datasetName: string; error: string }>;
+  errors?: Array<{ stockId: string; error: string }>;
 }
 
 interface PortfolioBacktestResult {
@@ -2123,23 +2123,23 @@ function GroupBacktestResults({
     return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
   };
 
-  const toggleExpanded = async (datasetName: string) => {
+  const toggleExpanded = async (stockId: string) => {
     const newExpanded = new Set(expandedStocks);
-    if (newExpanded.has(datasetName)) {
-      newExpanded.delete(datasetName);
+    if (newExpanded.has(stockId)) {
+      newExpanded.delete(stockId);
     } else {
-      newExpanded.add(datasetName);
+      newExpanded.add(stockId);
       // Load candles if not already loaded
-      if (!stockCandles[datasetName]) {
+      if (!stockCandles[stockId]) {
         try {
-          let apiName = datasetName.replace(/\.csv$/i, '');
+          let apiName = stockId.replace(/\.csv$/i, '');
           const response = await fetch(`/api/dataset/${encodeURIComponent(apiName)}`);
           const data = await response.json();
           if (!data.error) {
-            setStockCandles(prev => ({ ...prev, [datasetName]: data }));
+            setStockCandles(prev => ({ ...prev, [stockId]: data }));
           }
         } catch (err) {
-          console.error('Failed to load candles for', datasetName, err);
+          console.error('Failed to load candles for', stockId, err);
         }
       }
     }
@@ -2149,7 +2149,7 @@ function GroupBacktestResults({
   const sortedStocks = [...groupResult.stockResults].sort((a, b) => {
     const multiplier = sortDirection === 'asc' ? 1 : -1;
     if (sortField === 'name') {
-      return multiplier * a.datasetName.localeCompare(b.datasetName);
+      return multiplier * a.stockId.localeCompare(b.stockId);
     } else if (sortField === 'return') {
       return multiplier * (a.metrics.totalReturnPct - b.metrics.totalReturnPct);
     } else {
@@ -2298,15 +2298,15 @@ function GroupBacktestResults({
                   <tr key={idx} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                     <td className="border border-gray-200 dark:border-gray-700 p-3">
                       <button
-                        onClick={() => toggleExpanded(stock.datasetName)}
+                        onClick={() => toggleExpanded(stock.stockId)}
                         className="px-2 py-1 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded transition-colors"
-                        title={expandedStocks.has(stock.datasetName) ? "Hide details" : "Show details"}
+                        title={expandedStocks.has(stock.stockId) ? "Hide details" : "Show details"}
                       >
-                        {expandedStocks.has(stock.datasetName) ? '▼' : '▶'}
+                        {expandedStocks.has(stock.stockId) ? '▼' : '▶'}
                       </button>
                     </td>
                     <td className="border border-gray-200 dark:border-gray-700 p-3 font-medium text-gray-900 dark:text-white">
-                      {stock.datasetName.replace(/\.csv$/i, '')}
+                      {stock.stockId.replace(/\.csv$/i, '')}
                     </td>
                     <td className={`border border-gray-200 dark:border-gray-700 p-3 text-right font-mono font-semibold ${
                       stock.metrics.totalReturnPct >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'
@@ -2329,20 +2329,20 @@ function GroupBacktestResults({
                       {stock.metrics.tradeCount}
                     </td>
                   </tr>
-                  {expandedStocks.has(stock.datasetName) && (
+                  {expandedStocks.has(stock.stockId) && (
                     <tr key={`${idx}-expanded`}>
                       <td colSpan={8} className="border border-gray-200 dark:border-gray-700 p-0">
                         <div className="bg-gray-50 dark:bg-gray-900 p-6">
-                          {stockCandles[stock.datasetName] ? (
+                          {stockCandles[stock.stockId] ? (
                             <BacktestResults
                               metrics={stock.metrics}
                               equityCurve={stock.equityCurve || []}
                               tradeMarkers={stock.tradeMarkers || []}
-                              candles={stockCandles[stock.datasetName].candles}
+                              candles={stockCandles[stock.stockId].candles}
                               dateRange={dateRange}
                               strategyInfo={{
                                 ...strategyInfo,
-                                datasetName: stock.datasetName,
+                                stockId: stock.stockId,
                               }}
                             />
                           ) : (
@@ -2369,7 +2369,7 @@ function GroupBacktestResults({
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
             {groupResult.errors.map((error, idx) => (
               <div key={idx} className="mb-2 last:mb-0 text-red-800 dark:text-red-200">
-                <span className="font-medium">{error.datasetName}:</span> {error.error}
+                <span className="font-medium">{error.stockId}:</span> {error.error}
               </div>
             ))}
           </div>
@@ -3655,11 +3655,11 @@ export default function BacktestResults({
                 </div>
               )}
             </div>
-            {strategyInfo.datasetName && (
+            {strategyInfo.stockId && (
               <div>
                 <span className="text-gray-600 dark:text-gray-400 font-medium">Dataset:</span>{' '}
                 <span className="font-semibold text-gray-800 dark:text-gray-200">
-                  {strategyInfo.datasetName.replace(/\.csv$/i, '')}
+                  {strategyInfo.stockId.replace(/\.csv$/i, '')}
                 </span>
               </div>
             )}
