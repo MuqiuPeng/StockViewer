@@ -32,6 +32,9 @@ COPY docker/next.config.docker.js ./next.config.js
 ARG NEXT_PUBLIC_BASE_PATH=""
 ENV NEXT_PUBLIC_BASE_PATH=${NEXT_PUBLIC_BASE_PATH}
 
+# Generate Prisma Client
+RUN npx prisma generate
+
 # Build Next.js application
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
@@ -50,10 +53,18 @@ ENV PATH="/opt/venv/bin:$PATH"
 # Install Python packages
 RUN pip install --no-cache-dir pandas numpy aktools
 
+# Install Prisma CLI for migrations
+RUN npm install -g prisma
+
 # Copy built application
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public 2>/dev/null || mkdir -p ./public
+
+# Copy Prisma files for database mode
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/prisma ./prisma
 
 # Copy Python executors
 COPY --from=builder /app/data/python ./data/python
@@ -62,8 +73,10 @@ COPY --from=builder /app/data/python ./data/python
 RUN mkdir -p data/csv data/indicators data/strategies data/groups \
     data/backtest-history data/datasets data/view-settings
 
-# Copy supervisor config
+# Copy supervisor config and entrypoint
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY docker/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 # Environment variables
 ENV PORT=3000
@@ -77,5 +90,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:3000/ || exit 1
 
-# Run both services via supervisor
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/supervisord.conf"]
+# Run entrypoint (handles migrations + starts supervisor)
+CMD ["/app/entrypoint.sh"]

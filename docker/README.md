@@ -1,6 +1,6 @@
 # StockViewer Docker Deployment
 
-One-click Docker deployment for StockViewer.
+Complete Docker deployment for StockViewer with PostgreSQL database support.
 
 ## Prerequisites
 
@@ -8,181 +8,224 @@ One-click Docker deployment for StockViewer.
 
 ## Quick Start
 
-### macOS / Linux
+### 1. Configure Environment
 
 ```bash
-cd docker
-chmod +x start.sh
-./start.sh
+# From project root
+cp .env.docker.example .env.docker
 ```
 
-### Windows
+Edit `.env.docker` and fill in:
+- `AUTH_SECRET`: Generate with `openssl rand -base64 32`
+- `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET`: For GitHub OAuth (optional)
+- `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`: For Google OAuth (optional)
 
-```cmd
-cd docker
-start.bat
+### 2. Start Services
+
+```bash
+# Start PostgreSQL + App
+docker compose --env-file .env.docker up -d --build
+
+# With Cloudflare Tunnel (for external access)
+docker compose --env-file .env.docker --profile tunnel up -d --build
 ```
 
-Or double-click `start.bat` in File Explorer.
+### 3. Access
 
-## Access
+- **Local**: http://localhost:3000
+- **External**: Your configured domain (e.g., https://stockviewer.robindev.org)
 
-After startup (may take 1-2 minutes for AKTools to initialize):
+## Architecture
 
-- **App**: http://localhost:3000
-- **AKTools API**: http://localhost:8080
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      Docker Network                          │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │            StockViewer App Container                  │   │
+│  │  ┌─────────────────┐     ┌─────────────────┐         │   │
+│  │  │   Next.js       │     │    AKTools      │         │   │
+│  │  │   Port: 3000    │────▶│    Port: 8080   │         │   │
+│  │  └────────┬────────┘     └─────────────────┘         │   │
+│  │           │               (internal only)             │   │
+│  └───────────┼──────────────────────────────────────────┘   │
+│              │                                               │
+│  ┌───────────▼──────────┐     ┌─────────────────────────┐   │
+│  │    PostgreSQL        │     │  Cloudflare Tunnel      │   │
+│  │    Port: 5432        │     │  (optional)             │   │
+│  └──────────────────────┘     └─────────────────────────┘   │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │                   Docker Volumes                      │   │
+│  │  - postgres-data (database)                           │   │
+│  │  - app-data (CSV files, user data)                   │   │
+│  └──────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
 
 ## Commands
 
-All commands should be run from the `docker` directory.
+All commands from project root:
 
 ### View Logs
 
 ```bash
-docker compose logs -f
-```
-
-### View Specific Service Logs
-
-```bash
-docker compose logs -f app      # Next.js app
-docker compose logs -f aktools  # AKTools API
+docker compose logs -f          # All services
+docker compose logs -f app      # App only
+docker compose logs -f db       # Database only
+docker compose logs -f tunnel   # Tunnel only (if enabled)
 ```
 
 ### Stop Services
 
 ```bash
-docker compose down
+docker compose down             # Stop containers
+docker compose down -v          # Stop and remove volumes (data loss!)
 ```
 
-### Stop and Remove Data
+### Rebuild
 
 ```bash
-docker compose down -v
+docker compose --env-file .env.docker up --build -d
 ```
 
-### Rebuild After Code Changes
-
-```bash
-docker compose up --build -d
-```
-
-### Check Status
+### Status
 
 ```bash
 docker compose ps
 ```
 
-## Architecture
+### Database Access
 
+```bash
+# Connect to PostgreSQL
+docker compose exec db psql -U stockviewer -d stockviewer
+
+# Run migrations manually
+docker compose exec app prisma migrate deploy --schema=/app/prisma/schema.prisma
 ```
-┌─────────────────────────────────────────────────┐
-│                  Docker Network                  │
-│                                                  │
-│  ┌──────────────────┐    ┌──────────────────┐   │
-│  │   StockViewer    │    │     AKTools      │   │
-│  │   (Next.js)      │───▶│   (Python API)   │   │
-│  │   Port: 3000     │    │   Port: 8080     │   │
-│  └────────┬─────────┘    └──────────────────┘   │
-│           │                                      │
-│  ┌────────▼─────────┐                           │
-│  │  Docker Volumes  │                           │
-│  │  - csv data      │                           │
-│  │  - indicators    │                           │
-│  │  - strategies    │                           │
-│  │  - groups        │                           │
-│  │  - backtest      │                           │
-│  │  - view-settings │                           │
-│  └──────────────────┘                           │
-└─────────────────────────────────────────────────┘
-```
+
+## Configuration
+
+### Environment Variables
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `AUTH_SECRET` | Yes | Session encryption key |
+| `AUTH_URL` | No | External URL (default: http://localhost:3000) |
+| `AUTH_GITHUB_ID` | No | GitHub OAuth client ID |
+| `AUTH_GITHUB_SECRET` | No | GitHub OAuth client secret |
+| `AUTH_GOOGLE_ID` | No | Google OAuth client ID |
+| `AUTH_GOOGLE_SECRET` | No | Google OAuth client secret |
+| `CLOUDFLARE_TUNNEL_TOKEN` | No | Token for Cloudflare Tunnel |
+| `POSTGRES_USER` | No | Database user (default: stockviewer) |
+| `POSTGRES_PASSWORD` | No | Database password (default: stockviewer123) |
+| `POSTGRES_DB` | No | Database name (default: stockviewer) |
+
+### OAuth Setup
+
+#### GitHub
+
+1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
+2. Create "New OAuth App"
+3. Set callback URL: `{AUTH_URL}/api/auth/callback/github`
+4. Copy Client ID and Secret to `.env.docker`
+
+#### Google
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
+2. Create "OAuth 2.0 Client ID" (Web application)
+3. Add authorized redirect: `{AUTH_URL}/api/auth/callback/google`
+4. Copy Client ID and Secret to `.env.docker`
+
+### Cloudflare Tunnel
+
+1. Login to [Cloudflare Zero Trust](https://one.dash.cloudflare.com/)
+2. Create a Tunnel → Get the token
+3. Configure ingress to point to `http://app:3000`
+4. Set `CLOUDFLARE_TUNNEL_TOKEN` in `.env.docker`
+5. Start with `--profile tunnel`
 
 ## Data Persistence
 
-All data is stored in Docker volumes and persists between container restarts:
-
 | Volume | Purpose |
 |--------|---------|
-| `stockviewer-csv` | Stock CSV data files |
-| `stockviewer-indicators` | Custom indicator definitions |
-| `stockviewer-strategies` | Trading strategy definitions |
-| `stockviewer-groups` | Stock group definitions |
-| `stockviewer-backtest` | Backtest history |
-| `stockviewer-datasets` | Dataset metadata |
-| `stockviewer-viewsettings` | View setting presets |
+| `postgres-data` | PostgreSQL database |
+| `app-data` | CSV files, user uploads |
 
-### Backup Data
+### Backup
 
 ```bash
-# Create backup directory
-mkdir -p backup
+# Backup PostgreSQL
+docker compose exec db pg_dump -U stockviewer stockviewer > backup.sql
 
-# Export volumes
-docker run --rm -v stockviewer-csv:/data -v $(pwd)/backup:/backup alpine tar czf /backup/csv.tar.gz -C /data .
-docker run --rm -v stockviewer-indicators:/data -v $(pwd)/backup:/backup alpine tar czf /backup/indicators.tar.gz -C /data .
-# ... repeat for other volumes
+# Backup app data
+docker run --rm -v stockviewer_app-data:/data -v $(pwd):/backup alpine \
+  tar czf /backup/app-data.tar.gz -C /data .
 ```
 
-### Restore Data
+### Restore
 
 ```bash
-docker run --rm -v stockviewer-csv:/data -v $(pwd)/backup:/backup alpine tar xzf /backup/csv.tar.gz -C /data
-# ... repeat for other volumes
+# Restore PostgreSQL
+cat backup.sql | docker compose exec -T db psql -U stockviewer stockviewer
+
+# Restore app data
+docker run --rm -v stockviewer_app-data:/data -v $(pwd):/backup alpine \
+  tar xzf /backup/app-data.tar.gz -C /data
 ```
 
 ## Troubleshooting
 
-### AKTools Takes Long to Start
-
-AKTools needs to download and initialize data on first run. Wait 2-3 minutes and check logs:
+### Container Won't Start
 
 ```bash
-docker compose logs -f aktools
+# Check logs
+docker compose logs app
+
+# Check if database is ready
+docker compose logs db
 ```
 
-### Port Already in Use
+### Database Connection Error
 
-Change ports in `docker-compose.yml`:
+```bash
+# Ensure db is healthy
+docker compose ps
+
+# Test connection
+docker compose exec app prisma db push --skip-generate
+```
+
+### Port Conflict
+
+Edit `docker-compose.yml` to change ports:
 
 ```yaml
 services:
   app:
     ports:
-      - "3001:3000"  # Change 3000 to 3001
-  aktools:
+      - "3001:3000"  # Change external port
+  db:
     ports:
-      - "8081:8080"  # Change 8080 to 8081
+      - "5433:5432"  # Change external port
 ```
-
-### Out of Memory
-
-Increase Docker Desktop memory allocation:
-- Docker Desktop → Settings → Resources → Memory → 4GB+
 
 ### Clean Rebuild
 
 ```bash
 docker compose down -v
 docker system prune -f
-docker compose up --build -d
+docker compose --env-file .env.docker up --build -d
 ```
 
-## Environment Variables
+## Development
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NEXT_PUBLIC_AKTOOLS_API_URL` | `http://aktools:8080` | AKTools API URL |
-| `PYTHON_TIMEOUT_MS` | `300000` | Python execution timeout (5 min) |
-| `NODE_ENV` | `production` | Node environment |
-
-## Development Mode
-
-For development with hot-reload, use the standard setup instead:
+For development with hot-reload, use the standard setup:
 
 ```bash
-# In project root
 npm install
 npm run dev
 ```
 
-See main [README.md](../README.md) and [SETUP.md](../SETUP.md) for development setup.
+See main [README.md](../README.md) for development setup.
