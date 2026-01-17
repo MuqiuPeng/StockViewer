@@ -100,9 +100,10 @@ export default function StockDashboard() {
           setError(data.message || 'Failed to load datasets');
           return;
         }
-        setDatasets(data);
-        if (data.length > 0) {
-          setSelectedDataset(data[0].name);
+        const datasets = data.datasets || [];
+        setDatasets(datasets);
+        if (datasets.length > 0) {
+          setSelectedDataset(datasets[0].name);
         }
       })
       .catch((err) => {
@@ -289,8 +290,8 @@ export default function StockDashboard() {
     try {
       const res = await fetch('/api/datasets');
       const data = await res.json();
-      if (!data.error) {
-        setDatasets(data);
+      if (!data.error && data.datasets) {
+        setDatasets(data.datasets);
       }
     } catch (err) {
       console.error('Failed to refresh datasets:', err);

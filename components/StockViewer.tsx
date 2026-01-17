@@ -629,8 +629,8 @@ export default function StockViewer() {
     try {
       const res = await fetch('/api/datasets');
       const data = await res.json();
-      if (!data.error) {
-        setDatasets(data);
+      if (!data.error && data.datasets) {
+        setDatasets(data.datasets);
       }
     } catch (err) {
       console.error('Failed to refresh datasets:', err);
