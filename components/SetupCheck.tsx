@@ -6,8 +6,8 @@ import { useSession } from 'next-auth/react';
 
 /**
  * Component that checks if user has completed setup.
- * Redirects to /setup if not complete.
- * Only active in database storage mode.
+ * In database mode, setup is auto-completed (no CSV folder needed).
+ * In local mode, redirects to /setup if not complete.
  */
 export function SetupCheck({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -24,13 +24,37 @@ export function SetupCheck({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // Skip if not in database mode
       const storageMode = process.env.NEXT_PUBLIC_STORAGE_MODE;
-      if (storageMode !== 'database') {
+
+      // In database mode, auto-complete setup (no CSV folder needed)
+      if (storageMode === 'database') {
+        // Wait for session to load
+        if (status === 'loading') return;
+
+        // If authenticated, auto-complete setup silently
+        if (session?.user) {
+          try {
+            const res = await fetch('/api/user-settings');
+            if (res.ok) {
+              const data = await res.json();
+              if (!data.settings?.setupComplete) {
+                // Auto-complete setup for database mode
+                await fetch('/api/user-settings', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ setupComplete: true }),
+                });
+              }
+            }
+          } catch (err) {
+            console.error('Error auto-completing setup:', err);
+          }
+        }
         setSetupChecked(true);
         return;
       }
 
+      // Local mode: check if setup is complete
       // Wait for session to load
       if (status === 'loading') return;
 
