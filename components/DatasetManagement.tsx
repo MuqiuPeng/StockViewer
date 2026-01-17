@@ -94,7 +94,7 @@ export default function DatasetManagement() {
       if (data.error) {
         setError(data.message || 'Failed to load datasets');
       } else {
-        setDatasets(data || []);
+        setDatasets(data.datasets || []);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load datasets');

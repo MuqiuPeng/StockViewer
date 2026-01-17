@@ -387,7 +387,8 @@ function PortfolioBacktestResults({
         const response = await fetch('/api/datasets');
         if (!response.ok) return;
 
-        const datasets = await response.json();
+        const data = await response.json();
+        const datasets = data.datasets || [];
         const namesMap: Record<string, string> = {};
 
         // If we have datasetFilenames mapping, use it to get the correct dataset names
@@ -474,7 +475,8 @@ function PortfolioBacktestResults({
             return;
           }
 
-          const allDatasets = await metadataRes.json();
+          const metadataData = await metadataRes.json();
+          const allDatasets = metadataData.datasets || [];
           console.log('All datasets:', allDatasets.map((d: any) => d.filename));
           console.log('Looking for symbol:', selectedStockSymbol);
 
