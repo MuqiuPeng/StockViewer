@@ -1,6 +1,9 @@
 /**
- * Add dataset API (alias for /api/stocks/import)
- * POST /api/add-dataset - Import stock data for current user
+ * Add dataset API
+ * POST /api/add-dataset - Add stock to user's collection
+ *
+ * If stock exists in shared pool: just add to user's collection
+ * If stock doesn't exist: fetch from AKShare, add to shared pool, then add to collection
  */
 
 import { NextResponse } from 'next/server';
@@ -20,7 +23,7 @@ const SUPPORTED_DATA_SOURCES = [
   'index_zh_a_hist',      // A股指数历史数据
 ];
 
-// POST /api/add-dataset - Import stock data
+// POST /api/add-dataset - Add stock to user's collection
 export async function POST(request: Request) {
   try {
     // Get authenticated user
@@ -31,7 +34,7 @@ export async function POST(request: Request) {
     const { userId } = authResult;
 
     const body = await request.json();
-    const { symbol, dataSource, name, startDate, endDate, isPublic = true } = body;
+    const { symbol, dataSource, name, startDate, endDate } = body;
 
     // Validate required fields
     if (!symbol || typeof symbol !== 'string') {
@@ -48,27 +51,59 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check if this user already has this stock
-    const existingStock = await prisma.stock.findFirst({
-      where: { symbol, dataSource, createdBy: userId },
+    // Check if stock already exists in shared pool
+    let stock = await prisma.stock.findUnique({
+      where: {
+        symbol_dataSource: { symbol, dataSource },
+      },
     });
 
-    if (existingStock && existingStock.rowCount > 0) {
-      return NextResponse.json({
-        success: true,
-        message: 'Stock already exists in your datasets',
-        stock: {
-          id: existingStock.id,
-          symbol: existingStock.symbol,
-          name: existingStock.name,
-          dataSource: existingStock.dataSource,
-          rowCount: existingStock.rowCount,
-          isOwner: true,
+    // Check if user already has this stock in their collection
+    if (stock) {
+      const existingUserStock = await prisma.userStock.findUnique({
+        where: {
+          userId_stockId: { userId, stockId: stock.id },
         },
       });
+
+      if (existingUserStock) {
+        return NextResponse.json({
+          success: true,
+          message: 'Stock already in your collection',
+          stock: {
+            id: stock.id,
+            symbol: stock.symbol,
+            name: stock.name,
+            dataSource: stock.dataSource,
+            rowCount: stock.rowCount,
+          },
+        });
+      }
+
+      // Stock exists but not in user's collection - add it
+      if (stock.rowCount > 0) {
+        await prisma.userStock.create({
+          data: {
+            userId,
+            stockId: stock.id,
+          },
+        });
+
+        return NextResponse.json({
+          success: true,
+          message: 'Added existing stock to your collection',
+          stock: {
+            id: stock.id,
+            symbol: stock.symbol,
+            name: stock.name,
+            dataSource: stock.dataSource,
+            rowCount: stock.rowCount,
+          },
+        });
+      }
     }
 
-    // Fetch data from AKShare via Python
+    // Stock doesn't exist or has no data - fetch from AKShare
     const result = await fetchStockData(symbol, dataSource, startDate, endDate);
 
     if (!result.success) {
@@ -87,35 +122,26 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create or update stock for this user
-    let stock;
-    if (existingStock) {
-      // Update existing stock
-      stock = await prisma.stock.update({
-        where: { id: existingStock.id },
-        data: {
-          name: name || existingStock.name || symbol,
-          lastUpdate: new Date(),
-          isPublic,
-        },
-      });
-    } else {
-      // Create new stock for this user
-      stock = await prisma.stock.create({
-        data: {
-          symbol,
-          name: name || symbol,
-          dataSource,
-          createdBy: userId,
-          isPublic,
-          firstDate: result.firstDate ? new Date(result.firstDate) : null,
-          lastDate: result.lastDate ? new Date(result.lastDate) : null,
-          rowCount: 0,
-        },
-      });
-    }
+    // Create or update stock in shared pool
+    stock = await prisma.stock.upsert({
+      where: {
+        symbol_dataSource: { symbol, dataSource },
+      },
+      create: {
+        symbol,
+        name: name || symbol,
+        dataSource,
+        firstDate: result.firstDate ? new Date(result.firstDate) : null,
+        lastDate: result.lastDate ? new Date(result.lastDate) : null,
+        rowCount: 0,
+      },
+      update: {
+        name: name || symbol,
+        lastUpdate: new Date(),
+      },
+    });
 
-    // Delete existing price data
+    // Delete existing price data and re-import
     await prisma.stockPrice.deleteMany({
       where: { stockId: stock.id },
     });
@@ -128,7 +154,7 @@ export async function POST(request: Request) {
 
       await prisma.stockPrice.createMany({
         data: batch.map((r: any) => ({
-          stockId: stock.id,
+          stockId: stock!.id,
           date: new Date(r.date),
           open: new Prisma.Decimal(r.open || 0),
           high: new Prisma.Decimal(r.high || 0),
@@ -156,6 +182,18 @@ export async function POST(request: Request) {
       },
     });
 
+    // Add to user's collection
+    await prisma.userStock.upsert({
+      where: {
+        userId_stockId: { userId, stockId: stock.id },
+      },
+      create: {
+        userId,
+        stockId: stock.id,
+      },
+      update: {},
+    });
+
     return NextResponse.json({
       success: true,
       message: `Successfully imported ${records.length} records`,
@@ -165,8 +203,6 @@ export async function POST(request: Request) {
         name: stock.name,
         dataSource: stock.dataSource,
         rowCount: records.length,
-        isOwner: true,
-        isPublic: stock.isPublic,
       },
     });
   } catch (error) {

@@ -58,7 +58,7 @@ model User {
   groups                  StockGroup[]
   viewSettings            ViewSetting[]
   settings                UserSettings?
-  stocks                  Stock[]                 // Stocks imported by this user
+  userStocks              UserStock[]             // User's dataset collection
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -96,10 +96,6 @@ model Stock {
   category   String? // e.g., "A股", "港股", "指数"
   exchange   String? // e.g., "sh", "sz"
 
-  // Ownership
-  createdBy String?              // User who imported this stock
-  isPublic  Boolean @default(true) // Whether visible to all users
-
   // Metadata
   firstDate  DateTime?
   lastDate   DateTime?
@@ -110,16 +106,14 @@ model Stock {
   updatedAt DateTime @updatedAt
 
   // Relations
-  priceData StockPrice[]
-  creator   User?        @relation(fields: [createdBy], references: [id], onDelete: SetNull)
+  priceData  StockPrice[]
+  userStocks UserStock[]   // Users who have this stock in their collection
 
-  @@unique([symbol, dataSource, createdBy]) // Same stock can be imported by different users
+  @@unique([symbol, dataSource])
   @@index([symbol])
   @@index([dataSource])
   @@index([category])
   @@index([lastDate])
-  @@index([createdBy])
-  @@index([isPublic])
 }
 
 /// Stock OHLCV price data - time-series data
@@ -147,6 +141,22 @@ model StockPrice {
   @@unique([stockId, date])
   @@index([stockId, date])
   @@index([date])
+}
+
+/// User's dataset collection - tracks which stocks a user has added
+/// Stock data is shared, but each user has their own collection
+model UserStock {
+  id      String   @id @default(cuid())
+  userId  String
+  stockId String
+  addedAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stock Stock @relation(fields: [stockId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, stockId])
+  @@index([userId])
+  @@index([stockId])
 }
 
 // ============================================================================
