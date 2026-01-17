@@ -81,7 +81,7 @@ export async function loadIndicator(indicatorId: string): Promise<IndicatorMeta 
     groupName: indicator.groupName || undefined,
     expectedOutputs: indicator.expectedOutputs.length > 0 ? indicator.expectedOutputs : undefined,
     externalDatasets: indicator.externalDatasets as Record<string, { groupId: string; datasetName: string }> | undefined,
-    visibility: indicator.visibility,
+    visibleTo: indicator.visibleTo,
     ownerId: indicator.ownerId,
   };
 }
