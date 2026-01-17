@@ -5,11 +5,6 @@
 
 import type { JsonStorageProvider, StorageProvider } from './storage/types';
 
-/**
- * Indicator visibility levels
- */
-export type IndicatorVisibility = 'PRIVATE' | 'PUBLIC' | 'UNLISTED';
-
 export interface Indicator {
   id: string;
   name: string;
@@ -29,15 +24,10 @@ export interface Indicator {
   // External datasets to include in parameters
   externalDatasets?: Record<string, { groupId: string; datasetName: string }>;
 
-  // Public indicator library fields
-  visibility?: IndicatorVisibility;
-  publishedAt?: string;
+  // Visibility: empty array = public, array with userIds = only those users can access
+  visibleTo?: string[];
   category?: string;
   tags?: string[];
-  version?: string;
-  downloadCount?: number;
-  rating?: number;
-  ratingCount?: number;
 }
 
 /**
@@ -98,7 +88,7 @@ export async function saveIndicator(
   const dataWithDefaults = {
     ...indicatorData,
     dependencies: indicatorData.dependencies || [],
-    visibility: indicatorData.visibility || 'PRIVATE',
+    // visibleTo is set at API layer based on userId
   };
 
   return store.create(dataWithDefaults);

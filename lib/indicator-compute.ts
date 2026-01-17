@@ -26,7 +26,7 @@ export interface IndicatorMeta {
   groupName?: string;
   expectedOutputs?: string[];
   externalDatasets?: Record<string, { groupId: string; datasetName: string }>;
-  visibility: 'PRIVATE' | 'PUBLIC' | 'UNLISTED';
+  visibleTo: string[];  // Empty = public, has values = only those users can access
   ownerId: string;
 }
 
@@ -320,10 +320,10 @@ export async function computeIndicator(
 
     // Check access permissions
     const isOwner = indicator.ownerId === userId;
-    const isPublic = indicator.visibility === 'PUBLIC';
-    const isUnlisted = indicator.visibility === 'UNLISTED';
+    const isPublic = indicator.visibleTo.length === 0;  // Empty array = public
+    const hasAccess = userId ? indicator.visibleTo.includes(userId) : false;
 
-    if (!isOwner && !isPublic && !isUnlisted) {
+    if (!isOwner && !isPublic && !hasAccess) {
       return {
         success: false,
         stockId,
@@ -361,7 +361,7 @@ export async function computeIndicator(
       // Load dependent indicator to check if it's public or private
       const depIndicator = await loadIndicator(depId);
       if (depIndicator) {
-        const depIsPublic = depIndicator.visibility === 'PUBLIC';
+        const depIsPublic = depIndicator.visibleTo.length === 0;
         const depValues = await getCachedIndicatorValues(
           depId,
           stockId,
@@ -528,7 +528,7 @@ export async function getIndicatorValues(
     return { values: [], computed: false, error: 'Indicator not found' };
   }
 
-  const isPublic = indicator.visibility === 'PUBLIC';
+  const isPublic = indicator.visibleTo.length === 0;
 
   // Try to load cached values
   const cachedValues = await getCachedIndicatorValues(

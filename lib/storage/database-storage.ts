@@ -216,7 +216,6 @@ export class DatabaseStorageProvider implements StorageProvider {
     // Note: Stock/StockPrice data is shared and NOT deleted
     await prisma.$transaction([
       prisma.indicatorValueCache.deleteMany({ where: { userId: this.userId } }),
-      prisma.indicatorSubscription.deleteMany({ where: { userId: this.userId } }),
       prisma.indicator.deleteMany({ where: { ownerId: this.userId } }),
       prisma.backtestHistoryEntry.deleteMany({ where: { userId: this.userId } }),
       prisma.strategy.deleteMany({ where: { userId: this.userId } }),

@@ -29,12 +29,12 @@ export async function GET(request: Request) {
     const tag = searchParams.get('tag') || '';
 
     // Sorting
-    const sortBy = searchParams.get('sortBy') || 'downloadCount';
+    const sortBy = searchParams.get('sortBy') || 'createdAt';
     const sortOrder = searchParams.get('sortOrder') === 'asc' ? 'asc' : 'desc';
 
-    // Build where clause
+    // Build where clause - public indicators have empty visibleTo array
     const where: any = {
-      visibility: 'PUBLIC',
+      visibleTo: { isEmpty: true },
     };
 
     if (query) {
@@ -54,10 +54,10 @@ export async function GET(request: Request) {
 
     // Build orderBy
     const orderBy: any = {};
-    if (['name', 'downloadCount', 'rating', 'publishedAt', 'createdAt'].includes(sortBy)) {
+    if (['name', 'createdAt'].includes(sortBy)) {
       orderBy[sortBy] = sortOrder;
     } else {
-      orderBy.downloadCount = 'desc';
+      orderBy.createdAt = 'desc';
     }
 
     // Execute queries in parallel
@@ -77,11 +77,6 @@ export async function GET(request: Request) {
           expectedOutputs: true,
           category: true,
           tags: true,
-          version: true,
-          downloadCount: true,
-          rating: true,
-          ratingCount: true,
-          publishedAt: true,
           createdAt: true,
           owner: {
             select: {
@@ -90,21 +85,16 @@ export async function GET(request: Request) {
               image: true,
             },
           },
-          _count: {
-            select: {
-              subscriptions: true,
-            },
-          },
         },
       }),
       prisma.indicator.count({ where }),
       prisma.indicator.findMany({
-        where: { visibility: 'PUBLIC', category: { not: null } },
+        where: { visibleTo: { isEmpty: true }, category: { not: null } },
         select: { category: true },
         distinct: ['category'],
       }),
       prisma.indicator.findMany({
-        where: { visibility: 'PUBLIC' },
+        where: { visibleTo: { isEmpty: true } },
         select: { tags: true },
       }),
     ]);
@@ -113,11 +103,7 @@ export async function GET(request: Request) {
     const uniqueTags = [...new Set(allTags.flatMap(i => i.tags))].sort();
 
     return NextResponse.json({
-      indicators: indicators.map(ind => ({
-        ...ind,
-        subscriberCount: ind._count.subscriptions,
-        _count: undefined,
-      })),
+      indicators,
       pagination: {
         page,
         limit,

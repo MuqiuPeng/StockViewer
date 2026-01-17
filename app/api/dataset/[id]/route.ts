@@ -125,24 +125,17 @@ export async function GET(
     }));
 
     // Get indicator values
-    // First, get user's own indicators and subscribed public indicators
-    const [ownIndicators, subscriptions] = await Promise.all([
-      prisma.indicator.findMany({
-        where: { ownerId: userId },
-        select: { id: true, name: true, outputColumn: true, isGroup: true, groupName: true, expectedOutputs: true },
-      }),
-      prisma.indicatorSubscription.findMany({
-        where: { userId },
-        include: {
-          indicator: {
-            select: { id: true, name: true, outputColumn: true, isGroup: true, groupName: true, expectedOutputs: true },
-          },
-        },
-      }),
-    ]);
-
-    const subscribedIndicators = subscriptions.map(s => s.indicator);
-    const allIndicators = [...ownIndicators, ...subscribedIndicators];
+    // Get user's own indicators and indicators they have access to (public or shared with them)
+    const allIndicators = await prisma.indicator.findMany({
+      where: {
+        OR: [
+          { ownerId: userId },                    // Own indicators
+          { visibleTo: { isEmpty: true } },       // Public indicators
+          { visibleTo: { has: userId } },         // Shared with this user
+        ],
+      },
+      select: { id: true, name: true, outputColumn: true, isGroup: true, groupName: true, expectedOutputs: true },
+    });
 
     // Get cached indicator values
     const indicatorIds = allIndicators.map(i => i.id);
