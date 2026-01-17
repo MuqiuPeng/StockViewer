@@ -74,6 +74,15 @@ export async function POST(request: Request) {
       );
     }
 
+    // Validate result data exists
+    const records = result.data;
+    if (!records || records.length === 0) {
+      return NextResponse.json(
+        { error: 'No data returned', message: 'AKShare returned no data for this symbol' },
+        { status: 400 }
+      );
+    }
+
     // Upsert stock
     const stock = await prisma.stock.upsert({
       where: {
@@ -100,7 +109,6 @@ export async function POST(request: Request) {
 
     // Insert price data in batches
     const batchSize = 1000;
-    const records = result.data;
 
     for (let i = 0; i < records.length; i += batchSize) {
       const batch = records.slice(i, i + batchSize);
