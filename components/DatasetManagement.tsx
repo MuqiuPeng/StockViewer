@@ -30,7 +30,7 @@ interface StockGroup {
   id: string;
   name: string;
   description?: string;
-  datasetNames: string[];
+  stockIds: string[];
   createdAt: string;
   updatedAt?: string;
   isDataSource?: boolean;
@@ -272,7 +272,7 @@ export default function DatasetManagement() {
         ? Array.from(selectedDatasets)
         : [targetDatasetForGroup!];
 
-      const updatedDatasetNames = [...new Set([...group.datasetNames, ...datasetsToAdd])];
+      const updatedStockIds = [...new Set([...group.stockIds, ...datasetsToAdd])];
 
       const response = await fetch('/api/groups', {
         method: 'PUT',
@@ -281,7 +281,7 @@ export default function DatasetManagement() {
           id: groupId,
           name: group.name,
           description: group.description,
-          datasetNames: updatedDatasetNames,
+          stockIds: updatedStockIds,
         }),
       });
 
@@ -399,8 +399,8 @@ export default function DatasetManagement() {
     if (!groupedDatasets[group.name]) {
       groupedDatasets[group.name] = { type: 'group', datasets: [] };
     }
-    group.datasetNames.forEach(datasetName => {
-      const dataset = datasets.find(d => d.filename === datasetName || d.name === datasetName);
+    group.stockIds.forEach(stockId => {
+      const dataset = datasets.find(d => d.id === stockId || d.filename === stockId || d.name === stockId);
       if (dataset && datasetMatchesSearch(dataset)) {
         groupedDatasets[group.name].datasets.push(dataset);
       }
@@ -745,7 +745,7 @@ export default function DatasetManagement() {
                       <div className="text-sm text-gray-600 dark:text-gray-400">{group.description}</div>
                     )}
                     <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      {group.datasetNames.length} dataset(s)
+                      {group.stockIds.length} dataset(s)
                     </div>
                   </button>
                 ))}

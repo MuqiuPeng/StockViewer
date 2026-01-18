@@ -797,7 +797,7 @@ export default function StrategyEditorModal({
                         disabled={!isEditing || !config.groupId}
                       >
                         <option value="">Select dataset</option>
-                        {selectedGroup?.datasetNames.map((ds: string) => (
+                        {selectedGroup?.stockIds?.map((ds: string) => (
                           <option key={ds} value={ds}>{ds}</option>
                         ))}
                       </select>

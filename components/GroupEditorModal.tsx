@@ -6,7 +6,7 @@ interface StockGroup {
   id: string;
   name: string;
   description?: string;
-  datasetNames: string[];
+  stockIds: string[];
   createdAt: string;
   updatedAt?: string;
 }
@@ -37,7 +37,7 @@ export default function GroupEditorModal({
       if (group) {
         setName(group.name);
         setDescription(group.description || '');
-        setSelectedDatasets(group.datasetNames || []);
+        setSelectedDatasets(group.stockIds || []);
       } else {
         setName('');
         setDescription('');
@@ -67,7 +67,7 @@ export default function GroupEditorModal({
         body: JSON.stringify({
           name: name.trim(),
           description: description.trim(),
-          datasetNames: selectedDatasets,
+          stockIds: selectedDatasets,
         }),
       });
 

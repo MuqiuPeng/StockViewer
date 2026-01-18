@@ -862,7 +862,7 @@ export default function IndicatorEditorModal({
                       >
                         <option value="">Select dataset</option>
                         <option value="__all__">All (returns dict per column)</option>
-                        {selectedGroup?.datasetNames.map((ds: string) => (
+                        {selectedGroup?.stockIds?.map((ds: string) => (
                           <option key={ds} value={ds}>{ds}</option>
                         ))}
                       </select>

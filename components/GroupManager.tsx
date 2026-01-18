@@ -7,7 +7,7 @@ interface StockGroup {
   id: string;
   name: string;
   description?: string;
-  datasetNames: string[];
+  stockIds: string[];
   createdAt: string;
   updatedAt?: string;
   isDataSource?: boolean;
@@ -155,7 +155,7 @@ export default function GroupManager({ isOpen, onClose, datasets }: GroupManager
                           <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{group.description}</p>
                         )}
                         <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                          {group.datasetNames.length} dataset{group.datasetNames.length !== 1 ? 's' : ''}
+                          {group.stockIds.length} dataset{group.stockIds.length !== 1 ? 's' : ''}
                         </p>
                       </div>
                       <div className="flex gap-2">
@@ -173,17 +173,17 @@ export default function GroupManager({ isOpen, onClose, datasets }: GroupManager
                         </button>
                       </div>
                     </div>
-                    {group.datasetNames.length > 0 && (
+                    {group.stockIds.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
                         <div className="flex flex-wrap gap-2">
-                          {group.datasetNames.map((datasetName) => {
-                            const dataset = datasets.find(d => d.filename === datasetName || d.name === datasetName);
+                          {group.stockIds.map((stockId) => {
+                            const dataset = datasets.find(d => d.filename === stockId || d.name === stockId);
                             return (
                               <span
-                                key={datasetName}
+                                key={stockId}
                                 className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-xs"
                               >
-                                {dataset?.name || datasetName}
+                                {dataset?.name || stockId}
                               </span>
                             );
                           })}
