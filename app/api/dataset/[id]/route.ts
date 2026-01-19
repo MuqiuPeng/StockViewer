@@ -174,9 +174,9 @@ export async function GET(
       return expectedVersion !== undefined && v.version === expectedVersion;
     });
 
-    // Build indicator data map
-    const indicators: Record<string, IndicatorData[]> = {};
-    const indicatorColumns: string[] = [];
+    // Build indicator value lookup by date
+    // Map: indicatorColumn -> date -> value
+    const indicatorValuesByDate: Record<string, Map<string, number | null>> = {};
 
     // Process indicator values (using stockPriceId-aligned data)
     for (const value of validValues) {
@@ -191,29 +191,38 @@ export async function GET(
         const groupValues = value.groupValues as Record<string, number | null>;
         for (const [key, val] of Object.entries(groupValues)) {
           const columnName = `${indicator.groupName}:${key}`;
-          if (!indicators[columnName]) {
-            indicators[columnName] = [];
-            indicatorColumns.push(columnName);
+          if (!indicatorValuesByDate[columnName]) {
+            indicatorValuesByDate[columnName] = new Map();
           }
-          indicators[columnName].push({ time, value: val });
+          indicatorValuesByDate[columnName].set(time, val);
         }
       } else {
         // Single indicator
         const columnName = indicator.outputColumn;
-        if (!indicators[columnName]) {
-          indicators[columnName] = [];
-          indicatorColumns.push(columnName);
+        if (!indicatorValuesByDate[columnName]) {
+          indicatorValuesByDate[columnName] = new Map();
         }
-        indicators[columnName].push({
+        indicatorValuesByDate[columnName].set(
           time,
-          value: value.value ? Number(value.value) : null,
-        });
+          value.value ? Number(value.value) : null
+        );
       }
     }
 
-    // Sort indicator data by time
-    for (const col of Object.keys(indicators)) {
-      indicators[col].sort((a, b) => a.time.localeCompare(b.time));
+    // Build indicator data map - ensure all dates are present (fill nulls for missing)
+    const indicators: Record<string, IndicatorData[]> = {};
+    const indicatorColumns: string[] = Object.keys(indicatorValuesByDate);
+
+    // For each indicator, create entries for ALL price dates (fill null for missing)
+    for (const columnName of indicatorColumns) {
+      const valueMap = indicatorValuesByDate[columnName];
+      indicators[columnName] = prices.map(p => {
+        const time = p.date.toISOString().split('T')[0];
+        return {
+          time,
+          value: valueMap.get(time) ?? null,  // null if not computed for this date
+        };
+      });
     }
 
     // Add volume and other price-derived indicators
