@@ -213,14 +213,15 @@ export async function GET(
     const indicators: Record<string, IndicatorData[]> = {};
     const indicatorColumns: string[] = Object.keys(indicatorValuesByDate);
 
-    // For each indicator, create entries for ALL price dates (fill null for missing)
+    // For each indicator, create entries for ALL price dates (fill 0 for missing)
+    // Using 0 instead of null because lightweight-charts doesn't support null values
     for (const columnName of indicatorColumns) {
       const valueMap = indicatorValuesByDate[columnName];
       indicators[columnName] = prices.map(p => {
         const time = p.date.toISOString().split('T')[0];
         return {
           time,
-          value: valueMap.get(time) ?? null,  // null if not computed for this date
+          value: valueMap.get(time) ?? 0,  // 0 if not computed for this date
         };
       });
     }
