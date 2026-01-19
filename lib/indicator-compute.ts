@@ -424,6 +424,9 @@ export async function computeIndicator(
       };
     }
 
+    // Validate output length matches input length
+    const expectedLength = prices.length;
+
     // Validate and save results
     if (indicator.isGroup) {
       const valuesDict = executionResult.values as Record<string, (number | null)[]>;
@@ -435,6 +438,35 @@ export async function computeIndicator(
           indicatorId,
           error: 'Group indicator must return a dictionary of values',
         };
+      }
+
+      // Check length of each output array
+      for (const [key, arr] of Object.entries(valuesDict)) {
+        if (!Array.isArray(arr)) {
+          return {
+            success: false,
+            stockId,
+            indicatorId,
+            error: `Output "${key}" is not an array`,
+            errorType: 'length_mismatch',
+          };
+        }
+        if (arr.length !== expectedLength) {
+          return {
+            success: false,
+            stockId,
+            indicatorId,
+            error: `Output length mismatch for "${key}": expected ${expectedLength} rows, got ${arr.length}`,
+            errorType: 'length_mismatch',
+            details: {
+              message: `Indicator must return exactly ${expectedLength} values to match input data length`,
+              hints: [
+                'Ensure your calculate() function returns a value for each input row',
+                'Use padding (e.g., [None] * n + values) for indicators with lookback periods',
+              ],
+            },
+          };
+        }
       }
 
       const returnedKeys = Object.keys(valuesDict);
@@ -476,12 +508,42 @@ export async function computeIndicator(
         cachedRows: savedCount,
       };
     } else {
+      // Single indicator - validate length
+      const singleValues = executionResult.values as (number | null)[];
+
+      if (!Array.isArray(singleValues)) {
+        return {
+          success: false,
+          stockId,
+          indicatorId,
+          error: 'Indicator must return an array of values',
+          errorType: 'invalid_output',
+        };
+      }
+
+      if (singleValues.length !== expectedLength) {
+        return {
+          success: false,
+          stockId,
+          indicatorId,
+          error: `Output length mismatch: expected ${expectedLength} rows, got ${singleValues.length}`,
+          errorType: 'length_mismatch',
+          details: {
+            message: `Indicator must return exactly ${expectedLength} values to match input data length`,
+            hints: [
+              'Ensure your calculate() function returns a value for each input row',
+              'Use padding (e.g., [None] * n + values) for indicators with lookback periods',
+            ],
+          },
+        };
+      }
+
       const savedCount = await saveIndicatorValues(
         indicatorId,
         stockId,
         indicator.version,
         priceRecords,
-        executionResult.values as (number | null)[],
+        singleValues,
         false
       );
 
