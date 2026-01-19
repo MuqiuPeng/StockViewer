@@ -56,11 +56,11 @@ async function main() {
   console.log(`  - Private/Shared: ${privateIndicators}`);
 
   // Cached indicator values
-  const sharedCacheCount = await prisma.indicatorValue.count();
-  const userCacheCount = await prisma.indicatorValueCache.count();
+  const indicatorValueCount = await prisma.indicatorValue.count();
+  const stockIndicatorCount = await prisma.stockIndicator.count();
   console.log(`\nIndicator cache:`);
-  console.log(`  - Shared cache (IndicatorValue): ${sharedCacheCount.toLocaleString()}`);
-  console.log(`  - User cache (IndicatorValueCache): ${userCacheCount.toLocaleString()}`);
+  console.log(`  - Indicator values (IndicatorValue): ${indicatorValueCount.toLocaleString()}`);
+  console.log(`  - Stock-indicator tracking (StockIndicator): ${stockIndicatorCount}`);
 
   // Strategy statistics
   const strategyCount = await prisma.strategy.count();

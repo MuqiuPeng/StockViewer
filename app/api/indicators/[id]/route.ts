@@ -10,6 +10,7 @@ import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
 import { validatePythonCode } from '@/lib/indicator-validator';
 import { detectDependencies } from '@/lib/detect-dependencies';
+import { computeCodeHash } from '@/lib/code-hash';
 
 export const runtime = 'nodejs';
 
@@ -143,7 +144,7 @@ export async function PUT(
     if (tags !== undefined) updateData.tags = tags;
     if (visibleTo !== undefined) updateData.visibleTo = visibleTo;
 
-    // Re-detect dependencies if code changed
+    // Re-detect dependencies and handle versioning if code changed
     if (pythonCode !== undefined) {
       const allIndicators = await prisma.indicator.findMany({
         select: { id: true, name: true, outputColumn: true, isGroup: true, groupName: true, expectedOutputs: true },
@@ -151,6 +152,15 @@ export async function PUT(
       const { dependencies, dependencyColumns } = detectDependencies(pythonCode, allIndicators, params.id);
       updateData.dependencies = dependencies;
       updateData.dependencyColumns = dependencyColumns;
+
+      // Compute new code hash
+      const newCodeHash = computeCodeHash(pythonCode);
+
+      // Only increment version if code actually changed
+      if (newCodeHash !== indicator.codeHash) {
+        updateData.codeHash = newCodeHash;
+        updateData.version = indicator.version + 1;
+      }
     }
 
     const updated = await prisma.indicator.update({

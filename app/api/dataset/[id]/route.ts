@@ -4,6 +4,8 @@
  *
  * This endpoint provides backwards compatibility with the frontend
  * by transforming Stock + StockPrice + IndicatorValue data to DatasetData format.
+ *
+ * Uses stockPriceId-based alignment and versioning for indicator values.
  */
 
 import { NextResponse } from 'next/server';
@@ -134,43 +136,55 @@ export async function GET(
           { visibleTo: { has: userId } },         // Shared with this user
         ],
       },
-      select: { id: true, name: true, outputColumn: true, isGroup: true, groupName: true, expectedOutputs: true },
+      select: {
+        id: true,
+        name: true,
+        outputColumn: true,
+        isGroup: true,
+        groupName: true,
+        expectedOutputs: true,
+        version: true,  // Need version for cache validation
+      },
     });
 
-    // Get cached indicator values
-    const indicatorIds = allIndicators.map(i => i.id);
+    // Build a map of indicator ID to version for filtering
+    const indicatorVersionMap = new Map(allIndicators.map(i => [i.id, i.version]));
 
-    // Get from shared cache (public indicators)
-    const sharedValues = await prisma.indicatorValue.findMany({
+    // Get cached indicator values using stockPriceId-based join
+    // Only fetch values with matching current version
+    const indicatorValues = await prisma.indicatorValue.findMany({
       where: {
-        indicatorId: { in: indicatorIds },
-        stockId: stock.id,
-        date: priceWhere.date,
+        indicatorId: { in: allIndicators.map(i => i.id) },
+        stockPrice: {
+          stockId: stock.id,
+          ...(priceWhere.date && { date: priceWhere.date }),
+        },
       },
-      orderBy: { date: 'asc' },
+      include: {
+        stockPrice: {
+          select: { id: true, date: true },
+        },
+      },
+      orderBy: { stockPrice: { date: 'asc' } },
     });
 
-    // Get from user cache (private indicators)
-    const userValues = await prisma.indicatorValueCache.findMany({
-      where: {
-        userId,
-        indicatorId: { in: indicatorIds },
-        stockId: stock.id,
-        date: priceWhere.date,
-      },
-      orderBy: { date: 'asc' },
+    // Filter to only include values with current version
+    const validValues = indicatorValues.filter(v => {
+      const expectedVersion = indicatorVersionMap.get(v.indicatorId);
+      return expectedVersion !== undefined && v.version === expectedVersion;
     });
 
     // Build indicator data map
     const indicators: Record<string, IndicatorData[]> = {};
     const indicatorColumns: string[] = [];
 
-    // Process shared values
-    for (const value of sharedValues) {
+    // Process indicator values (using stockPriceId-aligned data)
+    for (const value of validValues) {
       const indicator = allIndicators.find(i => i.id === value.indicatorId);
       if (!indicator) continue;
 
-      const time = value.date.toISOString().split('T')[0];
+      // Get date from the joined stockPrice record
+      const time = value.stockPrice.date.toISOString().split('T')[0];
 
       if (indicator.isGroup && value.groupValues) {
         // Group indicator - add each output column
@@ -194,47 +208,6 @@ export async function GET(
           time,
           value: value.value ? Number(value.value) : null,
         });
-      }
-    }
-
-    // Process user-specific values (override if exists)
-    for (const value of userValues) {
-      const indicator = allIndicators.find(i => i.id === value.indicatorId);
-      if (!indicator) continue;
-
-      const time = value.date.toISOString().split('T')[0];
-
-      if (indicator.isGroup && value.groupValues) {
-        const groupValues = value.groupValues as Record<string, number | null>;
-        for (const [key, val] of Object.entries(groupValues)) {
-          const columnName = `${indicator.groupName}:${key}`;
-          if (!indicators[columnName]) {
-            indicators[columnName] = [];
-            indicatorColumns.push(columnName);
-          }
-          // Find and update existing entry or add new
-          const existing = indicators[columnName].find(d => d.time === time);
-          if (existing) {
-            existing.value = val;
-          } else {
-            indicators[columnName].push({ time, value: val });
-          }
-        }
-      } else {
-        const columnName = indicator.outputColumn;
-        if (!indicators[columnName]) {
-          indicators[columnName] = [];
-          indicatorColumns.push(columnName);
-        }
-        const existing = indicators[columnName].find(d => d.time === time);
-        if (existing) {
-          existing.value = value.value ? Number(value.value) : null;
-        } else {
-          indicators[columnName].push({
-            time,
-            value: value.value ? Number(value.value) : null,
-          });
-        }
       }
     }
 

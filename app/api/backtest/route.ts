@@ -39,26 +39,37 @@ async function buildDataRecords(
 ): Promise<Record<string, any>[]> {
   const prices = await getStockPrices(stockId, { startDate, endDate });
 
-  // Get cached indicator values for this stock
+  // Get cached indicator values for this stock using stockPriceId-based join
+  // Include indicator metadata and stockPrice for date info
   const indicatorValues = await prisma.indicatorValue.findMany({
     where: {
-      stockId,
-      date: {
-        gte: startDate,
-        lte: endDate,
+      stockPrice: {
+        stockId,
+        ...(startDate || endDate ? {
+          date: {
+            ...(startDate && { gte: startDate }),
+            ...(endDate && { lte: endDate }),
+          },
+        } : {}),
       },
     },
     include: {
       indicator: {
-        select: { outputColumn: true, isGroup: true, groupName: true },
+        select: { outputColumn: true, isGroup: true, groupName: true, version: true },
+      },
+      stockPrice: {
+        select: { date: true },
       },
     },
   });
 
+  // Filter to only include values with current version
+  const validValues = indicatorValues.filter(iv => iv.version === iv.indicator.version);
+
   // Build value maps by date
   const valuesByDate = new Map<string, Record<string, number | null>>();
-  for (const iv of indicatorValues) {
-    const dateKey = iv.date.toISOString().split('T')[0];
+  for (const iv of validValues) {
+    const dateKey = iv.stockPrice.date.toISOString().split('T')[0];
     if (!valuesByDate.has(dateKey)) {
       valuesByDate.set(dateKey, {});
     }

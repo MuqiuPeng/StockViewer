@@ -2,15 +2,13 @@
  * Indicator computation service
  *
  * Handles computing indicators on stock data from the database.
- * Results are stored in:
- * - IndicatorValue: for public indicators (shared cache)
- * - IndicatorValueCache: for private indicators (user-specific cache)
+ * Results are stored in IndicatorValue table, linked to StockPrice records.
+ * Uses versioning for cache invalidation.
  */
 
 import { prisma } from './prisma';
 import { Prisma } from '@prisma/client';
 import { executePythonIndicator, PythonExecutionResult } from './python-executor';
-import { getStockById, getStockPrices, StockPriceData } from './stock-storage';
 
 /**
  * Indicator metadata for computation
@@ -20,13 +18,15 @@ export interface IndicatorMeta {
   name: string;
   pythonCode: string;
   outputColumn: string;
+  version: number;
+  codeHash: string;
   dependencies: string[];
   dependencyColumns: string[];
   isGroup: boolean;
   groupName?: string;
   expectedOutputs?: string[];
   externalDatasets?: Record<string, { groupId: string; datasetName: string }>;
-  visibleTo: string[];  // Empty = public, has values = only those users can access
+  visibleTo: string[];
   createdBy: string;
 }
 
@@ -34,6 +34,7 @@ export interface IndicatorMeta {
  * Computed indicator value
  */
 export interface IndicatorValueData {
+  stockPriceId: string;
   date: Date;
   value?: number | null;
   groupValues?: Record<string, number | null>;
@@ -46,6 +47,7 @@ export interface ComputeResult {
   success: boolean;
   stockId: string;
   indicatorId: string;
+  version?: number;
   rowsComputed?: number;
   cachedRows?: number;
   error?: string;
@@ -75,6 +77,8 @@ export async function loadIndicator(indicatorId: string): Promise<IndicatorMeta 
     name: indicator.name,
     pythonCode: indicator.pythonCode,
     outputColumn: indicator.outputColumn,
+    version: indicator.version,
+    codeHash: indicator.codeHash,
     dependencies: indicator.dependencies,
     dependencyColumns: indicator.dependencyColumns,
     isGroup: indicator.isGroup,
@@ -87,49 +91,61 @@ export async function loadIndicator(indicatorId: string): Promise<IndicatorMeta 
 }
 
 /**
- * Get cached indicator values for a stock
+ * Get cached indicator values for a stock (using stockPriceId for alignment)
+ * Returns values only for the current indicator version
  */
 export async function getCachedIndicatorValues(
   indicatorId: string,
   stockId: string,
-  userId?: string,
-  isPublic: boolean = false
+  version: number
 ): Promise<Map<string, IndicatorValueData>> {
   const valueMap = new Map<string, IndicatorValueData>();
 
-  if (isPublic) {
-    // Load from shared IndicatorValue table
-    const values = await prisma.indicatorValue.findMany({
-      where: { indicatorId, stockId },
-      orderBy: { date: 'asc' },
-    });
+  // Load indicator values with current version, joined with StockPrice for date info
+  const values = await prisma.indicatorValue.findMany({
+    where: {
+      indicatorId,
+      version,
+      stockPrice: {
+        stockId,
+      },
+    },
+    include: {
+      stockPrice: {
+        select: { id: true, date: true },
+      },
+    },
+    orderBy: { stockPrice: { date: 'asc' } },
+  });
 
-    for (const v of values) {
-      const dateKey = v.date.toISOString().split('T')[0];
-      valueMap.set(dateKey, {
-        date: v.date,
-        value: v.value ? Number(v.value) : null,
-        groupValues: v.groupValues as Record<string, number | null> | undefined,
-      });
-    }
-  } else if (userId) {
-    // Load from user-specific IndicatorValueCache table
-    const values = await prisma.indicatorValueCache.findMany({
-      where: { userId, indicatorId, stockId },
-      orderBy: { date: 'asc' },
+  for (const v of values) {
+    const dateKey = v.stockPrice.date.toISOString().split('T')[0];
+    valueMap.set(dateKey, {
+      stockPriceId: v.stockPriceId,
+      date: v.stockPrice.date,
+      value: v.value ? Number(v.value) : null,
+      groupValues: v.groupValues as Record<string, number | null> | undefined,
     });
-
-    for (const v of values) {
-      const dateKey = v.date.toISOString().split('T')[0];
-      valueMap.set(dateKey, {
-        date: v.date,
-        value: v.value ? Number(v.value) : null,
-        groupValues: v.groupValues as Record<string, number | null> | undefined,
-      });
-    }
   }
 
   return valueMap;
+}
+
+/**
+ * Check if indicator is computed for a stock (with current version)
+ */
+export async function isIndicatorComputed(
+  indicatorId: string,
+  stockId: string,
+  version: number
+): Promise<boolean> {
+  const record = await prisma.stockIndicator.findUnique({
+    where: {
+      stockId_indicatorId: { stockId, indicatorId },
+    },
+  });
+
+  return record !== null && record.version === version;
 }
 
 /**
@@ -137,9 +153,22 @@ export async function getCachedIndicatorValues(
  * Combines price data with existing indicator values
  */
 function buildDataRecords(
-  prices: StockPriceData[],
+  prices: Array<{
+    id: string;
+    date: Date;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: bigint;
+    turnover?: number | null;
+    amplitude?: number | null;
+    changePct?: number | null;
+    changeAmount?: number | null;
+    turnoverRate?: number | null;
+  }>,
   existingIndicators: Map<string, Map<string, IndicatorValueData>>
-): Record<string, any>[] {
+): Array<{ stockPriceId: string; data: Record<string, any> }> {
   return prices.map(price => {
     const dateKey = price.date.toISOString().split('T')[0];
     const record: Record<string, any> = {
@@ -152,11 +181,11 @@ function buildDataRecords(
     };
 
     // Add optional price fields
-    if (price.turnover !== null) record.turnover = price.turnover;
-    if (price.amplitude !== null) record.amplitude = price.amplitude;
-    if (price.changePct !== null) record.change_pct = price.changePct;
-    if (price.changeAmount !== null) record.change_amount = price.changeAmount;
-    if (price.turnoverRate !== null) record.turnover_rate = price.turnoverRate;
+    if (price.turnover !== null && price.turnover !== undefined) record.turnover = price.turnover;
+    if (price.amplitude !== null && price.amplitude !== undefined) record.amplitude = price.amplitude;
+    if (price.changePct !== null && price.changePct !== undefined) record.change_pct = price.changePct;
+    if (price.changeAmount !== null && price.changeAmount !== undefined) record.change_amount = price.changeAmount;
+    if (price.turnoverRate !== null && price.turnoverRate !== undefined) record.turnover_rate = price.turnoverRate;
 
     // Add existing indicator values
     for (const [indicatorName, valueMap] of existingIndicators) {
@@ -174,108 +203,73 @@ function buildDataRecords(
       }
     }
 
-    return record;
+    return { stockPriceId: price.id, data: record };
   });
 }
 
 /**
- * Save computed indicator values to the database
+ * Save computed indicator values to the database using stockPriceId
  */
 async function saveIndicatorValues(
   indicatorId: string,
   stockId: string,
-  userId: string | undefined,
-  isPublic: boolean,
-  prices: StockPriceData[],
+  version: number,
+  priceRecords: Array<{ stockPriceId: string; data: Record<string, any> }>,
   values: (number | null)[] | Record<string, (number | null)[]>,
   isGroup: boolean
 ): Promise<number> {
-  const dateList = prices.map(p => p.date);
+  // Delete existing values for this indicator/version combination on this stock
+  await prisma.indicatorValue.deleteMany({
+    where: {
+      indicatorId,
+      version,
+      stockPrice: { stockId },
+    },
+  });
+
   let savedCount = 0;
 
-  if (isPublic) {
-    // Save to shared IndicatorValue table
-    // First delete existing values for this indicator/stock combination
-    await prisma.indicatorValue.deleteMany({
-      where: { indicatorId, stockId },
+  if (isGroup) {
+    // Group indicator - values is a dict
+    const groupValues = values as Record<string, (number | null)[]>;
+    const data = priceRecords.map((pr, i) => {
+      const gv: Record<string, number | null> = {};
+      for (const [key, arr] of Object.entries(groupValues)) {
+        gv[key] = arr[i];
+      }
+      return {
+        indicatorId,
+        stockPriceId: pr.stockPriceId,
+        version,
+        groupValues: gv,
+      };
+    }).filter((_, i) => {
+      // Only save rows where at least one value is not null
+      const groupVals = values as Record<string, (number | null)[]>;
+      return Object.values(groupVals).some(arr => arr[i] !== null);
     });
 
-    if (isGroup) {
-      // Group indicator - values is a dict
-      const groupValues = values as Record<string, (number | null)[]>;
-      const data = dateList.map((date, i) => {
-        const gv: Record<string, number | null> = {};
-        for (const [key, arr] of Object.entries(groupValues)) {
-          gv[key] = arr[i];
-        }
-        return {
-          indicatorId,
-          stockId,
-          date,
-          groupValues: gv,
-        };
-      });
-
-      const result = await prisma.indicatorValue.createMany({
-        data,
-        skipDuplicates: true,
-      });
-      savedCount = result.count;
-    } else {
-      // Single indicator - values is an array
-      const singleValues = values as (number | null)[];
-      const data = dateList.map((date, i) => ({
-        indicatorId,
-        stockId,
-        date,
-        value: singleValues[i] !== null ? new Prisma.Decimal(singleValues[i]!) : null,
-      }));
-
+    if (data.length > 0) {
       const result = await prisma.indicatorValue.createMany({
         data,
         skipDuplicates: true,
       });
       savedCount = result.count;
     }
-  } else if (userId) {
-    // Save to user-specific IndicatorValueCache table
-    // First delete existing values
-    await prisma.indicatorValueCache.deleteMany({
-      where: { userId, indicatorId, stockId },
-    });
-
-    if (isGroup) {
-      const groupValues = values as Record<string, (number | null)[]>;
-      const data = dateList.map((date, i) => {
-        const gv: Record<string, number | null> = {};
-        for (const [key, arr] of Object.entries(groupValues)) {
-          gv[key] = arr[i];
-        }
-        return {
-          userId,
-          indicatorId,
-          stockId,
-          date,
-          groupValues: gv,
-        };
-      });
-
-      const result = await prisma.indicatorValueCache.createMany({
-        data,
-        skipDuplicates: true,
-      });
-      savedCount = result.count;
-    } else {
-      const singleValues = values as (number | null)[];
-      const data = dateList.map((date, i) => ({
-        userId,
+  } else {
+    // Single indicator - values is an array
+    const singleValues = values as (number | null)[];
+    const data = priceRecords
+      .map((pr, i) => ({
         indicatorId,
-        stockId,
-        date,
+        stockPriceId: pr.stockPriceId,
+        version,
         value: singleValues[i] !== null ? new Prisma.Decimal(singleValues[i]!) : null,
-      }));
+      }))
+      .filter((_, i) => singleValues[i] !== null); // Only save non-null values
 
-      const result = await prisma.indicatorValueCache.createMany({
+    if (data.length > 0) {
+      const result = await prisma.indicatorValue.createMany({
         data,
         skipDuplicates: true,
       });
@@ -283,16 +277,29 @@ async function saveIndicatorValues(
     }
   }
 
+  // Update StockIndicator tracking
+  await prisma.stockIndicator.upsert({
+    where: {
+      stockId_indicatorId: { stockId, indicatorId },
+    },
+    create: {
+      stockId,
+      indicatorId,
+      version,
+      rowCount: savedCount,
+    },
+    update: {
+      version,
+      rowCount: savedCount,
+      computedAt: new Date(),
+    },
+  });
+
   return savedCount;
 }
 
 /**
  * Compute an indicator for a stock
- *
- * @param indicatorId - The indicator ID to compute
- * @param stockId - The stock ID to compute for
- * @param userId - The user ID (required for private indicators)
- * @param options - Computation options
  */
 export async function computeIndicator(
   indicatorId: string,
@@ -320,7 +327,7 @@ export async function computeIndicator(
 
     // Check access permissions
     const isOwner = indicator.createdBy === userId;
-    const isPublic = indicator.visibleTo.length === 0;  // Empty array = public
+    const isPublic = indicator.visibleTo.length === 0;
     const hasAccess = userId ? indicator.visibleTo.includes(userId) : false;
 
     if (!isOwner && !isPublic && !hasAccess) {
@@ -332,19 +339,32 @@ export async function computeIndicator(
       };
     }
 
-    // Load stock metadata
-    const stock = await getStockById(stockId);
-    if (!stock) {
-      return {
-        success: false,
-        stockId,
-        indicatorId,
-        error: 'Stock not found',
-      };
+    // Check if already computed with current version
+    if (!forceRecompute) {
+      const alreadyComputed = await isIndicatorComputed(indicatorId, stockId, indicator.version);
+      if (alreadyComputed) {
+        const existingValues = await getCachedIndicatorValues(indicatorId, stockId, indicator.version);
+        return {
+          success: true,
+          stockId,
+          indicatorId,
+          version: indicator.version,
+          rowsComputed: 0,
+          cachedRows: existingValues.size,
+        };
+      }
     }
 
     // Load stock prices
-    const prices = await getStockPrices(stockId, { startDate, endDate });
+    const priceWhere: any = { stockId };
+    if (startDate) priceWhere.date = { ...priceWhere.date, gte: startDate };
+    if (endDate) priceWhere.date = { ...priceWhere.date, lte: endDate };
+
+    const prices = await prisma.stockPrice.findMany({
+      where: priceWhere,
+      orderBy: { date: 'asc' },
+    });
+
     if (prices.length === 0) {
       return {
         success: false,
@@ -354,26 +374,36 @@ export async function computeIndicator(
       };
     }
 
+    // Convert Decimal fields to numbers
+    const pricesWithNumbers = prices.map(p => ({
+      id: p.id,
+      date: p.date,
+      open: Number(p.open),
+      high: Number(p.high),
+      low: Number(p.low),
+      close: Number(p.close),
+      volume: p.volume,
+      turnover: p.turnover ? Number(p.turnover) : null,
+      amplitude: p.amplitude ? Number(p.amplitude) : null,
+      changePct: p.changePct ? Number(p.changePct) : null,
+      changeAmount: p.changeAmount ? Number(p.changeAmount) : null,
+      turnoverRate: p.turnoverRate ? Number(p.turnoverRate) : null,
+    }));
+
     // Load dependent indicator values
     const existingIndicators = new Map<string, Map<string, IndicatorValueData>>();
 
     for (const depId of indicator.dependencies) {
-      // Load dependent indicator to check if it's public or private
       const depIndicator = await loadIndicator(depId);
       if (depIndicator) {
-        const depIsPublic = depIndicator.visibleTo.length === 0;
-        const depValues = await getCachedIndicatorValues(
-          depId,
-          stockId,
-          userId,
-          depIsPublic
-        );
+        const depValues = await getCachedIndicatorValues(depId, stockId, depIndicator.version);
         existingIndicators.set(depIndicator.outputColumn, depValues);
       }
     }
 
     // Build data records for Python
-    const dataRecords = buildDataRecords(prices, existingIndicators);
+    const priceRecords = buildDataRecords(pricesWithNumbers, existingIndicators);
+    const dataRecords = priceRecords.map(pr => pr.data);
 
     // Execute Python indicator
     const executionResult: PythonExecutionResult = await executePythonIndicator({
@@ -394,7 +424,7 @@ export async function computeIndicator(
       };
     }
 
-    // Validate group indicator output
+    // Validate and save results
     if (indicator.isGroup) {
       const valuesDict = executionResult.values as Record<string, (number | null)[]>;
 
@@ -428,15 +458,11 @@ export async function computeIndicator(
         }
       }
 
-      // Save to database
-      // For public indicators, save to shared cache
-      // For private/unlisted, save to user-specific cache
       const savedCount = await saveIndicatorValues(
         indicatorId,
         stockId,
-        userId,
-        isPublic,
-        prices,
+        indicator.version,
+        priceRecords,
         filteredValues,
         true
       );
@@ -445,17 +471,16 @@ export async function computeIndicator(
         success: true,
         stockId,
         indicatorId,
+        version: indicator.version,
         rowsComputed: prices.length,
         cachedRows: savedCount,
       };
     } else {
-      // Single indicator
       const savedCount = await saveIndicatorValues(
         indicatorId,
         stockId,
-        userId,
-        isPublic,
-        prices,
+        indicator.version,
+        priceRecords,
         executionResult.values as (number | null)[],
         false
       );
@@ -464,6 +489,7 @@ export async function computeIndicator(
         success: true,
         stockId,
         indicatorId,
+        version: indicator.version,
         rowsComputed: prices.length,
         cachedRows: savedCount,
       };
@@ -503,8 +529,7 @@ export async function computeIndicators(
 }
 
 /**
- * Get indicator values for display
- * Returns cached values or computes if not available
+ * Get indicator values for display (with JOIN to get dates)
  */
 export async function getIndicatorValues(
   indicatorId: string,
@@ -518,28 +543,30 @@ export async function getIndicatorValues(
 ): Promise<{
   values: IndicatorValueData[];
   computed: boolean;
+  version?: number;
   error?: string;
 }> {
   const { startDate, endDate, autoCompute = true } = options || {};
 
-  // Load indicator to check visibility
+  // Load indicator to check visibility and version
   const indicator = await loadIndicator(indicatorId);
   if (!indicator) {
     return { values: [], computed: false, error: 'Indicator not found' };
   }
 
+  // Check access
+  const isOwner = indicator.createdBy === userId;
   const isPublic = indicator.visibleTo.length === 0;
+  const hasAccess = indicator.visibleTo.includes(userId);
 
-  // Try to load cached values
-  const cachedValues = await getCachedIndicatorValues(
-    indicatorId,
-    stockId,
-    userId,
-    isPublic
-  );
+  if (!isOwner && !isPublic && !hasAccess) {
+    return { values: [], computed: false, error: 'Access denied' };
+  }
+
+  // Try to load cached values with current version
+  const cachedValues = await getCachedIndicatorValues(indicatorId, stockId, indicator.version);
 
   if (cachedValues.size > 0) {
-    // Filter by date range if specified
     let values = Array.from(cachedValues.values());
 
     if (startDate) {
@@ -549,7 +576,7 @@ export async function getIndicatorValues(
       values = values.filter(v => v.date <= endDate);
     }
 
-    return { values, computed: false };
+    return { values, computed: false, version: indicator.version };
   }
 
   // No cached values - compute if autoCompute is enabled
@@ -564,12 +591,7 @@ export async function getIndicatorValues(
     }
 
     // Load the newly computed values
-    const newValues = await getCachedIndicatorValues(
-      indicatorId,
-      stockId,
-      userId,
-      isPublic
-    );
+    const newValues = await getCachedIndicatorValues(indicatorId, stockId, indicator.version);
 
     let values = Array.from(newValues.values());
 
@@ -580,42 +602,61 @@ export async function getIndicatorValues(
       values = values.filter(v => v.date <= endDate);
     }
 
-    return { values, computed: true };
+    return { values, computed: true, version: indicator.version };
   }
 
-  return { values: [], computed: false };
+  return { values: [], computed: false, version: indicator.version };
 }
 
 /**
- * Clear cached indicator values
+ * Clear cached indicator values (for a specific version or all versions)
  */
 export async function clearIndicatorCache(
   indicatorId: string,
   stockId?: string,
-  userId?: string
-): Promise<{ publicDeleted: number; privateDeleted: number }> {
-  let publicDeleted = 0;
-  let privateDeleted = 0;
+  version?: number
+): Promise<{ deleted: number }> {
+  const where: any = { indicatorId };
 
-  // Clear public cache
-  const publicWhere: any = { indicatorId };
-  if (stockId) publicWhere.stockId = stockId;
-
-  const publicResult = await prisma.indicatorValue.deleteMany({
-    where: publicWhere,
-  });
-  publicDeleted = publicResult.count;
-
-  // Clear private cache
-  if (userId) {
-    const privateWhere: any = { indicatorId, userId };
-    if (stockId) privateWhere.stockId = stockId;
-
-    const privateResult = await prisma.indicatorValueCache.deleteMany({
-      where: privateWhere,
-    });
-    privateDeleted = privateResult.count;
+  if (version !== undefined) {
+    where.version = version;
   }
 
-  return { publicDeleted, privateDeleted };
+  if (stockId) {
+    where.stockPrice = { stockId };
+  }
+
+  const result = await prisma.indicatorValue.deleteMany({ where });
+
+  // Also update StockIndicator tracking if clearing specific stock
+  if (stockId) {
+    await prisma.stockIndicator.deleteMany({
+      where: { indicatorId, stockId },
+    });
+  }
+
+  return { deleted: result.count };
+}
+
+/**
+ * Clean up old version caches (background task)
+ */
+export async function cleanupOldVersionCaches(): Promise<{ deleted: number }> {
+  // Delete indicator values where version doesn't match current indicator version
+  const result = await prisma.$executeRaw`
+    DELETE FROM "IndicatorValue" iv
+    WHERE iv.version != (
+      SELECT version FROM "Indicator" WHERE id = iv."indicatorId"
+    )
+  `;
+
+  // Also clean up StockIndicator records with old versions
+  await prisma.$executeRaw`
+    DELETE FROM "StockIndicator" si
+    WHERE si.version != (
+      SELECT version FROM "Indicator" WHERE id = si."indicatorId"
+    )
+  `;
+
+  return { deleted: Number(result) };
 }

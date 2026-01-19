@@ -9,6 +9,7 @@ import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
 import { validatePythonCode } from '@/lib/indicator-validator';
 import { detectDependencies } from '@/lib/detect-dependencies';
+import { computeCodeHash } from '@/lib/code-hash';
 
 export const runtime = 'nodejs';
 
@@ -35,6 +36,8 @@ export async function GET() {
       description: ui.indicator.description,
       pythonCode: ui.indicator.pythonCode,
       outputColumn: ui.indicator.outputColumn,
+      version: ui.indicator.version,
+      codeHash: ui.indicator.codeHash,
       dependencies: ui.indicator.dependencies,
       dependencyColumns: ui.indicator.dependencyColumns,
       isGroup: ui.indicator.isGroup,
@@ -126,6 +129,9 @@ export async function POST(request: Request) {
     });
     const { dependencies, dependencyColumns } = detectDependencies(pythonCode, allIndicators);
 
+    // Compute code hash for versioning
+    const codeHash = computeCodeHash(pythonCode);
+
     // Create indicator
     const indicator = await prisma.indicator.create({
       data: {
@@ -135,6 +141,8 @@ export async function POST(request: Request) {
         description,
         pythonCode,
         outputColumn: isGroup ? groupName : (outputColumn || name),
+        version: 1,
+        codeHash,
         dependencies,
         dependencyColumns,
         isGroup: isGroup || false,

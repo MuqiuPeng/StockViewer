@@ -214,8 +214,8 @@ export class DatabaseStorageProvider implements StorageProvider {
   async clearAll(): Promise<void> {
     // Delete all user data from all tables
     // Note: Stock/StockPrice data is shared and NOT deleted
+    // Note: IndicatorValue is also shared (linked to StockPrice) and NOT deleted
     await prisma.$transaction([
-      prisma.indicatorValueCache.deleteMany({ where: { userId: this.userId } }),
       prisma.userIndicator.deleteMany({ where: { userId: this.userId } }),
       prisma.indicator.deleteMany({ where: { createdBy: this.userId } }),
       prisma.backtestHistoryEntry.deleteMany({ where: { userId: this.userId } }),
