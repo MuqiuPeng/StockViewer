@@ -148,7 +148,7 @@ export default function DatasetManagement() {
       const response = await fetch('/api/add-dataset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, dataSource }),
+        body: JSON.stringify({ symbol, dataSource, forceUpdate: true }),
       });
 
       const data = await response.json();

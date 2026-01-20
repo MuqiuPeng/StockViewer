@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     const { userId } = authResult;
 
     const body = await request.json();
-    const { symbol, dataSource, name, startDate, endDate } = body;
+    const { symbol, dataSource, name, startDate, endDate, forceUpdate } = body;
 
     // Validate required fields
     if (!symbol || typeof symbol !== 'string') {
@@ -59,7 +59,8 @@ export async function POST(request: Request) {
     });
 
     // Check if user already has this stock in their collection
-    if (stock) {
+    // Skip early return if forceUpdate is true (user wants to refresh data)
+    if (stock && !forceUpdate) {
       const existingUserStock = await prisma.userStock.findUnique({
         where: {
           userId_stockId: { userId, stockId: stock.id },
