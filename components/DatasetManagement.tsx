@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import AddDatasetModal from './AddDatasetModal';
 import GroupManager from './GroupManager';
+import TicketRequestModal from './TicketRequestModal';
 import { getDataSourceConfig } from '@/lib/data-sources';
 
 interface DatasetInfo {
@@ -56,6 +57,7 @@ export default function DatasetManagement() {
   const [searchName, setSearchName] = useState('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
+  const [ticketModalStock, setTicketModalStock] = useState<DatasetInfo | null>(null);
 
   useEffect(() => {
     loadDatasets();
@@ -654,8 +656,16 @@ export default function DatasetManagement() {
                                 onClick={() => handleUpdate(dataset.name)}
                                 disabled={isUpdating[dataset.name]}
                                 className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50"
+                                title="Incremental update (fetch new data only)"
                               >
                                 {isUpdating[dataset.name] ? 'Updating...' : 'Update'}
+                              </button>
+                              <button
+                                onClick={() => setTicketModalStock(dataset)}
+                                className="px-2 py-1 bg-orange-600 text-white rounded text-xs hover:bg-orange-700"
+                                title="Request admin approval for full data refresh"
+                              >
+                                Full Refresh
                               </button>
                               <button
                                 onClick={() => handleEditName(dataset)}
@@ -820,6 +830,23 @@ export default function DatasetManagement() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Ticket Request Modal */}
+      {ticketModalStock && (
+        <TicketRequestModal
+          isOpen={true}
+          onClose={() => setTicketModalStock(null)}
+          stock={{
+            id: ticketModalStock.id,
+            symbol: ticketModalStock.code,
+            name: ticketModalStock.name,
+            dataSource: ticketModalStock.dataSource || 'stock_zh_a_hist',
+          }}
+          onSuccess={() => {
+            alert('Request submitted! An admin will review it soon.');
+          }}
+        />
       )}
     </div>
   );

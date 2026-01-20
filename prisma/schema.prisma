@@ -67,6 +67,10 @@ model User {
   backtestHistory BacktestHistoryEntry[]
   settings        UserSettings?
 
+  // Tickets
+  submittedTickets Ticket[] @relation("TicketSubmitter")
+  reviewedTickets  Ticket[] @relation("TicketReviewer")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -455,4 +459,46 @@ model DataImportJob {
 
   @@index([status])
   @@index([symbol, dataSource])
+}
+
+// ============================================================================
+// TICKET SYSTEM
+// ============================================================================
+
+enum TicketType {
+  FULL_REFRESH // Request full refresh of stock data
+  CUSTOM_DATA  // Request to upload custom data (future)
+}
+
+enum TicketStatus {
+  PENDING  // Awaiting review
+  APPROVED // Approved (processed or processing)
+  REJECTED // Rejected
+}
+
+/// Tickets for admin approval
+model Ticket {
+  id     String       @id @default(cuid())
+  userId String
+  type   TicketType
+  status TicketStatus @default(PENDING)
+
+  // Request details (JSON: { stockId, symbol, dataSource, reason })
+  payload Json
+
+  // Review info
+  reviewedBy String?
+  reviewNote String?   @db.Text
+  reviewedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User  @relation("TicketSubmitter", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer User? @relation("TicketReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([status])
+  @@index([type, status])
+  @@index([createdAt])
 }
