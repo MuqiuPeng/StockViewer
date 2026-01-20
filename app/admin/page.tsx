@@ -58,6 +58,9 @@ export default function AdminPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
 
+  // Admin verification state - null means not yet checked
+  const [isAdminVerified, setIsAdminVerified] = useState<boolean | null>(null);
+
   const [activeTab, setActiveTab] = useState<Tab>('users');
 
   // Tickets state
@@ -131,17 +134,40 @@ export default function AdminPage() {
     }
   }, [userStatusFilter, router]);
 
+  // First, verify admin status before loading any data
   useEffect(() => {
     if (status === 'unauthenticated') {
-      router.push('/auth/signin');
+      router.replace('/auth/signin');
       return;
     }
 
     if (status === 'authenticated') {
+      // Check admin status first
+      fetch('/api/admin/status')
+        .then((res) => res.json())
+        .then((data) => {
+          if (!data.isAdmin) {
+            // Not admin - redirect immediately
+            router.replace('/');
+          } else {
+            // Admin verified - allow rendering
+            setIsAdminVerified(true);
+          }
+        })
+        .catch(() => {
+          // Error checking admin status - redirect for safety
+          router.replace('/');
+        });
+    }
+  }, [status, router]);
+
+  // Only load data after admin is verified
+  useEffect(() => {
+    if (isAdminVerified) {
       fetchTickets();
       fetchUsers();
     }
-  }, [status, router, fetchTickets, fetchUsers]);
+  }, [isAdminVerified, fetchTickets, fetchUsers]);
 
   const handleTicketAction = async (ticketId: string, action: 'approve' | 'reject') => {
     const note = action === 'reject'
@@ -274,12 +300,19 @@ export default function AdminPage() {
     }
   };
 
-  if (status === 'loading') {
+  // Show nothing while checking authentication or admin status
+  // This prevents any admin content from flashing before redirect
+  if (status === 'loading' || isAdminVerified === null) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900">
         <div className="text-gray-600 dark:text-gray-400">Loading...</div>
       </div>
     );
+  }
+
+  // Not admin - show nothing (redirect is in progress)
+  if (!isAdminVerified) {
+    return null;
   }
 
   if (error) {
