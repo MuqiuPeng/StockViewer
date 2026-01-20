@@ -827,6 +827,7 @@ export default function ChartPanel({
           priceFormat: priceFormat,
           priceLineVisible: false,
           lastValueVisible: false,
+          crosshairMarkerRadius: 3,  // Smaller crosshair dot
         });
         currentSeries.set(indicator, lineSeries);
 
@@ -923,6 +924,7 @@ export default function ChartPanel({
           priceFormat: priceFormat,
           priceLineVisible: false,
           lastValueVisible: false,
+          crosshairMarkerRadius: 3,  // Smaller crosshair dot
         });
         currentSeries.set(indicator, lineSeries);
 
