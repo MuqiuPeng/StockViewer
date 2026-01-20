@@ -75,9 +75,9 @@ export default function Navbar() {
                 }`}
               >
                 Admin
-                {adminStatus.pendingTickets > 0 && (
+                {(adminStatus.pendingTickets ?? 0) > 0 && (
                   <span className="absolute -top-1.5 -right-3 min-w-[18px] h-[18px] flex items-center justify-center px-1 text-xs font-medium text-white bg-red-500 rounded-full">
-                    {adminStatus.pendingTickets > 99 ? '99+' : adminStatus.pendingTickets}
+                    {adminStatus.pendingTickets! > 99 ? '99+' : adminStatus.pendingTickets}
                   </span>
                 )}
               </Link>
