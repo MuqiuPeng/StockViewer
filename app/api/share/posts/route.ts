@@ -22,6 +22,10 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const limit = parseInt(searchParams.get('limit') || '20');
     const type = searchParams.get('type'); // 'dataset', 'indicator', 'strategy', or null for all
+    const search = searchParams.get('search'); // Search in title/content
+    const userEmail = searchParams.get('userEmail'); // Filter by user email
+    const dateFrom = searchParams.get('dateFrom'); // Filter by date range
+    const dateTo = searchParams.get('dateTo');
 
     // Build where clause
     const where: Record<string, unknown> = {};
@@ -31,6 +35,35 @@ export async function GET(request: NextRequest) {
       where.indicatorId = { not: null };
     } else if (type === 'strategy') {
       where.strategyId = { not: null };
+    }
+
+    // Search in title or content
+    if (search && search.trim()) {
+      where.OR = [
+        { title: { contains: search.trim(), mode: 'insensitive' } },
+        { content: { contains: search.trim(), mode: 'insensitive' } },
+      ];
+    }
+
+    // Filter by user email
+    if (userEmail && userEmail.trim()) {
+      where.user = {
+        email: { contains: userEmail.trim(), mode: 'insensitive' },
+      };
+    }
+
+    // Filter by date range
+    if (dateFrom || dateTo) {
+      where.createdAt = {};
+      if (dateFrom) {
+        (where.createdAt as Record<string, Date>).gte = new Date(dateFrom);
+      }
+      if (dateTo) {
+        // Include the entire end day
+        const endDate = new Date(dateTo);
+        endDate.setHours(23, 59, 59, 999);
+        (where.createdAt as Record<string, Date>).lte = endDate;
+      }
     }
 
     // Get total count

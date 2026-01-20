@@ -52,12 +52,31 @@ export default function SharePageContent() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [importingPost, setImportingPost] = useState<SharePost | null>(null);
 
+  // Search filters
+  const [search, setSearch] = useState('');
+  const [userEmail, setUserEmail] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+
   const fetchPosts = useCallback(async () => {
     try {
       setLoading(true);
       const params = new URLSearchParams();
       if (filterType !== 'all') {
         params.set('type', filterType);
+      }
+      if (search.trim()) {
+        params.set('search', search.trim());
+      }
+      if (userEmail.trim()) {
+        params.set('userEmail', userEmail.trim());
+      }
+      if (dateFrom) {
+        params.set('dateFrom', dateFrom);
+      }
+      if (dateTo) {
+        params.set('dateTo', dateTo);
       }
       params.set('page', page.toString());
       params.set('limit', '20');
@@ -76,11 +95,21 @@ export default function SharePageContent() {
     } finally {
       setLoading(false);
     }
-  }, [filterType, page]);
+  }, [filterType, page, search, userEmail, dateFrom, dateTo]);
 
   useEffect(() => {
     fetchPosts();
   }, [fetchPosts]);
+
+  const clearFilters = () => {
+    setSearch('');
+    setUserEmail('');
+    setDateFrom('');
+    setDateTo('');
+    setPage(1);
+  };
+
+  const hasActiveFilters = search || userEmail || dateFrom || dateTo;
 
   const handleImportDataset = async (post: SharePost) => {
     if (!post.stock) return;
@@ -201,7 +230,7 @@ export default function SharePageContent() {
         </div>
 
         {/* Filter Tabs */}
-        <div className="mb-6 flex gap-2">
+        <div className="mb-4 flex gap-2 flex-wrap items-center">
           {(['all', 'dataset', 'indicator', 'strategy'] as FilterType[]).map((type) => (
             <button
               key={type}
@@ -218,7 +247,108 @@ export default function SharePageContent() {
               {type === 'all' ? 'All' : type.charAt(0).toUpperCase() + type.slice(1) + 's'}
             </button>
           ))}
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`ml-auto px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1 ${
+              showFilters || hasActiveFilters
+                ? 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300'
+                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            Filters
+            {hasActiveFilters && (
+              <span className="ml-1 w-2 h-2 bg-blue-500 rounded-full"></span>
+            )}
+          </button>
         </div>
+
+        {/* Search & Filter Panel */}
+        {showFilters && (
+          <div className="mb-6 p-4 bg-white dark:bg-gray-800 rounded-lg shadow">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Search */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Search Title/Content
+                </label>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="Search posts..."
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* User Email */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  User Email
+                </label>
+                <input
+                  type="text"
+                  value={userEmail}
+                  onChange={(e) => {
+                    setUserEmail(e.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="Filter by email..."
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Date From */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  From Date
+                </label>
+                <input
+                  type="date"
+                  value={dateFrom}
+                  onChange={(e) => {
+                    setDateFrom(e.target.value);
+                    setPage(1);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Date To */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  To Date
+                </label>
+                <input
+                  type="date"
+                  value={dateTo}
+                  onChange={(e) => {
+                    setDateTo(e.target.value);
+                    setPage(1);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* Clear Filters */}
+            {hasActiveFilters && (
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={clearFilters}
+                  className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                >
+                  Clear all filters
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Posts Feed */}
         {loading ? (
