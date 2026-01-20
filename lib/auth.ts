@@ -83,7 +83,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // Refresh status on update trigger or periodically
       if (trigger === 'update' && token.id) {
         const dbUser = await prisma.user.findUnique({
-          where: { id: token.id },
+          where: { id: token.id as string },
           select: { status: true },
         });
         token.status = dbUser?.status || UserStatus.PENDING;
