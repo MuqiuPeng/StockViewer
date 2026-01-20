@@ -4,16 +4,34 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTheme } from '@/components/ThemeProvider';
 import { useSession, signOut } from 'next-auth/react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+
+interface AdminStatus {
+  isAdmin: boolean;
+  pendingTickets?: number;
+}
 
 export default function Navbar() {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
   const { data: session, status } = useSession();
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [adminStatus, setAdminStatus] = useState<AdminStatus>({ isAdmin: false });
 
   // Check if we're in database mode (auth required)
   const isDatabaseMode = process.env.NEXT_PUBLIC_STORAGE_MODE === 'database';
+
+  // Fetch admin status when user is logged in
+  useEffect(() => {
+    if (session?.user) {
+      fetch('/api/admin/status')
+        .then((res) => res.json())
+        .then((data) => setAdminStatus(data))
+        .catch(() => setAdminStatus({ isAdmin: false }));
+    } else {
+      setAdminStatus({ isAdmin: false });
+    }
+  }, [session]);
 
   const navItems = [
     { href: '/viewer', label: 'Viewer' },
@@ -47,6 +65,23 @@ export default function Navbar() {
                 {item.label}
               </Link>
             ))}
+            {adminStatus.isAdmin && (
+              <Link
+                href="/admin"
+                className={`relative ${
+                  pathname === '/admin'
+                    ? 'text-gray-900 dark:text-white font-medium'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                }`}
+              >
+                Admin
+                {adminStatus.pendingTickets && adminStatus.pendingTickets > 0 && (
+                  <span className="absolute -top-1.5 -right-3 min-w-[18px] h-[18px] flex items-center justify-center px-1 text-xs font-medium text-white bg-red-500 rounded-full">
+                    {adminStatus.pendingTickets > 99 ? '99+' : adminStatus.pendingTickets}
+                  </span>
+                )}
+              </Link>
+            )}
           </nav>
         </div>
 
