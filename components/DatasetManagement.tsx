@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import AddDatasetModal from './AddDatasetModal';
 import GroupManager from './GroupManager';
 import TicketRequestModal from './TicketRequestModal';
+import CsvUploadModal from './CsvUploadModal';
 import { getDataSourceConfig } from '@/lib/data-sources';
 
 interface DatasetInfo {
@@ -58,6 +59,7 @@ export default function DatasetManagement() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
   const [ticketModalStock, setTicketModalStock] = useState<DatasetInfo | null>(null);
+  const [isCsvUploadModalOpen, setIsCsvUploadModalOpen] = useState(false);
 
   useEffect(() => {
     loadDatasets();
@@ -199,12 +201,28 @@ export default function DatasetManagement() {
       return;
     }
 
-    if (!confirm(`Update ${selectedDatasets.size} selected dataset(s)?`)) {
+    // Filter out custom_upload datasets
+    const selectedArray = Array.from(selectedDatasets);
+    const updatableDatasets = selectedArray.filter(filename => {
+      const dataset = datasets.find(ds => ds.filename === filename);
+      return dataset && dataset.dataSource !== 'custom_upload';
+    });
+
+    if (updatableDatasets.length === 0) {
+      alert('No updatable datasets selected. Custom uploaded datasets cannot be updated.');
       return;
     }
 
-    const selectedArray = Array.from(selectedDatasets);
-    for (const filename of selectedArray) {
+    const skippedCount = selectedArray.length - updatableDatasets.length;
+    const confirmMsg = skippedCount > 0
+      ? `Update ${updatableDatasets.length} dataset(s)? (${skippedCount} custom uploaded dataset(s) will be skipped)`
+      : `Update ${updatableDatasets.length} selected dataset(s)?`;
+
+    if (!confirm(confirmMsg)) {
+      return;
+    }
+
+    for (const filename of updatableDatasets) {
       const dataset = datasets.find(ds => ds.filename === filename);
       if (dataset) {
         await handleUpdate(dataset.name);
@@ -542,6 +560,16 @@ export default function DatasetManagement() {
               </button>
               <button
                 onClick={() => {
+                  setIsCsvUploadModalOpen(true);
+                  setIsSettingsOpen(false);
+                }}
+                className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+              >
+                <span className="w-2 h-2 rounded-full bg-orange-500" />
+                Upload CSV
+              </button>
+              <button
+                onClick={() => {
                   setIsGroupManagerOpen(true);
                   setIsSettingsOpen(false);
                 }}
@@ -652,21 +680,25 @@ export default function DatasetManagement() {
                           </td>
                           <td className="border border-gray-200 dark:border-gray-600 p-2">
                             <div className="flex gap-1 flex-wrap">
-                              <button
-                                onClick={() => handleUpdate(dataset.name)}
-                                disabled={isUpdating[dataset.name]}
-                                className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50"
-                                title="Incremental update (fetch new data only)"
-                              >
-                                {isUpdating[dataset.name] ? 'Updating...' : 'Update'}
-                              </button>
-                              <button
-                                onClick={() => setTicketModalStock(dataset)}
-                                className="px-2 py-1 bg-orange-600 text-white rounded text-xs hover:bg-orange-700"
-                                title="Request admin approval for full data refresh"
-                              >
-                                Full Refresh
-                              </button>
+                              {dataset.dataSource !== 'custom_upload' && (
+                                <>
+                                  <button
+                                    onClick={() => handleUpdate(dataset.name)}
+                                    disabled={isUpdating[dataset.name]}
+                                    className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50"
+                                    title="Incremental update (fetch new data only)"
+                                  >
+                                    {isUpdating[dataset.name] ? 'Updating...' : 'Update'}
+                                  </button>
+                                  <button
+                                    onClick={() => setTicketModalStock(dataset)}
+                                    className="px-2 py-1 bg-orange-600 text-white rounded text-xs hover:bg-orange-700"
+                                    title="Request admin approval for full data refresh"
+                                  >
+                                    Full Refresh
+                                  </button>
+                                </>
+                              )}
                               <button
                                 onClick={() => handleEditName(dataset)}
                                 className="px-2 py-1 bg-purple-600 text-white rounded text-xs hover:bg-purple-700"
@@ -848,6 +880,13 @@ export default function DatasetManagement() {
           }}
         />
       )}
+
+      {/* CSV Upload Modal */}
+      <CsvUploadModal
+        isOpen={isCsvUploadModalOpen}
+        onClose={() => setIsCsvUploadModalOpen(false)}
+        onSuccess={loadDatasets}
+      />
     </div>
   );
 }

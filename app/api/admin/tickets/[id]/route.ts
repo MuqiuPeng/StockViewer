@@ -134,20 +134,34 @@ export async function PATCH(
       },
     });
 
-    // If approved and type is FULL_REFRESH, trigger the refresh
-    let refreshResult = null;
-    if (action === 'approve' && ticket.type === 'FULL_REFRESH') {
-      const payload = ticket.payload as { stockId: string; symbol: string; dataSource: string };
+    // Handle approved tickets based on type
+    let actionResult = null;
 
-      try {
-        // Perform full refresh directly
-        refreshResult = await performFullRefresh(payload.stockId, payload.symbol, payload.dataSource);
-      } catch (error) {
-        console.error('Full refresh failed:', error);
-        refreshResult = {
-          success: false,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        };
+    if (action === 'approve') {
+      if (ticket.type === 'FULL_REFRESH') {
+        // Full refresh of existing stock
+        const payload = ticket.payload as { stockId: string; symbol: string; dataSource: string };
+
+        try {
+          actionResult = await performFullRefresh(payload.stockId, payload.symbol, payload.dataSource);
+        } catch (error) {
+          console.error('Full refresh failed:', error);
+          actionResult = {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+      } else if (ticket.type === 'CUSTOM_DATA') {
+        // Import custom CSV data
+        try {
+          actionResult = await importCustomData(ticket.id, ticket.userId);
+        } catch (error) {
+          console.error('Custom data import failed:', error);
+          actionResult = {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
       }
     }
 
@@ -160,7 +174,7 @@ export async function PATCH(
         status: updatedTicket.status,
         reviewedAt: updatedTicket.reviewedAt,
       },
-      refreshResult,
+      actionResult,
     });
   } catch (error) {
     console.error('Error reviewing ticket:', error);
@@ -333,5 +347,108 @@ except Exception as e:
   return {
     success: true,
     message: `Full refresh completed: ${records.length} records imported`,
+  };
+}
+
+/**
+ * Import custom CSV data from ticket
+ */
+async function importCustomData(
+  ticketId: string,
+  submitterUserId: string
+): Promise<{ success: boolean; message?: string; error?: string; stockId?: string }> {
+  // Get ticket with CSV data
+  const ticket = await prisma.ticket.findUnique({
+    where: { id: ticketId },
+    include: { csvData: true },
+  });
+
+  if (!ticket) {
+    return { success: false, error: 'Ticket not found' };
+  }
+
+  if (!ticket.csvData) {
+    return { success: false, error: 'No CSV data found for this ticket' };
+  }
+
+  const payload = ticket.payload as { symbol: string; name: string; description?: string };
+  const csvData = ticket.csvData;
+  const records = csvData.data as Array<{
+    date: string;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+    turnover?: number;
+    amplitude?: number;
+    changePct?: number;
+    changeAmount?: number;
+    turnoverRate?: number;
+  }>;
+
+  if (!records || records.length === 0) {
+    return { success: false, error: 'No data records in CSV' };
+  }
+
+  // Create stock and import data in transaction
+  const result = await prisma.$transaction(async (tx) => {
+    // Create stock record
+    const stock = await tx.stock.create({
+      data: {
+        symbol: payload.symbol,
+        name: payload.name,
+        dataSource: 'custom_upload',
+        category: 'custom',
+        firstDate: new Date(records[0].date),
+        lastDate: new Date(records[records.length - 1].date),
+        rowCount: records.length,
+        lastUpdate: new Date(),
+      },
+    });
+
+    // Insert price data in batches
+    const batchSize = 1000;
+    for (let i = 0; i < records.length; i += batchSize) {
+      const batch = records.slice(i, i + batchSize);
+      await tx.stockPrice.createMany({
+        data: batch.map((r) => ({
+          stockId: stock.id,
+          date: new Date(r.date),
+          open: new Prisma.Decimal(r.open),
+          high: new Prisma.Decimal(r.high),
+          low: new Prisma.Decimal(r.low),
+          close: new Prisma.Decimal(r.close),
+          volume: BigInt(Math.round(r.volume)),
+          turnover: r.turnover !== undefined ? new Prisma.Decimal(r.turnover) : null,
+          amplitude: r.amplitude !== undefined ? new Prisma.Decimal(r.amplitude) : null,
+          changePct: r.changePct !== undefined ? new Prisma.Decimal(r.changePct) : null,
+          changeAmount: r.changeAmount !== undefined ? new Prisma.Decimal(r.changeAmount) : null,
+          turnoverRate: r.turnoverRate !== undefined ? new Prisma.Decimal(r.turnoverRate) : null,
+        })),
+        skipDuplicates: true,
+      });
+    }
+
+    // Add stock to submitter's collection
+    await tx.userStock.create({
+      data: {
+        userId: submitterUserId,
+        stockId: stock.id,
+      },
+    });
+
+    // Delete CSV data blob (no longer needed)
+    await tx.csvDataBlob.delete({
+      where: { ticketId },
+    });
+
+    return stock;
+  });
+
+  return {
+    success: true,
+    message: `Custom data imported: ${records.length} records for ${payload.symbol}`,
+    stockId: result.id,
   };
 }

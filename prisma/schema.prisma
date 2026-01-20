@@ -225,6 +225,7 @@ model UserIndicator {
   id          String   @id @default(cuid())
   userId      String
   indicatorId String
+  displayName String?  // Custom display name for this subscription
   addedAt     DateTime @default(now())
 
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -306,10 +307,11 @@ model Strategy {
 
 /// User's strategy collection (subscriptions)
 model UserStrategy {
-  id         String   @id @default(cuid())
-  userId     String
-  strategyId String
-  addedAt    DateTime @default(now())
+  id          String   @id @default(cuid())
+  userId      String
+  strategyId  String
+  displayName String?  // Custom display name for this subscription
+  addedAt     DateTime @default(now())
 
   user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   strategy Strategy @relation(fields: [strategyId], references: [id], onDelete: Cascade)
@@ -382,10 +384,11 @@ model StockGroup {
 
 /// User's group collection (subscriptions)
 model UserStockGroup {
-  id      String   @id @default(cuid())
-  userId  String
-  groupId String
-  addedAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  userId      String
+  groupId     String
+  displayName String?  // Custom display name for this subscription
+  addedAt     DateTime @default(now())
 
   user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   group StockGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
@@ -428,6 +431,7 @@ model UserViewSetting {
   id            String   @id @default(cuid())
   userId        String
   viewSettingId String
+  displayName   String?  // Custom display name for this subscription
   addedAt       DateTime @default(now())
 
   user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -499,6 +503,7 @@ model Ticket {
   status TicketStatus @default(PENDING)
 
   // Request details (JSON: { stockId, symbol, dataSource, reason })
+  // For CUSTOM_DATA: { symbol, name, description }
   payload Json
 
   // Review info
@@ -509,11 +514,30 @@ model Ticket {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user     User  @relation("TicketSubmitter", fields: [userId], references: [id], onDelete: Cascade)
-  reviewer User? @relation("TicketReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  user     User         @relation("TicketSubmitter", fields: [userId], references: [id], onDelete: Cascade)
+  reviewer User?        @relation("TicketReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  csvData  CsvDataBlob? // CSV data for CUSTOM_DATA tickets
 
   @@index([userId])
   @@index([status])
   @@index([type, status])
   @@index([createdAt])
+}
+
+/// Temporary storage for CSV data during ticket approval process
+model CsvDataBlob {
+  id       String @id @default(cuid())
+  ticketId String @unique
+
+  filename String
+  rowCount Int
+  fileSize Int // Size in bytes
+
+  // Parsed CSV data stored as JSON array
+  data          Json  @db.JsonB
+  columnMapping Json? // Column name mapping (original -> normalized)
+
+  createdAt DateTime @default(now())
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
 }
