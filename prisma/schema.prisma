@@ -80,6 +80,9 @@ model User {
   submittedTickets Ticket[] @relation("TicketSubmitter")
   reviewedTickets  Ticket[] @relation("TicketReviewer")
 
+  // Share posts
+  sharePosts SharePost[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -127,6 +130,7 @@ model Stock {
   priceData       StockPrice[]
   userStocks      UserStock[]
   stockIndicators StockIndicator[]
+  sharePosts      SharePost[]
 
   @@unique([symbol, dataSource])
   @@index([symbol])
@@ -213,6 +217,7 @@ model Indicator {
   userIndicators  UserIndicator[]
   indicatorValues IndicatorValue[]
   stockIndicators StockIndicator[]
+  sharePosts      SharePost[]
 
   @@unique([name]) // Globally unique names for shared indicators
   @@index([createdBy])
@@ -299,6 +304,7 @@ model Strategy {
   creator         User                   @relation("StrategyCreator", fields: [createdBy], references: [id], onDelete: Cascade)
   userStrategies  UserStrategy[]
   backtestHistory BacktestHistoryEntry[]
+  sharePosts      SharePost[]
 
   @@unique([name]) // Globally unique names for shared strategies
   @@index([createdBy])
@@ -540,4 +546,32 @@ model CsvDataBlob {
   createdAt DateTime @default(now())
 
   ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================================
+// SHARE POSTS
+// ============================================================================
+
+/// Share posts - users can share their datasets, indicators, or strategies
+model SharePost {
+  id      String  @id @default(cuid())
+  userId  String
+  title   String
+  content String? @db.Text // Optional post content
+
+  // What's being shared (only one should be set)
+  stockId     String?
+  indicatorId String?
+  strategyId  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stock     Stock?     @relation(fields: [stockId], references: [id], onDelete: Cascade)
+  indicator Indicator? @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
+  strategy  Strategy?  @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([createdAt])
 }
