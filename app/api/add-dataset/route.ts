@@ -128,7 +128,7 @@ export async function POST(request: Request) {
 
     // Calculate fetch date range
     let fetchStartDate = startDate;
-    if (isIncremental && stock.lastDate) {
+    if (isIncremental && stock && stock.lastDate) {
       // Incremental: fetch from the day after last stored date
       const nextDay = addDays(stock.lastDate, 1);
       fetchStartDate = formatDateForAKShare(nextDay);
