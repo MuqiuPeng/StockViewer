@@ -56,6 +56,29 @@ export default auth((req) => {
     return NextResponse.redirect(signInUrl);
   }
 
+  // Check user status - only allow APPROVED users
+  const userStatus = req.auth.user?.status;
+
+  // Allow pending approval page for non-approved users
+  if (pathname === '/auth/pending') {
+    return NextResponse.next();
+  }
+
+  // If user is not approved, redirect to pending page or return 403
+  if (userStatus !== 'APPROVED') {
+    const isApiRoute = pathname.startsWith('/api');
+
+    if (isApiRoute) {
+      return NextResponse.json(
+        { error: 'Forbidden', message: 'Account pending approval' },
+        { status: 403 }
+      );
+    }
+
+    // Redirect to pending approval page
+    return NextResponse.redirect(new URL('/auth/pending', req.url));
+  }
+
   return NextResponse.next();
 });
 

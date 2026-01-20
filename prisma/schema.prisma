@@ -42,11 +42,12 @@ model Session {
 }
 
 model User {
-  id            String    @id @default(cuid())
+  id            String     @id @default(cuid())
   name          String?
-  email         String?   @unique
+  email         String?    @unique
   emailVerified DateTime?
   image         String?
+  status        UserStatus @default(PENDING)
   accounts      Account[]
   sessions      Session[]
 
@@ -464,6 +465,12 @@ model DataImportJob {
 // ============================================================================
 // TICKET SYSTEM
 // ============================================================================
+
+enum UserStatus {
+  PENDING  // Awaiting admin approval
+  APPROVED // Approved, can access the app
+  REJECTED // Rejected, cannot access
+}
 
 enum TicketType {
   FULL_REFRESH // Request full refresh of stock data
