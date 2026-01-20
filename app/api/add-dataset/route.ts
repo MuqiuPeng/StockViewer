@@ -122,6 +122,16 @@ export async function POST(request: Request) {
       );
     }
 
+    // Check if stock exists and has a real name (not just symbol)
+    const existingStock = await prisma.stock.findUnique({
+      where: { symbol_dataSource: { symbol, dataSource } },
+      select: { name: true },
+    });
+
+    // Determine stock name: user-provided > API-fetched > existing real name > symbol
+    const hasRealName = existingStock && existingStock.name !== symbol;
+    const finalStockName = name || result.stockName || (hasRealName ? existingStock.name : symbol);
+
     // Create or update stock in shared pool
     stock = await prisma.stock.upsert({
       where: {
@@ -129,14 +139,14 @@ export async function POST(request: Request) {
       },
       create: {
         symbol,
-        name: name || symbol,
+        name: finalStockName,
         dataSource,
         firstDate: result.firstDate ? new Date(result.firstDate) : null,
         lastDate: result.lastDate ? new Date(result.lastDate) : null,
         rowCount: 0,
       },
       update: {
-        name: name || symbol,
+        name: finalStockName,
         lastUpdate: new Date(),
       },
     });
@@ -227,6 +237,7 @@ async function fetchStockData(
   data?: any[];
   firstDate?: string;
   lastDate?: string;
+  stockName?: string;
   error?: string;
 }> {
   const pythonCode = `
@@ -240,17 +251,46 @@ start_date = "${startDate || ''}"
 end_date = "${endDate || ''}"
 
 try:
+    stock_name = None
+
     # Fetch data based on data source
     if data_source == "stock_zh_a_hist":
         df = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_date or "19900101", end_date=end_date or "21001231", adjust="qfq")
+        # Try to get stock name
+        try:
+            info_df = ak.stock_individual_info_em(symbol=symbol)
+            if info_df is not None and len(info_df) > 0:
+                name_row = info_df[info_df['item'] == '股票简称']
+                if len(name_row) > 0:
+                    stock_name = name_row.iloc[0]['value']
+        except:
+            pass
     elif data_source == "stock_hk_hist":
         df = ak.stock_hk_hist(symbol=symbol, period="daily", start_date=start_date or "19900101", end_date=end_date or "21001231", adjust="qfq")
     elif data_source == "stock_us_hist":
         df = ak.stock_us_hist(symbol=symbol, period="daily", start_date=start_date or "19900101", end_date=end_date or "21001231", adjust="qfq")
     elif data_source == "fund_etf_hist_em":
         df = ak.fund_etf_hist_em(symbol=symbol, period="daily", start_date=start_date or "19900101", end_date=end_date or "21001231", adjust="qfq")
+        # Try to get ETF name
+        try:
+            etf_list = ak.fund_etf_spot_em()
+            if etf_list is not None:
+                match = etf_list[etf_list['代码'] == symbol]
+                if len(match) > 0:
+                    stock_name = match.iloc[0]['名称']
+        except:
+            pass
     elif data_source == "index_zh_a_hist":
         df = ak.index_zh_a_hist(symbol=symbol, period="daily", start_date=start_date or "19900101", end_date=end_date or "21001231")
+        # Try to get index name
+        try:
+            index_list = ak.stock_zh_index_spot_em()
+            if index_list is not None:
+                match = index_list[index_list['代码'] == symbol]
+                if len(match) > 0:
+                    stock_name = match.iloc[0]['名称']
+        except:
+            pass
     else:
         raise ValueError(f"Unsupported data source: {data_source}")
 
@@ -282,6 +322,7 @@ try:
         "rowCount": len(records),
         "firstDate": records[0]["date"] if records else None,
         "lastDate": records[-1]["date"] if records else None,
+        "stockName": stock_name,
         "data": records
     }))
 except Exception as e:
