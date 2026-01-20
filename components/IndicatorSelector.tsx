@@ -30,15 +30,6 @@ export default function IndicatorSelector({
     return indicators.filter(ind => ind.toLowerCase().includes(term));
   }, [indicators, searchTerm]);
 
-  // Get enabled indicators with their colors from the provided colorMap
-  const enabledWithColors = useMemo(() => {
-    const enabled = Array.from(enabledIndicators).sort();
-    return enabled.map((ind) => ({
-      name: ind,
-      color: colorMap?.get(ind) || '#999999', // Fallback color if not in map
-    }));
-  }, [enabledIndicators, colorMap]);
-
   const enabledCount = enabledIndicators.size;
 
   if (indicators.length === 0) {
@@ -70,24 +61,10 @@ export default function IndicatorSelector({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </div>
-        {isCollapsed && enabledCount > 0 && (
-          <div className="flex flex-wrap gap-1 mt-2">
-            {enabledWithColors.map(({ name, color }) => (
-              <div
-                key={name}
-                className="flex items-center gap-1 px-2 py-1 bg-white dark:bg-gray-800 rounded text-xs border border-gray-200 dark:border-gray-600"
-              >
-                <div
-                  className="w-3 h-3 rounded-full flex-shrink-0"
-                  style={{ backgroundColor: color }}
-                />
-                <span className="truncate dark:text-white">{name}</span>
-              </div>
-            ))}
+        {isCollapsed && (
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            {enabledCount > 0 ? `${enabledCount} selected` : 'No indicators selected'}
           </div>
-        )}
-        {isCollapsed && enabledCount === 0 && (
-          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">No indicators selected</div>
         )}
       </div>
 

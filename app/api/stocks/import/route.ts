@@ -320,7 +320,13 @@ except Exception as e:
     });
 
     // Delete existing price data for this stock (for full refresh)
+    // This also cascades to delete IndicatorValue records
     await prisma.stockPrice.deleteMany({
+      where: { stockId: stock.id },
+    });
+
+    // Clear StockIndicator tracking since indicator values are now deleted
+    await prisma.stockIndicator.deleteMany({
       where: { stockId: stock.id },
     });
 

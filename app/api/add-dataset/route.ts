@@ -153,7 +153,13 @@ export async function POST(request: Request) {
     });
 
     // Delete existing price data and re-import
+    // This also cascades to delete IndicatorValue records
     await prisma.stockPrice.deleteMany({
+      where: { stockId: stock.id },
+    });
+
+    // Clear StockIndicator tracking since indicator values are now deleted
+    await prisma.stockIndicator.deleteMany({
       where: { stockId: stock.id },
     });
 
