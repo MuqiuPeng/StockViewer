@@ -16,7 +16,7 @@ interface StockGroup {
 interface GroupManagerProps {
   isOpen: boolean;
   onClose: () => void;
-  datasets: Array<{ name: string; filename: string }>;
+  datasets: Array<{ id: string; name: string; filename: string }>;
 }
 
 export default function GroupManager({ isOpen, onClose, datasets }: GroupManagerProps) {
@@ -177,7 +177,7 @@ export default function GroupManager({ isOpen, onClose, datasets }: GroupManager
                       <div className="mt-3 pt-3 border-t border-gray-300 dark:border-gray-600">
                         <div className="flex flex-wrap gap-2">
                           {group.stockIds.map((stockId) => {
-                            const dataset = datasets.find(d => d.filename === stockId || d.name === stockId);
+                            const dataset = datasets.find(d => d.id === stockId || d.filename === stockId || d.name === stockId);
                             return (
                               <span
                                 key={stockId}

@@ -60,6 +60,8 @@ export default function DatasetManagement() {
   const settingsRef = useRef<HTMLDivElement>(null);
   const [ticketModalStock, setTicketModalStock] = useState<DatasetInfo | null>(null);
   const [isCsvUploadModalOpen, setIsCsvUploadModalOpen] = useState(false);
+  const [deleteRequestDataset, setDeleteRequestDataset] = useState<DatasetInfo | null>(null);
+  const [deleteRequestReason, setDeleteRequestReason] = useState('');
 
   useEffect(() => {
     loadDatasets();
@@ -288,9 +290,13 @@ export default function DatasetManagement() {
         throw new Error('Group not found');
       }
 
+      // Convert filenames to stock IDs
       const datasetsToAdd = targetDatasetForGroup === 'batch'
-        ? Array.from(selectedDatasets)
-        : [targetDatasetForGroup!];
+        ? Array.from(selectedDatasets).map(filename => {
+            const ds = datasets.find(d => d.filename === filename);
+            return ds?.id || filename;
+          })
+        : [datasets.find(d => d.filename === targetDatasetForGroup)?.id || targetDatasetForGroup!];
 
       const updatedStockIds = [...new Set([...group.stockIds, ...datasetsToAdd])];
 
@@ -364,6 +370,33 @@ export default function DatasetManagement() {
     setShowEditNameModal(false);
     setEditingDataset(null);
     setNewName('');
+  };
+
+  const handleRequestDelete = async () => {
+    if (!deleteRequestDataset) return;
+
+    try {
+      const response = await fetch('/api/tickets/delete-dataset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          stockId: deleteRequestDataset.id,
+          reason: deleteRequestReason.trim() || undefined,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to submit deletion request');
+      }
+
+      alert('Deletion request submitted! An admin will review it soon.');
+      setDeleteRequestDataset(null);
+      setDeleteRequestReason('');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to submit request');
+    }
   };
 
   const toggleGroupCollapse = (groupKey: string) => {
@@ -711,12 +744,22 @@ export default function DatasetManagement() {
                               >
                                 + Group
                               </button>
-                              <button
-                                onClick={() => handleDelete(dataset)}
-                                className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
-                              >
-                                Delete
-                              </button>
+                              {dataset.dataSource === 'custom_upload' ? (
+                                <button
+                                  onClick={() => setDeleteRequestDataset(dataset)}
+                                  className="px-2 py-1 bg-orange-600 text-white rounded text-xs hover:bg-orange-700"
+                                  title="Request admin approval to permanently delete this dataset"
+                                >
+                                  Request Delete
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleDelete(dataset)}
+                                  className="px-2 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
+                                >
+                                  Delete
+                                </button>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -734,7 +777,7 @@ export default function DatasetManagement() {
       <GroupManager
         isOpen={isGroupManagerOpen}
         onClose={handleGroupManagerClose}
-        datasets={datasets.map(ds => ({ name: ds.name, filename: ds.filename }))}
+        datasets={datasets.map(ds => ({ id: ds.id, name: ds.name, filename: ds.filename }))}
       />
 
       <AddDatasetModal
@@ -887,6 +930,67 @@ export default function DatasetManagement() {
         onClose={() => setIsCsvUploadModalOpen(false)}
         onSuccess={loadDatasets}
       />
+
+      {/* Delete Request Modal for Custom Datasets */}
+      {deleteRequestDataset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black bg-opacity-50"
+            onClick={() => {
+              setDeleteRequestDataset(null);
+              setDeleteRequestReason('');
+            }}
+          />
+          <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-4 dark:text-white">Request Dataset Deletion</h2>
+
+            <div className="mb-4">
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-3">
+                You are requesting to permanently delete this custom dataset:
+              </p>
+              <div className="bg-gray-100 dark:bg-gray-700 rounded p-3 mb-4">
+                <div className="font-medium dark:text-white">
+                  {deleteRequestDataset.code} - {deleteRequestDataset.name}
+                </div>
+                <div className="text-sm text-gray-500 dark:text-gray-400">
+                  {deleteRequestDataset.rowCount.toLocaleString()} rows
+                </div>
+              </div>
+              <p className="text-sm text-orange-600 dark:text-orange-400 mb-4">
+                This request will be reviewed by an admin. If approved, the dataset will be permanently deleted and cannot be recovered. Share posts referencing this dataset will remain but import will be disabled.
+              </p>
+              <label className="block text-sm font-medium mb-2 dark:text-white">
+                Reason (optional)
+              </label>
+              <textarea
+                value={deleteRequestReason}
+                onChange={(e) => setDeleteRequestReason(e.target.value)}
+                placeholder="Why do you want to delete this dataset?"
+                rows={3}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setDeleteRequestDataset(null);
+                  setDeleteRequestReason('');
+                }}
+                className="px-4 py-2 text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleRequestDelete}
+                className="px-4 py-2 text-white bg-orange-600 rounded hover:bg-orange-700"
+              >
+                Submit Request
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

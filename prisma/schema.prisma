@@ -491,8 +491,9 @@ enum UserStatus {
 }
 
 enum TicketType {
-  FULL_REFRESH // Request full refresh of stock data
-  CUSTOM_DATA  // Request to upload custom data (future)
+  FULL_REFRESH   // Request full refresh of stock data
+  CUSTOM_DATA    // Request to upload custom data
+  DELETE_DATASET // Request to delete a custom dataset
 }
 
 enum TicketStatus {
@@ -568,9 +569,9 @@ model SharePost {
   updatedAt DateTime @updatedAt
 
   user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  stock     Stock?     @relation(fields: [stockId], references: [id], onDelete: Cascade)
-  indicator Indicator? @relation(fields: [indicatorId], references: [id], onDelete: Cascade)
-  strategy  Strategy?  @relation(fields: [strategyId], references: [id], onDelete: Cascade)
+  stock     Stock?     @relation(fields: [stockId], references: [id], onDelete: SetNull)
+  indicator Indicator? @relation(fields: [indicatorId], references: [id], onDelete: SetNull)
+  strategy  Strategy?  @relation(fields: [strategyId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([createdAt])

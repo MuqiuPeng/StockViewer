@@ -16,7 +16,7 @@ interface GroupEditorModalProps {
   onClose: () => void;
   onSuccess: () => void;
   group?: StockGroup | null;
-  datasets: Array<{ name: string; filename: string }>;
+  datasets: Array<{ id: string; name: string; filename: string }>;
 }
 
 export default function GroupEditorModal({
@@ -37,7 +37,18 @@ export default function GroupEditorModal({
       if (group) {
         setName(group.name);
         setDescription(group.description || '');
-        setSelectedDatasets(group.stockIds || []);
+        // Convert any filename-based stockIds to database IDs for backwards compatibility
+        const normalizedIds = (group.stockIds || []).map(stockId => {
+          // If it matches a dataset's id, use as-is
+          const byId = datasets.find(d => d.id === stockId);
+          if (byId) return stockId;
+          // If it matches a filename, convert to id
+          const byFilename = datasets.find(d => d.filename === stockId);
+          if (byFilename) return byFilename.id;
+          // Otherwise keep original (might be a deleted dataset)
+          return stockId;
+        });
+        setSelectedDatasets(normalizedIds);
       } else {
         setName('');
         setDescription('');
@@ -45,7 +56,7 @@ export default function GroupEditorModal({
       }
       setError(null);
     }
-  }, [isOpen, group]);
+  }, [isOpen, group, datasets]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,11 +95,11 @@ export default function GroupEditorModal({
     }
   };
 
-  const toggleDataset = (datasetName: string) => {
+  const toggleDataset = (datasetId: string) => {
     setSelectedDatasets(prev =>
-      prev.includes(datasetName)
-        ? prev.filter(name => name !== datasetName)
-        : [...prev, datasetName]
+      prev.includes(datasetId)
+        ? prev.filter(id => id !== datasetId)
+        : [...prev, datasetId]
     );
   };
 
@@ -155,17 +166,16 @@ export default function GroupEditorModal({
                 ) : (
                   <div className="space-y-2">
                     {datasets.map((dataset) => {
-                      const datasetKey = dataset.filename || dataset.name;
-                      const isSelected = selectedDatasets.includes(datasetKey);
+                      const isSelected = selectedDatasets.includes(dataset.id);
                       return (
                         <label
-                          key={datasetKey}
+                          key={dataset.id}
                           className="flex items-center gap-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-700 rounded cursor-pointer"
                         >
                           <input
                             type="checkbox"
                             checked={isSelected}
-                            onChange={() => toggleDataset(datasetKey)}
+                            onChange={() => toggleDataset(dataset.id)}
                             className="rounded"
                           />
                           <span className="text-sm dark:text-white">{dataset.name}</span>

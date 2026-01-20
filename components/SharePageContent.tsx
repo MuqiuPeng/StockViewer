@@ -176,13 +176,14 @@ export default function SharePageContent() {
     fetchPosts();
   };
 
-  const getPostType = (post: SharePost): 'dataset' | 'indicator' | 'strategy' => {
+  const getPostType = (post: SharePost): 'dataset' | 'indicator' | 'strategy' | 'deleted' => {
     if (post.stock) return 'dataset';
     if (post.indicator) return 'indicator';
-    return 'strategy';
+    if (post.strategy) return 'strategy';
+    return 'deleted';
   };
 
-  const getTypeColor = (type: 'dataset' | 'indicator' | 'strategy') => {
+  const getTypeColor = (type: 'dataset' | 'indicator' | 'strategy' | 'deleted') => {
     switch (type) {
       case 'dataset':
         return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
@@ -190,6 +191,8 @@ export default function SharePageContent() {
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
       case 'strategy':
         return 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200';
+      case 'deleted':
+        return 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400';
     }
   };
 
@@ -465,11 +468,20 @@ export default function SharePageContent() {
                         </div>
                       </div>
                     )}
+                    {postType === 'deleted' && (
+                      <div className="text-gray-400 dark:text-gray-500 italic">
+                        This item has been deleted and is no longer available.
+                      </div>
+                    )}
                   </div>
 
                   {/* Action Button */}
                   <div className="flex justify-end">
-                    {post.isOwner ? (
+                    {postType === 'deleted' ? (
+                      <span className="text-sm text-gray-400 dark:text-gray-500 italic">
+                        Unavailable
+                      </span>
+                    ) : post.isOwner ? (
                       <span className="text-sm text-gray-400 dark:text-gray-500">
                         Your post
                       </span>

@@ -59,7 +59,25 @@ interface UserStats {
   REJECTED: number;
 }
 
-type Tab = 'tickets' | 'users';
+interface CustomDataset {
+  id: string;
+  symbol: string;
+  name: string;
+  dataSource: string;
+  rowCount: number;
+  firstDate: string | null;
+  lastDate: string | null;
+  createdAt: string;
+  uploader: {
+    id: string;
+    name: string | null;
+    email: string | null;
+    image: string | null;
+  } | null;
+  postCount: number;
+}
+
+type Tab = 'tickets' | 'users' | 'datasets';
 
 export default function AdminPage() {
   const { data: session, status } = useSession();
@@ -81,6 +99,12 @@ export default function AdminPage() {
   const [userStats, setUserStats] = useState<UserStats>({ PENDING: 0, APPROVED: 0, REJECTED: 0 });
   const [userStatusFilter, setUserStatusFilter] = useState<string>('PENDING');
   const [usersLoading, setUsersLoading] = useState(true);
+
+  // Datasets state
+  const [datasets, setDatasets] = useState<CustomDataset[]>([]);
+  const [datasetsTotal, setDatasetsTotal] = useState(0);
+  const [datasetsSearch, setDatasetsSearch] = useState('');
+  const [datasetsLoading, setDatasetsLoading] = useState(true);
 
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -141,6 +165,34 @@ export default function AdminPage() {
     }
   }, [userStatusFilter, router]);
 
+  const fetchDatasets = useCallback(async () => {
+    try {
+      setDatasetsLoading(true);
+      const params = new URLSearchParams();
+      if (datasetsSearch) {
+        params.set('search', datasetsSearch);
+      }
+
+      const response = await fetch(`/api/admin/datasets?${params}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          router.push('/');
+          return;
+        }
+        throw new Error(data.message || 'Failed to fetch datasets');
+      }
+
+      setDatasets(data.datasets);
+      setDatasetsTotal(data.pagination.total);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setDatasetsLoading(false);
+    }
+  }, [datasetsSearch, router]);
+
   // First, verify admin status before loading any data
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -173,8 +225,9 @@ export default function AdminPage() {
     if (isAdminVerified) {
       fetchTickets();
       fetchUsers();
+      fetchDatasets();
     }
-  }, [isAdminVerified, fetchTickets, fetchUsers]);
+  }, [isAdminVerified, fetchTickets, fetchUsers, fetchDatasets]);
 
   const handleTicketAction = async (ticketId: string, action: 'approve' | 'reject') => {
     const note = action === 'reject'
@@ -290,6 +343,35 @@ export default function AdminPage() {
     }
   };
 
+  const handleDeleteDataset = async (datasetId: string, symbol: string) => {
+    if (!confirm(`Are you sure you want to delete dataset "${symbol}"? This will remove all price data. Share posts will remain but import will be disabled.`)) {
+      return;
+    }
+
+    try {
+      setActionLoading(datasetId);
+
+      const response = await fetch('/api/admin/datasets', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stockId: datasetId }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to delete dataset');
+      }
+
+      alert(data.message);
+      fetchDatasets();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleString('zh-CN');
   };
@@ -373,6 +455,21 @@ export default function AdminPage() {
               {(ticketStats.PENDING || 0) > 0 && (
                 <span className="ml-2 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
                   {ticketStats.PENDING}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('datasets')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'datasets'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+              }`}
+            >
+              Custom Datasets
+              {datasetsTotal > 0 && (
+                <span className="ml-2 bg-gray-500 text-white text-xs px-2 py-0.5 rounded-full">
+                  {datasetsTotal}
                 </span>
               )}
             </button>
@@ -747,7 +844,9 @@ export default function AdminPage() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="text-sm text-gray-900 dark:text-white">
-                              {ticket.type === 'FULL_REFRESH' ? 'Full Refresh' : ticket.type}
+                              {ticket.type === 'FULL_REFRESH' ? 'Full Refresh' :
+                               ticket.type === 'CUSTOM_DATA' ? 'Custom Data' :
+                               ticket.type === 'DELETE_DATASET' ? 'Delete Dataset' : ticket.type}
                             </span>
                           </td>
                           <td className="px-6 py-4">
@@ -808,6 +907,149 @@ export default function AdminPage() {
                   </tbody>
                 </table>
               )}
+            </div>
+          </>
+        )}
+
+        {/* Datasets Tab */}
+        {activeTab === 'datasets' && (
+          <>
+            {/* Search */}
+            <div className="mb-6">
+              <div className="flex gap-4">
+                <input
+                  type="text"
+                  placeholder="Search by symbol or name..."
+                  value={datasetsSearch}
+                  onChange={(e) => setDatasetsSearch(e.target.value)}
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <button
+                  onClick={() => fetchDatasets()}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                >
+                  Search
+                </button>
+              </div>
+            </div>
+
+            {/* Datasets Table */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+              {datasetsLoading ? (
+                <div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading...</div>
+              ) : (
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-900">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Symbol
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Name
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Rows
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Date Range
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Uploader
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Posts
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Created
+                      </th>
+                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {datasets.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
+                          No custom datasets found
+                        </td>
+                      </tr>
+                    ) : (
+                      datasets.map((dataset) => (
+                        <tr key={dataset.id}>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-sm font-medium text-gray-900 dark:text-white">
+                              {dataset.symbol}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-sm text-gray-900 dark:text-white">
+                              {dataset.name}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                              {dataset.rowCount.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                              {dataset.firstDate && dataset.lastDate
+                                ? `${new Date(dataset.firstDate).toLocaleDateString()} - ${new Date(dataset.lastDate).toLocaleDateString()}`
+                                : '-'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {dataset.uploader ? (
+                              <div className="flex items-center">
+                                {dataset.uploader.image && (
+                                  <img
+                                    className="h-6 w-6 rounded-full mr-2"
+                                    src={dataset.uploader.image}
+                                    alt=""
+                                  />
+                                )}
+                                <div>
+                                  <div className="text-sm text-gray-900 dark:text-white">
+                                    {dataset.uploader.name || 'Unknown'}
+                                  </div>
+                                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                                    {dataset.uploader.email}
+                                  </div>
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-gray-400 dark:text-gray-500">Unknown</span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="text-sm text-gray-500 dark:text-gray-400">
+                              {dataset.postCount}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                            {formatDate(dataset.createdAt)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <button
+                              className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
+                              onClick={() => handleDeleteDataset(dataset.id, dataset.symbol)}
+                              disabled={actionLoading === dataset.id}
+                            >
+                              {actionLoading === dataset.id ? '...' : 'Delete'}
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Total count */}
+            <div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+              Total: {datasetsTotal} custom dataset{datasetsTotal !== 1 ? 's' : ''}
             </div>
           </>
         )}

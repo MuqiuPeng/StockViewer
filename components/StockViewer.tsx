@@ -196,7 +196,8 @@ export default function StockViewer() {
           result = [];
         } else {
           result = datasets.filter(ds => {
-            return customGroup.stockIds.includes(ds.id);
+            // Check both id and filename for backwards compatibility
+            return customGroup.stockIds.includes(ds.id) || customGroup.stockIds.includes(ds.filename);
           });
         }
       } else {
@@ -742,7 +743,9 @@ export default function StockViewer() {
       const currentDataset = datasets.find(ds => ds.filename === datasetData.meta.filename || ds.id === selectedDataset);
       const currentDatasetId = currentDataset?.id || selectedDataset;
 
-      if (group.stockIds.includes(currentDatasetId)) {
+      // Check both id and filename for backwards compatibility
+      const currentFilename = currentDataset?.filename;
+      if (group.stockIds.includes(currentDatasetId) || (currentFilename && group.stockIds.includes(currentFilename))) {
         alert('This dataset is already in the selected group');
         return;
       }

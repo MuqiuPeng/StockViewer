@@ -162,6 +162,17 @@ export async function PATCH(
             error: error instanceof Error ? error.message : 'Unknown error',
           };
         }
+      } else if (ticket.type === 'DELETE_DATASET') {
+        // Delete custom dataset
+        try {
+          actionResult = await deleteCustomDataset(ticket.payload as { stockId: string; symbol: string });
+        } catch (error) {
+          console.error('Dataset deletion failed:', error);
+          actionResult = {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
       }
     }
 
@@ -450,5 +461,35 @@ async function importCustomData(
     success: true,
     message: `Custom data imported: ${records.length} records for ${payload.symbol}`,
     stockId: result.id,
+  };
+}
+
+/**
+ * Delete custom dataset
+ */
+async function deleteCustomDataset(
+  payload: { stockId: string; symbol: string }
+): Promise<{ success: boolean; message?: string; error?: string }> {
+  const stock = await prisma.stock.findUnique({
+    where: { id: payload.stockId },
+  });
+
+  if (!stock) {
+    return { success: false, error: 'Dataset not found (may have already been deleted)' };
+  }
+
+  if (stock.dataSource !== 'custom_upload') {
+    return { success: false, error: 'Can only delete custom uploaded datasets' };
+  }
+
+  // Delete the stock (cascade will handle price data, user stocks, etc.)
+  // SharePosts will have stockId set to null due to SetNull relation
+  await prisma.stock.delete({
+    where: { id: payload.stockId },
+  });
+
+  return {
+    success: true,
+    message: `Dataset "${payload.symbol}" deleted successfully`,
   };
 }
