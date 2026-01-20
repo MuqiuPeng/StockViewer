@@ -1347,15 +1347,15 @@ export default function ChartPanel({
           style={{ position: 'relative', overscrollBehavior: 'contain', cursor: 'pointer' }}
           onClick={(e) => {
             // Only open modal on direct click, not during drag/scroll
-            if (!keyboardNavMode && (e.target === indicator1ContainerRef.current ||
-                indicator1ContainerRef.current?.contains(e.target as Node))) {
+            if (e.target === indicator1ContainerRef.current ||
+                indicator1ContainerRef.current?.contains(e.target as Node)) {
               setActiveChart(1);
               setModalOpen(true);
             }
           }}
           title="Click to add constant lines"
         />
-        {/* Overlay to block mouse events when keyboard nav is on */}
+        {/* Overlay to block scroll/drag events when keyboard nav is on, but allow clicks */}
         {keyboardNavMode && (
           <div
             style={{
@@ -1365,7 +1365,11 @@ export default function ChartPanel({
               right: 0,
               bottom: 0,
               zIndex: 10,
-              cursor: 'default',
+              cursor: 'pointer',
+            }}
+            onClick={() => {
+              setActiveChart(1);
+              setModalOpen(true);
             }}
           />
         )}
@@ -1384,15 +1388,15 @@ export default function ChartPanel({
           style={{ position: 'relative', overscrollBehavior: 'contain', cursor: 'pointer' }}
           onClick={(e) => {
             // Only open modal on direct click, not during drag/scroll
-            if (!keyboardNavMode && (e.target === indicator2ContainerRef.current ||
-                indicator2ContainerRef.current?.contains(e.target as Node))) {
+            if (e.target === indicator2ContainerRef.current ||
+                indicator2ContainerRef.current?.contains(e.target as Node)) {
               setActiveChart(2);
               setModalOpen(true);
             }
           }}
           title="Click to add constant lines"
         />
-        {/* Overlay to block mouse events when keyboard nav is on */}
+        {/* Overlay to block scroll/drag events when keyboard nav is on, but allow clicks */}
         {keyboardNavMode && (
           <div
             style={{
@@ -1402,7 +1406,11 @@ export default function ChartPanel({
               right: 0,
               bottom: 0,
               zIndex: 10,
-              cursor: 'default',
+              cursor: 'pointer',
+            }}
+            onClick={() => {
+              setActiveChart(2);
+              setModalOpen(true);
             }}
           />
         )}
