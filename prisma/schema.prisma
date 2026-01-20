@@ -52,6 +52,13 @@ model User {
   accounts      Account[]
   sessions      Session[]
 
+  // Status review info
+  statusReviewedBy   String?
+  statusReviewedAt   DateTime?
+  statusReviewNote   String?    @db.Text
+  statusReviewer     User?      @relation("UserStatusReviewer", fields: [statusReviewedBy], references: [id], onDelete: SetNull)
+  reviewedUsers      User[]     @relation("UserStatusReviewer")
+
   // User's collections (what they're using)
   userStocks       UserStock[]
   userIndicators   UserIndicator[]

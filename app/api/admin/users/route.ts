@@ -34,6 +34,15 @@ export async function GET(request: NextRequest) {
           status: true,
           isAdmin: true,
           createdAt: true,
+          statusReviewedAt: true,
+          statusReviewNote: true,
+          statusReviewer: {
+            select: {
+              id: true,
+              name: true,
+              image: true,
+            },
+          },
           accounts: {
             select: {
               provider: true,

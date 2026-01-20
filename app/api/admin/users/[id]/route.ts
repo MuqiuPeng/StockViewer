@@ -22,9 +22,10 @@ export async function PATCH(
 
     const { id } = await params;
     const body = await request.json();
-    const { status, isAdmin: setAdmin } = body as {
+    const { status, isAdmin: setAdmin, reviewNote } = body as {
       status?: UserStatus;
       isAdmin?: boolean;
+      reviewNote?: string;
     };
 
     // Check if user exists
@@ -62,7 +63,13 @@ export async function PATCH(
     }
 
     // Build update data
-    const updateData: { status?: UserStatus; isAdmin?: boolean } = {};
+    const updateData: {
+      status?: UserStatus;
+      isAdmin?: boolean;
+      statusReviewedBy?: string;
+      statusReviewedAt?: Date;
+      statusReviewNote?: string | null;
+    } = {};
 
     if (status !== undefined) {
       if (!Object.values(UserStatus).includes(status)) {
@@ -72,6 +79,10 @@ export async function PATCH(
         );
       }
       updateData.status = status;
+      // Record reviewer info
+      updateData.statusReviewedBy = session.user.id;
+      updateData.statusReviewedAt = new Date();
+      updateData.statusReviewNote = reviewNote || null;
     }
 
     if (setAdmin !== undefined) {
@@ -105,6 +116,15 @@ export async function PATCH(
         status: true,
         isAdmin: true,
         createdAt: true,
+        statusReviewedAt: true,
+        statusReviewNote: true,
+        statusReviewer: {
+          select: {
+            id: true,
+            name: true,
+            image: true,
+          },
+        },
       },
     });
 

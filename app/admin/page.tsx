@@ -43,6 +43,13 @@ interface User {
   isAdmin: boolean;
   isSuperAdmin: boolean;
   createdAt: string;
+  statusReviewedAt: string | null;
+  statusReviewNote: string | null;
+  statusReviewer: {
+    id: string;
+    name: string | null;
+    image: string | null;
+  } | null;
   accounts: { provider: string; providerAccountId: string }[];
 }
 
@@ -450,6 +457,9 @@ export default function AdminPage() {
                         Status
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Reviewed By
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                         Joined
                       </th>
                       <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -460,7 +470,7 @@ export default function AdminPage() {
                   <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                     {users.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
+                        <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
                           No users found
                         </td>
                       </tr>
@@ -510,6 +520,31 @@ export default function AdminPage() {
                             >
                               {user.status}
                             </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {user.statusReviewer ? (
+                              <div className="flex items-center">
+                                {user.statusReviewer.image && (
+                                  <img
+                                    className="h-6 w-6 rounded-full mr-2"
+                                    src={user.statusReviewer.image}
+                                    alt=""
+                                  />
+                                )}
+                                <div>
+                                  <div className="text-sm text-gray-900 dark:text-white">
+                                    {user.statusReviewer.name || 'Unknown'}
+                                  </div>
+                                  {user.statusReviewedAt && (
+                                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                                      {formatDate(user.statusReviewedAt)}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-gray-400 dark:text-gray-500">-</span>
+                            )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                             {formatDate(user.createdAt)}
