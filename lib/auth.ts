@@ -17,6 +17,7 @@ declare module 'next-auth' {
       email?: string | null;
       image?: string | null;
       status?: string;
+      githubId?: string;
     };
   }
 }
@@ -25,6 +26,7 @@ declare module '@auth/core/jwt' {
   interface JWT {
     id?: string;
     status?: string;
+    githubId?: string;
   }
 }
 
@@ -72,12 +74,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         token.name = user.name;
         token.email = user.email;
 
-        // Fetch user status from DB
+        // Fetch user status and GitHub ID from DB
         const dbUser = await prisma.user.findUnique({
           where: { id: user.id },
-          select: { status: true },
+          select: {
+            status: true,
+            accounts: {
+              where: { provider: 'github' },
+              select: { providerAccountId: true },
+            },
+          },
         });
         token.status = dbUser?.status || UserStatus.PENDING;
+        token.githubId = dbUser?.accounts[0]?.providerAccountId;
       }
 
       // Refresh status on update trigger or periodically
@@ -99,6 +108,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (token.name) session.user.name = token.name as string;
         if (token.email) session.user.email = token.email as string;
         if (token.status) session.user.status = token.status as string;
+        if (token.githubId) session.user.githubId = token.githubId as string;
       }
       return session;
     },

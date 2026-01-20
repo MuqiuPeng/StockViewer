@@ -56,16 +56,21 @@ export default auth((req) => {
     return NextResponse.redirect(signInUrl);
   }
 
-  // Check user status - only allow APPROVED users
+  // Check user status - only allow APPROVED users (or admin)
   const userStatus = req.auth.user?.status;
+  const userGithubId = (req.auth.user as { githubId?: string })?.githubId;
+  const adminGithubId = process.env.ADMIN_GITHUB_ID;
+
+  // Admin users bypass approval check
+  const isAdmin = adminGithubId && userGithubId === adminGithubId;
 
   // Allow pending approval page for non-approved users
   if (pathname === '/auth/pending') {
     return NextResponse.next();
   }
 
-  // If user is not approved, redirect to pending page or return 403
-  if (userStatus !== 'APPROVED') {
+  // If user is not approved and not admin, redirect to pending page or return 403
+  if (userStatus !== 'APPROVED' && !isAdmin) {
     const isApiRoute = pathname.startsWith('/api');
 
     if (isApiRoute) {
