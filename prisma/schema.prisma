@@ -48,6 +48,7 @@ model User {
   emailVerified DateTime?
   image         String?
   status        UserStatus @default(PENDING)
+  isAdmin       Boolean    @default(false)
   accounts      Account[]
   sessions      Session[]
 

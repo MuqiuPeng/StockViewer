@@ -40,6 +40,8 @@ interface User {
   email: string | null;
   image: string | null;
   status: string;
+  isAdmin: boolean;
+  isSuperAdmin: boolean;
   createdAt: string;
   accounts: { provider: string; providerAccountId: string }[];
 }
@@ -191,6 +193,60 @@ export default function AdminPage() {
 
       if (!response.ok) {
         throw new Error(data.error || 'Failed to update user');
+      }
+
+      fetchUsers();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleToggleAdmin = async (userId: string, currentIsAdmin: boolean) => {
+    if (!confirm(`Are you sure you want to ${currentIsAdmin ? 'revoke' : 'grant'} admin privileges?`)) {
+      return;
+    }
+
+    try {
+      setActionLoading(userId);
+
+      const response = await fetch(`/api/admin/users/${userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isAdmin: !currentIsAdmin }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update user');
+      }
+
+      fetchUsers();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleDeleteUser = async (userId: string, userName: string | null) => {
+    if (!confirm(`Are you sure you want to delete user "${userName || 'Unknown'}"? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setActionLoading(userId);
+
+      const response = await fetch(`/api/admin/users/${userId}`, {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to delete user');
       }
 
       fetchUsers();
@@ -355,7 +411,7 @@ export default function AdminPage() {
                         User
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                        Provider
+                        Role
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                         Status
@@ -388,8 +444,13 @@ export default function AdminPage() {
                                 />
                               )}
                               <div>
-                                <div className="text-sm font-medium text-gray-900 dark:text-white">
+                                <div className="text-sm font-medium text-gray-900 dark:text-white flex items-center gap-2">
                                   {user.name || 'Unknown'}
+                                  {user.isSuperAdmin && (
+                                    <span className="px-1.5 py-0.5 text-xs bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 rounded">
+                                      Super
+                                    </span>
+                                  )}
                                 </div>
                                 <div className="text-sm text-gray-500 dark:text-gray-400">
                                   {user.email}
@@ -397,8 +458,16 @@ export default function AdminPage() {
                               </div>
                             </div>
                           </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-white">
-                            {user.accounts.map(a => a.provider).join(', ') || 'N/A'}
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            {(user.isAdmin || user.isSuperAdmin) ? (
+                              <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                                Admin
+                              </span>
+                            ) : (
+                              <span className="text-sm text-gray-500 dark:text-gray-400">
+                                User
+                              </span>
+                            )}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span
@@ -413,42 +482,73 @@ export default function AdminPage() {
                             {formatDate(user.createdAt)}
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            {user.status === 'PENDING' && (
-                              <div className="flex justify-end gap-2">
+                            <div className="flex justify-end gap-2">
+                              {/* Status actions */}
+                              {user.status === 'PENDING' && (
+                                <>
+                                  <button
+                                    className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300 disabled:opacity-50"
+                                    onClick={() => handleUserAction(user.id, 'approve')}
+                                    disabled={actionLoading === user.id}
+                                  >
+                                    Approve
+                                  </button>
+                                  <button
+                                    className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
+                                    onClick={() => handleUserAction(user.id, 'reject')}
+                                    disabled={actionLoading === user.id}
+                                  >
+                                    Reject
+                                  </button>
+                                </>
+                              )}
+                              {user.status === 'APPROVED' && !user.isSuperAdmin && (
+                                <button
+                                  className="text-orange-600 hover:text-orange-900 dark:text-orange-400 dark:hover:text-orange-300 disabled:opacity-50"
+                                  onClick={() => handleUserAction(user.id, 'reject')}
+                                  disabled={actionLoading === user.id}
+                                >
+                                  Revoke
+                                </button>
+                              )}
+                              {user.status === 'REJECTED' && (
                                 <button
                                   className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300 disabled:opacity-50"
                                   onClick={() => handleUserAction(user.id, 'approve')}
                                   disabled={actionLoading === user.id}
                                 >
-                                  {actionLoading === user.id ? '...' : 'Approve'}
+                                  Approve
                                 </button>
+                              )}
+
+                              {/* Admin toggle - only for super admin, not for self or other super admin */}
+                              {!user.isSuperAdmin && (
+                                <button
+                                  className={`${
+                                    user.isAdmin
+                                      ? 'text-gray-600 hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-300'
+                                      : 'text-blue-600 hover:text-blue-900 dark:text-blue-400 dark:hover:text-blue-300'
+                                  } disabled:opacity-50`}
+                                  onClick={() => handleToggleAdmin(user.id, user.isAdmin)}
+                                  disabled={actionLoading === user.id}
+                                  title={user.isAdmin ? 'Remove admin' : 'Make admin'}
+                                >
+                                  {user.isAdmin ? '−Admin' : '+Admin'}
+                                </button>
+                              )}
+
+                              {/* Delete - not for super admin */}
+                              {!user.isSuperAdmin && (
                                 <button
                                   className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
-                                  onClick={() => handleUserAction(user.id, 'reject')}
+                                  onClick={() => handleDeleteUser(user.id, user.name)}
                                   disabled={actionLoading === user.id}
+                                  title="Delete user"
                                 >
-                                  Reject
+                                  Delete
                                 </button>
-                              </div>
-                            )}
-                            {user.status === 'APPROVED' && (
-                              <button
-                                className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 disabled:opacity-50"
-                                onClick={() => handleUserAction(user.id, 'reject')}
-                                disabled={actionLoading === user.id}
-                              >
-                                Revoke
-                              </button>
-                            )}
-                            {user.status === 'REJECTED' && (
-                              <button
-                                className="text-green-600 hover:text-green-900 dark:text-green-400 dark:hover:text-green-300 disabled:opacity-50"
-                                onClick={() => handleUserAction(user.id, 'approve')}
-                                disabled={actionLoading === user.id}
-                              >
-                                Approve
-                              </button>
-                            )}
+                              )}
+                            </div>
                           </td>
                         </tr>
                       ))

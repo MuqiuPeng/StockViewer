@@ -21,6 +21,7 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status') as UserStatus | null;
 
     const where = status ? { status } : {};
+    const superAdminGithubId = process.env.ADMIN_GITHUB_ID;
 
     const [users, stats] = await Promise.all([
       prisma.user.findMany({
@@ -31,6 +32,7 @@ export async function GET(request: NextRequest) {
           email: true,
           image: true,
           status: true,
+          isAdmin: true,
           createdAt: true,
           accounts: {
             select: {
@@ -47,6 +49,16 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
+    // Mark super admin users
+    const usersWithSuperAdmin = users.map((user) => ({
+      ...user,
+      isSuperAdmin: superAdminGithubId
+        ? user.accounts.some(
+            (acc) => acc.provider === 'github' && acc.providerAccountId === superAdminGithubId
+          )
+        : false,
+    }));
+
     const statusCounts = {
       PENDING: 0,
       APPROVED: 0,
@@ -57,7 +69,7 @@ export async function GET(request: NextRequest) {
     });
 
     return NextResponse.json({
-      users,
+      users: usersWithSuperAdmin,
       stats: statusCounts,
     });
   } catch (error) {
