@@ -42,21 +42,13 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     strategy: 'jwt', // Use JWT for edge runtime compatibility
   },
   events: {
-    // Auto-approve admin when they first sign up
-    async createUser({ user }) {
+    // Auto-approve admin when their GitHub account is linked
+    async linkAccount({ user, account }) {
       const adminGithubId = process.env.ADMIN_GITHUB_ID;
-      if (!adminGithubId || !user.id) return;
+      if (!adminGithubId) return;
 
-      // Check if this user's GitHub account matches admin
-      const account = await prisma.account.findFirst({
-        where: {
-          userId: user.id,
-          provider: 'github',
-          providerAccountId: adminGithubId,
-        },
-      });
-
-      if (account) {
+      // Check if this is a GitHub account matching admin
+      if (account.provider === 'github' && account.providerAccountId === adminGithubId) {
         // Auto-approve admin
         await prisma.user.update({
           where: { id: user.id },
