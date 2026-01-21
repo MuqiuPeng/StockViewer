@@ -56,8 +56,8 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN python3 -m venv /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Install Python packages
-RUN pip install --no-cache-dir pandas numpy aktools
+# Install Python packages (with retry for network issues)
+RUN pip install --no-cache-dir --timeout 120 --retries 5 pandas numpy aktools
 
 # Install Prisma CLI for migrations (pin to v5 to avoid breaking changes)
 RUN npm install -g prisma@5
