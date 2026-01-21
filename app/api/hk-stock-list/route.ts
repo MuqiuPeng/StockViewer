@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { API_CONFIG } from '@/lib/env';
+import { fetchWithRetry } from '@/lib/fetch-utils';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -12,7 +13,7 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   try {
     const hkUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/stock_hk_spot_em`;
-    const response = await fetch(hkUrl);
+    const response = await fetchWithRetry(hkUrl);
 
     if (!response.ok) {
       return NextResponse.json(

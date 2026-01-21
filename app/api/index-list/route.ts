@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { API_CONFIG } from '@/lib/env';
+import { fetchWithRetry } from '@/lib/fetch-utils';
 
 export const runtime = 'nodejs';
 
@@ -50,7 +51,7 @@ export async function GET(request: Request) {
         );
     }
 
-    const response = await fetch(apiUrl);
+    const response = await fetchWithRetry(apiUrl);
 
     if (!response.ok) {
       return NextResponse.json(

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { API_CONFIG } from '@/lib/env';
+import { fetchWithRetry } from '@/lib/fetch-utils';
 
 export const runtime = 'nodejs';
 
@@ -12,7 +13,7 @@ export async function GET(request: Request) {
   try {
     // Fetch futures spot data (contains all active contracts)
     const futuresUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/futures_zh_spot`;
-    const response = await fetch(futuresUrl);
+    const response = await fetchWithRetry(futuresUrl);
 
     if (!response.ok) {
       return NextResponse.json(

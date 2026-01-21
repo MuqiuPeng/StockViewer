@@ -56,35 +56,6 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     symbolFormat: '6位数字 (如: 000001)',
     exampleSymbol: '000001'
   },
-  {
-    id: 'stock_zh_a_minute',
-    name: 'A股分钟数据',
-    category: 'A股',
-    description: 'A股分钟级历史数据 (1/5/15/30/60分钟)',
-    apiEndpoint: 'stock_zh_a_minute',
-    defaultParams: {
-      period: '60',
-      adjust: 'qfq'
-    },
-    requiredParams: ['symbol', 'period'],
-    symbolFormat: 'sh/sz + 6位数字 (如: sh000001)',
-    exampleSymbol: 'sh000001'
-  },
-  {
-    id: 'stock_zh_a_hist_min_em',
-    name: 'A股分钟数据 (东财)',
-    category: 'A股',
-    description: 'A股分钟级历史数据 (东方财富)',
-    apiEndpoint: 'stock_zh_a_hist_min_em',
-    defaultParams: {
-      period: '60',
-      adjust: 'qfq'
-    },
-    requiredParams: ['symbol', 'start_date', 'end_date', 'period'],
-    symbolFormat: '6位数字 (如: 000001)',
-    exampleSymbol: '000001'
-  },
-
   // ========== B-Share Stocks ==========
   {
     id: 'stock_zh_b_daily',
@@ -99,21 +70,6 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     symbolFormat: 'sh/sz + 6位数字 (如: sh900901)',
     exampleSymbol: 'sh900901'
   },
-  {
-    id: 'stock_zh_b_minute',
-    name: 'B股分钟数据',
-    category: 'B股',
-    description: 'B股分钟级历史数据',
-    apiEndpoint: 'stock_zh_b_minute',
-    defaultParams: {
-      period: '60',
-      adjust: 'qfq'
-    },
-    requiredParams: ['symbol', 'period'],
-    symbolFormat: 'sh/sz + 6位数字 (如: sh900901)',
-    exampleSymbol: 'sh900901'
-  },
-
   // ========== CDR ==========
   {
     id: 'stock_zh_a_cdr_daily',
@@ -273,19 +229,6 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     exampleSymbol: '510300'
   },
   {
-    id: 'fund_etf_hist_min_em',
-    name: 'ETF分钟数据 (东财)',
-    category: '基金',
-    description: 'ETF基金分钟级历史数据 (东方财富)',
-    apiEndpoint: 'fund_etf_hist_min_em',
-    defaultParams: {
-      period: '60'
-    },
-    requiredParams: ['symbol', 'period'],
-    symbolFormat: '基金代码 (如: 510300)',
-    exampleSymbol: '510300'
-  },
-  {
     id: 'fund_lof_hist_em',
     name: 'LOF基金历史数据',
     category: '基金',
@@ -307,19 +250,6 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     defaultParams: {},
     requiredParams: ['symbol'],
     symbolFormat: '合约代码 (如: RB0)',
-    exampleSymbol: 'RB0'
-  },
-  {
-    id: 'futures_zh_minute_sina',
-    name: '期货分钟数据',
-    category: '期货',
-    description: '国内期货分钟级历史数据',
-    apiEndpoint: 'futures_zh_minute_sina',
-    defaultParams: {
-      period: '60'
-    },
-    requiredParams: ['symbol', 'period'],
-    symbolFormat: '合约代码',
     exampleSymbol: 'RB0'
   },
   {

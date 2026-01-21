@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { API_CONFIG } from '@/lib/env';
+import { fetchWithRetry } from '@/lib/fetch-utils';
 
 export const runtime = 'nodejs';
 
@@ -18,12 +19,13 @@ export async function GET(request: Request) {
     const source = searchParams.get('source') || 'active';
 
     const results: { code: string; name: string; status: string }[] = [];
+    const errors: string[] = [];
 
     // Fetch active stocks
     if (source === 'active' || source === 'all') {
       try {
         const activeUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/stock_info_a_code_name`;
-        const activeResponse = await fetch(activeUrl);
+        const activeResponse = await fetchWithRetry(activeUrl);
 
         if (activeResponse.ok) {
           const activeData = await activeResponse.json();
@@ -44,9 +46,13 @@ export async function GET(request: Request) {
               }
             });
           }
+        } else {
+          errors.push(`Active stocks API returned ${activeResponse.status}`);
         }
       } catch (err) {
-        console.error('Failed to fetch active stocks:', err);
+        const errMsg = err instanceof Error ? err.message : 'Unknown error';
+        console.error('Failed to fetch active stocks:', errMsg);
+        errors.push(`Failed to fetch active stocks: ${errMsg}`);
       }
     }
 
@@ -54,7 +60,7 @@ export async function GET(request: Request) {
     if (source === 'delisted_sh' || source === 'all') {
       try {
         const shDelistUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/stock_info_sh_delist?symbol=全部`;
-        const shDelistResponse = await fetch(shDelistUrl);
+        const shDelistResponse = await fetchWithRetry(shDelistUrl);
 
         if (shDelistResponse.ok) {
           const shDelistData = await shDelistResponse.json();
@@ -73,9 +79,13 @@ export async function GET(request: Request) {
               }
             });
           }
+        } else {
+          errors.push(`Shanghai delisted API returned ${shDelistResponse.status}`);
         }
       } catch (err) {
-        console.error('Failed to fetch Shanghai delisted stocks:', err);
+        const errMsg = err instanceof Error ? err.message : 'Unknown error';
+        console.error('Failed to fetch Shanghai delisted stocks:', errMsg);
+        errors.push(`Failed to fetch Shanghai delisted stocks: ${errMsg}`);
       }
     }
 
@@ -83,7 +93,7 @@ export async function GET(request: Request) {
     if (source === 'delisted_sz' || source === 'all') {
       try {
         const szDelistUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/stock_info_sz_delist?symbol=终止上市公司`;
-        const szDelistResponse = await fetch(szDelistUrl);
+        const szDelistResponse = await fetchWithRetry(szDelistUrl);
 
         if (szDelistResponse.ok) {
           const szDelistData = await szDelistResponse.json();
@@ -102,9 +112,13 @@ export async function GET(request: Request) {
               }
             });
           }
+        } else {
+          errors.push(`Shenzhen delisted API returned ${szDelistResponse.status}`);
         }
       } catch (err) {
-        console.error('Failed to fetch Shenzhen delisted stocks:', err);
+        const errMsg = err instanceof Error ? err.message : 'Unknown error';
+        console.error('Failed to fetch Shenzhen delisted stocks:', errMsg);
+        errors.push(`Failed to fetch Shenzhen delisted stocks: ${errMsg}`);
       }
     }
 
@@ -125,10 +139,23 @@ export async function GET(request: Request) {
     // Sort by code
     finalResults.sort((a, b) => a.code.localeCompare(b.code));
 
+    // If no results and there were errors, return error response
+    if (finalResults.length === 0 && errors.length > 0) {
+      return NextResponse.json(
+        {
+          error: 'Failed to fetch stock list',
+          message: errors.join('; '),
+          stocks: []
+        },
+        { status: 503 }
+      );
+    }
+
     return NextResponse.json({
       success: true,
       count: finalResults.length,
-      stocks: finalResults
+      stocks: finalResults,
+      ...(errors.length > 0 && { warnings: errors })
     });
 
   } catch (error) {
