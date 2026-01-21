@@ -87,17 +87,29 @@ export async function POST(request: Request) {
         },
       });
 
+      console.log('[validate-indicator] Found indicators:', allIndicators.length);
+      console.log('[validate-indicator] Non-standard columns referenced:', nonStandardColumns);
+
       // Build a set of all available indicator columns
       const availableColumns = new Set<string>();
       for (const ind of allIndicators) {
         if (ind.isGroup && ind.groupName && ind.expectedOutputs) {
+          // Group indicator: add all output columns
           for (const output of ind.expectedOutputs) {
             availableColumns.add(`${ind.groupName}:${output}`);
           }
+          // Also add the groupName itself in case user references it
+          availableColumns.add(ind.groupName);
         } else {
+          // Single indicator: add outputColumn and name
           availableColumns.add(ind.outputColumn);
+          if (ind.name !== ind.outputColumn) {
+            availableColumns.add(ind.name);
+          }
         }
       }
+
+      console.log('[validate-indicator] Available columns:', Array.from(availableColumns));
 
       // Check each non-standard column
       for (const col of nonStandardColumns) {
@@ -108,19 +120,55 @@ export async function POST(request: Request) {
         }
       }
 
-      // If there are missing dependencies, return error
+      // If there are missing dependencies, return error with suggestions
       if (missingDependencies.length > 0) {
+        // Find similar column names for suggestions
+        const suggestions: Record<string, string[]> = {};
+        for (const missing of missingDependencies) {
+          const similar: string[] = [];
+          const missingLower = missing.toLowerCase();
+          const missingParts = missing.split(':');
+          const missingPrefix = missingParts[0]?.toLowerCase();
+
+          for (const available of availableColumns) {
+            const availableLower = available.toLowerCase();
+            // Check if same prefix (e.g., both start with "MACD:")
+            if (missingPrefix && availableLower.startsWith(missingPrefix + ':')) {
+              similar.push(available);
+            }
+            // Check for partial match
+            else if (availableLower.includes(missingLower) || missingLower.includes(availableLower)) {
+              similar.push(available);
+            }
+          }
+          if (similar.length > 0) {
+            suggestions[missing] = similar.slice(0, 5); // Limit to 5 suggestions
+          }
+        }
+
+        const hints = [
+          `The column(s) "${missingDependencies.join('", "')}" do not exist.`,
+        ];
+
+        // Add suggestions if found
+        for (const [missing, similar] of Object.entries(suggestions)) {
+          if (similar.length > 0) {
+            hints.push(`For "${missing}", did you mean: ${similar.join(', ')}?`);
+          }
+        }
+
+        hints.push('Please create the required indicator(s) first, or check for typos in column names.');
+        hints.push('For group indicators, use format "GroupName:OutputName" (e.g., "MACD:DIF").');
+
         return NextResponse.json({
           valid: false,
           error: `Missing dependencies: ${missingDependencies.join(', ')}`,
           errorType: 'missing_dependency',
           details: {
             missingDependencies,
-            hints: [
-              `The column(s) "${missingDependencies.join('", "')}" do not exist.`,
-              'Please create the required indicator(s) first, or check for typos in column names.',
-              'For group indicators, use format "GroupName:OutputName" (e.g., "MACD:DIF").',
-            ],
+            suggestions,
+            availableColumns: Array.from(availableColumns).slice(0, 20), // Show some available columns
+            hints,
           },
         });
       }
