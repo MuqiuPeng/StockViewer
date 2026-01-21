@@ -4,42 +4,6 @@ import { executePythonIndicator } from '@/lib/python-executor';
 import { prisma } from '@/lib/prisma';
 import { detectDependencies } from '@/lib/detect-dependencies';
 
-export const runtime = 'nodejs';
-
-// Standard columns that are always available in the data
-const STANDARD_COLUMNS = new Set([
-  'date', 'open', 'high', 'low', 'close', 'volume',
-  'turnover', 'amplitude', 'change_pct', 'change_amount',
-  'Open', 'High', 'Low', 'Close', 'Volume', 'Adj Close',
-]);
-
-/**
- * Extract all column references from Python code
- * Returns column names that are accessed via data['col'] or data["col"]
- */
-function extractColumnReferences(pythonCode: string): string[] {
-  const columns = new Set<string>();
-
-  // Match data['column'] and data["column"] patterns
-  const patterns = [
-    /data\['([^']+)'\]/g,
-    /data\["([^"]+)"\]/g,
-  ];
-
-  for (const pattern of patterns) {
-    let match;
-    while ((match = pattern.exec(pythonCode)) !== null) {
-      const columnName = match[1];
-      // Skip external dataset columns (xxx@yyy format)
-      if (!columnName.includes('@')) {
-        columns.add(columnName);
-      }
-    }
-  }
-
-  return Array.from(columns);
-}
-
 // POST /api/validate-indicator - Validate Python code
 export async function POST(request: Request) {
   try {
@@ -64,115 +28,19 @@ export async function POST(request: Request) {
       });
     }
 
-    // Extract all column references from the code
-    const referencedColumns = extractColumnReferences(pythonCode);
+    // Use detectDependencies to find indicator dependencies (same as apply flow)
+    const allIndicators = await prisma.indicator.findMany({
+      select: {
+        id: true,
+        name: true,
+        outputColumn: true,
+        isGroup: true,
+        groupName: true,
+        expectedOutputs: true,
+      },
+    });
 
-    // Filter out standard columns to get potential indicator dependencies
-    const nonStandardColumns = referencedColumns.filter(col => !STANDARD_COLUMNS.has(col));
-
-    // If there are non-standard columns, check if they exist as indicator outputs
-    let dependencyColumns: string[] = [];
-    let missingDependencies: string[] = [];
-
-    if (nonStandardColumns.length > 0) {
-      // Fetch all indicators to check dependencies
-      const allIndicators = await prisma.indicator.findMany({
-        select: {
-          id: true,
-          name: true,
-          outputColumn: true,
-          isGroup: true,
-          groupName: true,
-          expectedOutputs: true,
-        },
-      });
-
-      console.log('[validate-indicator] Found indicators:', allIndicators.length);
-      console.log('[validate-indicator] Non-standard columns referenced:', nonStandardColumns);
-
-      // Build a set of all available indicator columns
-      const availableColumns = new Set<string>();
-      for (const ind of allIndicators) {
-        if (ind.isGroup && ind.groupName && ind.expectedOutputs) {
-          // Group indicator: add all output columns
-          for (const output of ind.expectedOutputs) {
-            availableColumns.add(`${ind.groupName}:${output}`);
-          }
-          // Also add the groupName itself in case user references it
-          availableColumns.add(ind.groupName);
-        } else {
-          // Single indicator: add outputColumn and name
-          availableColumns.add(ind.outputColumn);
-          if (ind.name !== ind.outputColumn) {
-            availableColumns.add(ind.name);
-          }
-        }
-      }
-
-      console.log('[validate-indicator] Available columns:', Array.from(availableColumns));
-
-      // Check each non-standard column
-      for (const col of nonStandardColumns) {
-        if (availableColumns.has(col)) {
-          dependencyColumns.push(col);
-        } else {
-          missingDependencies.push(col);
-        }
-      }
-
-      // If there are missing dependencies, return error with suggestions
-      if (missingDependencies.length > 0) {
-        // Find similar column names for suggestions
-        const suggestions: Record<string, string[]> = {};
-        for (const missing of missingDependencies) {
-          const similar: string[] = [];
-          const missingLower = missing.toLowerCase();
-          const missingParts = missing.split(':');
-          const missingPrefix = missingParts[0]?.toLowerCase();
-
-          for (const available of availableColumns) {
-            const availableLower = available.toLowerCase();
-            // Check if same prefix (e.g., both start with "MACD:")
-            if (missingPrefix && availableLower.startsWith(missingPrefix + ':')) {
-              similar.push(available);
-            }
-            // Check for partial match
-            else if (availableLower.includes(missingLower) || missingLower.includes(availableLower)) {
-              similar.push(available);
-            }
-          }
-          if (similar.length > 0) {
-            suggestions[missing] = similar.slice(0, 5); // Limit to 5 suggestions
-          }
-        }
-
-        const hints = [
-          `The column(s) "${missingDependencies.join('", "')}" do not exist.`,
-        ];
-
-        // Add suggestions if found
-        for (const [missing, similar] of Object.entries(suggestions)) {
-          if (similar.length > 0) {
-            hints.push(`For "${missing}", did you mean: ${similar.join(', ')}?`);
-          }
-        }
-
-        hints.push('Please create the required indicator(s) first, or check for typos in column names.');
-        hints.push('For group indicators, use format "GroupName:OutputName" (e.g., "MACD:DIF").');
-
-        return NextResponse.json({
-          valid: false,
-          error: `Missing dependencies: ${missingDependencies.join(', ')}`,
-          errorType: 'missing_dependency',
-          details: {
-            missingDependencies,
-            suggestions,
-            availableColumns: Array.from(availableColumns).slice(0, 20), // Show some available columns
-            hints,
-          },
-        });
-      }
-    }
+    const { dependencies, dependencyColumns } = detectDependencies(pythonCode, allIndicators);
 
     // Build sample data with mock values for dependencies
     const sampleData: Record<string, any>[] = [

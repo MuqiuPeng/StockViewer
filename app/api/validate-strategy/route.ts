@@ -4,36 +4,7 @@ import path from 'path';
 import { existsSync } from 'fs';
 import { PYTHON_CONFIG } from '@/lib/env';
 import { prisma } from '@/lib/prisma';
-
-// Standard columns that are always available in the data
-const STANDARD_COLUMNS = new Set([
-  'date', 'open', 'high', 'low', 'close', 'volume',
-  'turnover', 'amplitude', 'change_pct', 'change_amount',
-  'Open', 'High', 'Low', 'Close', 'Volume', 'Adj Close',
-]);
-
-/**
- * Extract all column references from Python code
- */
-function extractColumnReferences(pythonCode: string): string[] {
-  const columns = new Set<string>();
-  const patterns = [
-    /data\['([^']+)'\]/g,
-    /data\["([^"]+)"\]/g,
-  ];
-
-  for (const pattern of patterns) {
-    let match;
-    while ((match = pattern.exec(pythonCode)) !== null) {
-      const columnName = match[1];
-      if (!columnName.includes('@')) {
-        columns.add(columnName);
-      }
-    }
-  }
-
-  return Array.from(columns);
-}
+import { detectDependencies } from '@/lib/detect-dependencies';
 
 // Dangerous imports that should be blocked
 const DANGEROUS_IMPORTS = [
@@ -99,63 +70,19 @@ export async function POST(request: Request) {
       );
     }
 
-    // 3. Check for missing dependencies
-    const referencedColumns = extractColumnReferences(pythonCode);
-    const nonStandardColumns = referencedColumns.filter(col => !STANDARD_COLUMNS.has(col));
+    // 3. Use detectDependencies to find indicator dependencies (same as apply flow)
+    const allIndicators = await prisma.indicator.findMany({
+      select: {
+        id: true,
+        name: true,
+        outputColumn: true,
+        isGroup: true,
+        groupName: true,
+        expectedOutputs: true,
+      },
+    });
 
-    let dependencyColumns: string[] = [];
-    let missingDependencies: string[] = [];
-
-    if (nonStandardColumns.length > 0) {
-      const allIndicators = await prisma.indicator.findMany({
-        select: {
-          id: true,
-          name: true,
-          outputColumn: true,
-          isGroup: true,
-          groupName: true,
-          expectedOutputs: true,
-        },
-      });
-
-      const availableColumns = new Set<string>();
-      for (const ind of allIndicators) {
-        if (ind.isGroup && ind.groupName && ind.expectedOutputs) {
-          for (const output of ind.expectedOutputs) {
-            availableColumns.add(`${ind.groupName}:${output}`);
-          }
-        } else {
-          availableColumns.add(ind.outputColumn);
-        }
-      }
-
-      for (const col of nonStandardColumns) {
-        if (availableColumns.has(col)) {
-          dependencyColumns.push(col);
-        } else {
-          missingDependencies.push(col);
-        }
-      }
-
-      if (missingDependencies.length > 0) {
-        return NextResponse.json(
-          {
-            valid: false,
-            error: `Missing dependencies: ${missingDependencies.join(', ')}`,
-            errorType: 'missing_dependency',
-            details: {
-              missingDependencies,
-              hints: [
-                `The column(s) "${missingDependencies.join('", "')}" do not exist.`,
-                'Please create the required indicator(s) first, or check for typos in column names.',
-                'For group indicators, use format "GroupName:OutputName" (e.g., "MACD:DIF").',
-              ],
-            },
-          },
-          { status: 400 }
-        );
-      }
-    }
+    const { dependencyColumns } = detectDependencies(pythonCode, allIndicators);
 
     // 4. Run validation with Python executor
     const validationResult = await executeStrategyValidation(pythonCode, dependencyColumns);
