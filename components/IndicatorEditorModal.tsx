@@ -21,6 +21,7 @@ interface IndicatorEditorModalProps {
   onClose: () => void;
   onSuccess: (savedItem?: Indicator, type?: 'indicator') => void;
   indicator?: Indicator | null;
+  readOnly?: boolean;
 }
 
 const CODE_TEMPLATE = `def calculate(data):
@@ -70,6 +71,7 @@ export default function IndicatorEditorModal({
   onClose,
   onSuccess,
   indicator,
+  readOnly = false,
 }: IndicatorEditorModalProps) {
   const { theme } = useTheme();
   const [indicatorType, setIndicatorType] = useState<'custom' | 'mytt_group'>('custom');
@@ -616,7 +618,7 @@ export default function IndicatorEditorModal({
 
       <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-6xl max-h-[90vh] overflow-y-auto">
         <h2 className="text-xl font-bold mb-4 dark:text-white">
-          {indicator ? 'Edit Indicator' : 'Create New Indicator'}
+          {readOnly ? 'View Indicator' : (indicator ? 'Edit Indicator' : 'Create New Indicator')}
         </h2>
 
         <form onSubmit={handleSubmit}>
@@ -650,7 +652,7 @@ export default function IndicatorEditorModal({
               onChange={(e) => setName(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="e.g., SMA_20"
-              disabled={isLoading}
+              disabled={isLoading || readOnly}
               required
             />
           </div>
@@ -666,7 +668,7 @@ export default function IndicatorEditorModal({
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               placeholder="e.g., 20-day Simple Moving Average"
               rows={2}
-              disabled={isLoading}
+              disabled={isLoading || readOnly}
               required
             />
           </div>
@@ -909,7 +911,7 @@ export default function IndicatorEditorModal({
                 onChange={(e) => setOutputColumn(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="Auto-filled from name"
-                disabled={isLoading}
+                disabled={isLoading || readOnly}
               />
             </div>
           ) : (
@@ -925,7 +927,7 @@ export default function IndicatorEditorModal({
                   onChange={(e) => setGroupName(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., MACD, KDJ, BOLL"
-                  disabled={isLoading}
+                  disabled={isLoading || readOnly}
                   required
                 />
               </div>
@@ -949,14 +951,14 @@ export default function IndicatorEditorModal({
                       }}
                       placeholder={idx === 0 ? "e.g., DIF" : idx === 1 ? "e.g., DEA" : "e.g., MACD"}
                       className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      disabled={isLoading}
+                      disabled={isLoading || readOnly}
                     />
                     {expectedOutputs.length > 1 && (
                       <button
                         type="button"
                         onClick={() => setExpectedOutputs(expectedOutputs.filter((_, i) => i !== idx))}
                         className="px-3 py-2 bg-red-500 text-white rounded text-sm hover:bg-red-600"
-                        disabled={isLoading}
+                        disabled={isLoading || readOnly}
                       >
                         Remove
                       </button>
@@ -967,7 +969,7 @@ export default function IndicatorEditorModal({
                   type="button"
                   onClick={() => setExpectedOutputs([...expectedOutputs, ''])}
                   className="px-3 py-2 bg-gray-200 dark:bg-gray-600 dark:text-white rounded text-sm hover:bg-gray-300 dark:hover:bg-gray-500"
-                  disabled={isLoading}
+                  disabled={isLoading || readOnly}
                 >
                   + Add Output
                 </button>
@@ -1044,7 +1046,7 @@ export default function IndicatorEditorModal({
                       tabSize: 4,
                       insertSpaces: true,
                       wordWrap: 'off',
-                      readOnly: isLoading,
+                      readOnly: isLoading || readOnly,
                       formatOnPaste: true,
                       formatOnType: true,
                       suggestOnTriggerCharacters: true,
@@ -1190,18 +1192,20 @@ export default function IndicatorEditorModal({
               <button
                 type="button"
                 onClick={onClose}
-                disabled={isLoading}
+                disabled={isLoading || readOnly}
                 className="px-4 py-2 text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50"
               >
                 Cancel
               </button>
-              <button
-                type="submit"
-                disabled={isLoading || !name || !description || !pythonCode}
-                className="px-4 py-2 text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
-              >
-                {isLoading ? 'Saving...' : indicator ? 'Update' : 'Create'}
-              </button>
+              {!readOnly && (
+                <button
+                  type="submit"
+                  disabled={isLoading || !name || !description || !pythonCode}
+                  className="px-4 py-2 text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {isLoading ? 'Saving...' : indicator ? 'Update' : 'Create'}
+                </button>
+              )}
             </div>
           </div>
         </form>
@@ -1324,7 +1328,7 @@ export default function IndicatorEditorModal({
                 <button
                   type="button"
                   onClick={handleCancelColumnRename}
-                  disabled={isLoading}
+                  disabled={isLoading || readOnly}
                   className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-800 dark:hover:text-white disabled:opacity-50"
                 >
                   Cancel
@@ -1332,7 +1336,7 @@ export default function IndicatorEditorModal({
                 <button
                   type="button"
                   onClick={handleAutoFixColumnRename}
-                  disabled={isLoading}
+                  disabled={isLoading || readOnly}
                   className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
                 >
                   {isLoading ? 'Updating...' : 'Auto-Fix & Save'}

@@ -32,6 +32,7 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [isApplyOpen, setIsApplyOpen] = useState(false);
   const [editingIndicator, setEditingIndicator] = useState<Indicator | null>(null);
+  const [viewingIndicator, setViewingIndicator] = useState<Indicator | null>(null);
   const [selectedIndicatorId, setSelectedIndicatorId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -135,6 +136,13 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
 
   const handleEdit = (indicator: Indicator) => {
     setEditingIndicator(indicator);
+    setViewingIndicator(null);
+    setIsEditorOpen(true);
+  };
+
+  const handleView = (indicator: Indicator) => {
+    setViewingIndicator(indicator);
+    setEditingIndicator(null);
     setIsEditorOpen(true);
   };
 
@@ -146,11 +154,13 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
   const handleEditorClose = () => {
     setIsEditorOpen(false);
     setEditingIndicator(null);
+    setViewingIndicator(null);
   };
 
   const handleEditorSuccess = () => {
     setIsEditorOpen(false);
     setEditingIndicator(null);
+    setViewingIndicator(null);
     loadIndicators();
   };
 
@@ -258,12 +268,19 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
                       >
                         Apply
                       </button>
-                      {indicator.isOwner && (
+                      {indicator.isOwner ? (
                         <button
                           onClick={() => handleEdit(indicator)}
                           className="px-3 py-1 bg-gray-600 text-white rounded text-sm hover:bg-gray-700"
                         >
                           Edit
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleView(indicator)}
+                          className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+                        >
+                          View
                         </button>
                       )}
                       <button
@@ -288,7 +305,8 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
           isOpen={isEditorOpen}
           onClose={handleEditorClose}
           onSuccess={handleEditorSuccess}
-          indicator={editingIndicator}
+          indicator={editingIndicator || viewingIndicator}
+          readOnly={!!viewingIndicator}
         />
 
         {selectedIndicatorId && (

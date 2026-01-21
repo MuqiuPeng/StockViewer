@@ -15,6 +15,7 @@ export default function StrategyManager({ isOpen, onClose }: StrategyManagerProp
   const [error, setError] = useState<string | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingStrategy, setEditingStrategy] = useState<Strategy | null>(null);
+  const [viewingStrategy, setViewingStrategy] = useState<Strategy | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -71,17 +72,26 @@ export default function StrategyManager({ isOpen, onClose }: StrategyManagerProp
 
   const handleEdit = (strategy: Strategy) => {
     setEditingStrategy(strategy);
+    setViewingStrategy(null);
+    setIsEditorOpen(true);
+  };
+
+  const handleView = (strategy: Strategy) => {
+    setViewingStrategy(strategy);
+    setEditingStrategy(null);
     setIsEditorOpen(true);
   };
 
   const handleEditorClose = () => {
     setIsEditorOpen(false);
     setEditingStrategy(null);
+    setViewingStrategy(null);
   };
 
   const handleEditorSuccess = () => {
     setIsEditorOpen(false);
     setEditingStrategy(null);
+    setViewingStrategy(null);
     loadStrategies();
   };
 
@@ -186,12 +196,19 @@ export default function StrategyManager({ isOpen, onClose }: StrategyManagerProp
                   <td className="border dark:border-gray-600 p-2 dark:text-gray-200">{strategy.description}</td>
                   <td className="border dark:border-gray-600 p-2">
                     <div className="flex gap-2">
-                      {strategy.isOwner && (
+                      {strategy.isOwner ? (
                         <button
                           onClick={() => handleEdit(strategy)}
                           className="px-3 py-1 bg-gray-600 text-white rounded text-sm hover:bg-gray-700"
                         >
                           Edit
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleView(strategy)}
+                          className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+                        >
+                          View
                         </button>
                       )}
                       <button
@@ -216,7 +233,8 @@ export default function StrategyManager({ isOpen, onClose }: StrategyManagerProp
           isOpen={isEditorOpen}
           onClose={handleEditorClose}
           onSuccess={handleEditorSuccess}
-          strategy={editingStrategy}
+          strategy={editingStrategy || viewingStrategy}
+          readOnly={!!viewingStrategy}
         />
       </div>
     </div>

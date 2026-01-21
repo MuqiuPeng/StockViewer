@@ -31,6 +31,7 @@ interface StrategyEditorModalProps {
   onClose: () => void;
   onSuccess: (savedItem?: Strategy, type?: 'strategy') => void;
   strategy?: Strategy | null;
+  readOnly?: boolean;
 }
 
 const CODE_TEMPLATE = `def calculate(data, parameters):
@@ -218,6 +219,7 @@ export default function StrategyEditorModal({
   onClose,
   onSuccess,
   strategy,
+  readOnly = false,
 }: StrategyEditorModalProps) {
   const { theme } = useTheme();
   const [name, setName] = useState('');
@@ -402,7 +404,7 @@ export default function StrategyEditorModal({
       <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-6xl max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold dark:text-white">
-            {strategy ? 'Edit Strategy' : 'Create New Strategy'}
+            {readOnly ? 'View Strategy' : (strategy ? 'Edit Strategy' : 'Create New Strategy')}
           </h2>
           <button
             onClick={onClose}
@@ -469,7 +471,7 @@ export default function StrategyEditorModal({
                   checked={strategyType === 'single'}
                   onChange={(e) => setStrategyType(e.target.value as 'single')}
                   className="mr-2"
-                  disabled={!!strategy}
+                  disabled={!!strategy || readOnly}
                 />
                 <span>Single Stock</span>
               </label>
@@ -480,7 +482,7 @@ export default function StrategyEditorModal({
                   checked={strategyType === 'portfolio'}
                   onChange={(e) => setStrategyType(e.target.value as 'portfolio')}
                   className="mr-2"
-                  disabled={!!strategy}
+                  disabled={!!strategy || readOnly}
                 />
                 <span>Portfolio (Multi-Stock)</span>
               </label>
@@ -500,6 +502,7 @@ export default function StrategyEditorModal({
               onChange={(e) => setName(e.target.value)}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
               required
+              disabled={readOnly}
             />
           </div>
 
@@ -511,6 +514,7 @@ export default function StrategyEditorModal({
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
               rows={3}
               required
+              disabled={readOnly}
             />
           </div>
 
@@ -907,6 +911,7 @@ export default function StrategyEditorModal({
                 options={{
                   minimap: { enabled: false },
                   fontSize: 14,
+                  readOnly: readOnly,
                 }}
               />
             </div>
@@ -916,29 +921,33 @@ export default function StrategyEditorModal({
           </div>
 
           <div className="flex justify-between gap-2">
-            <button
-              type="button"
-              onClick={handleValidate}
-              disabled={isValidating || isLoading}
-              className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
-            >
-              {isValidating ? 'Validating...' : 'Validate Code'}
-            </button>
-            <div className="flex gap-2">
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={handleValidate}
+                disabled={isValidating || isLoading}
+                className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
+              >
+                {isValidating ? 'Validating...' : 'Validate Code'}
+              </button>
+            )}
+            <div className="flex gap-2 ml-auto">
               <button
                 type="button"
                 onClick={onClose}
                 className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white"
               >
-                Cancel
+                {readOnly ? 'Close' : 'Cancel'}
               </button>
-              <button
-                type="submit"
-                disabled={isLoading || isValidating}
-                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-              >
-                {isLoading ? 'Saving...' : strategy ? 'Update' : 'Create'}
-              </button>
+              {!readOnly && (
+                <button
+                  type="submit"
+                  disabled={isLoading || isValidating}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {isLoading ? 'Saving...' : strategy ? 'Update' : 'Create'}
+                </button>
+              )}
             </div>
           </div>
         </form>
