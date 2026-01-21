@@ -491,7 +491,6 @@ enum UserStatus {
 }
 
 enum TicketType {
-  FULL_REFRESH   // Request full refresh of stock data
   CUSTOM_DATA    // Request to upload custom data
   DELETE_DATASET // Request to delete a custom dataset
 }

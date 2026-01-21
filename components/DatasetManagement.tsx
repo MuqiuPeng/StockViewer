@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react';
 import AddDatasetModal from './AddDatasetModal';
 import GroupManager from './GroupManager';
-import TicketRequestModal from './TicketRequestModal';
 import CsvUploadModal from './CsvUploadModal';
 import { getDataSourceConfig } from '@/lib/data-sources';
 
@@ -57,7 +56,6 @@ export default function DatasetManagement() {
   const [searchName, setSearchName] = useState('');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
-  const [ticketModalStock, setTicketModalStock] = useState<DatasetInfo | null>(null);
   const [isCsvUploadModalOpen, setIsCsvUploadModalOpen] = useState(false);
   const [deleteRequestDataset, setDeleteRequestDataset] = useState<DatasetInfo | null>(null);
   const [deleteRequestReason, setDeleteRequestReason] = useState('');
@@ -633,15 +631,6 @@ export default function DatasetManagement() {
                           </td>
                           <td className="border border-gray-200 dark:border-gray-600 p-2">
                             <div className="flex gap-1 flex-wrap">
-                              {dataset.dataSource !== 'custom_upload' && (
-                                <button
-                                  onClick={() => setTicketModalStock(dataset)}
-                                  className="px-2 py-1 bg-orange-600 text-white rounded text-xs hover:bg-orange-700"
-                                  title="Request admin approval for full data refresh"
-                                >
-                                  Full Refresh
-                                </button>
-                              )}
                               <button
                                 onClick={() => handleEditName(dataset)}
                                 className="px-2 py-1 bg-purple-600 text-white rounded text-xs hover:bg-purple-700"
@@ -815,23 +804,6 @@ export default function DatasetManagement() {
             </div>
           </div>
         </div>
-      )}
-
-      {/* Ticket Request Modal */}
-      {ticketModalStock && (
-        <TicketRequestModal
-          isOpen={true}
-          onClose={() => setTicketModalStock(null)}
-          stock={{
-            id: ticketModalStock.id,
-            symbol: ticketModalStock.code,
-            name: ticketModalStock.name,
-            dataSource: ticketModalStock.dataSource || 'stock_zh_a_hist',
-          }}
-          onSuccess={() => {
-            alert('Request submitted! An admin will review it soon.');
-          }}
-        />
       )}
 
       {/* CSV Upload Modal */}

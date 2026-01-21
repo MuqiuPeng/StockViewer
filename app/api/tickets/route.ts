@@ -12,7 +12,7 @@ import { TicketType } from '@prisma/client';
 export const runtime = 'nodejs';
 
 // Valid ticket types
-const VALID_TICKET_TYPES: TicketType[] = ['FULL_REFRESH', 'CUSTOM_DATA'];
+const VALID_TICKET_TYPES: TicketType[] = ['CUSTOM_DATA', 'DELETE_DATASET'];
 
 // POST /api/tickets - Submit a new ticket
 export async function POST(request: Request) {
@@ -40,48 +40,6 @@ export async function POST(request: Request) {
         { error: 'Invalid payload', message: 'payload is required and must be an object' },
         { status: 400 }
       );
-    }
-
-    // For FULL_REFRESH, validate required payload fields
-    if (type === 'FULL_REFRESH') {
-      const { stockId, symbol, dataSource, reason } = payload;
-      if (!stockId || !symbol || !dataSource) {
-        return NextResponse.json(
-          { error: 'Invalid payload', message: 'FULL_REFRESH requires stockId, symbol, and dataSource' },
-          { status: 400 }
-        );
-      }
-
-      // Check if stock exists
-      const stock = await prisma.stock.findUnique({
-        where: { id: stockId },
-      });
-      if (!stock) {
-        return NextResponse.json(
-          { error: 'Stock not found', message: 'The specified stock does not exist' },
-          { status: 404 }
-        );
-      }
-
-      // Check for duplicate pending ticket
-      const existingTicket = await prisma.ticket.findFirst({
-        where: {
-          userId,
-          type: 'FULL_REFRESH',
-          status: 'PENDING',
-          payload: {
-            path: ['stockId'],
-            equals: stockId,
-          },
-        },
-      });
-
-      if (existingTicket) {
-        return NextResponse.json(
-          { error: 'Duplicate ticket', message: 'You already have a pending request for this stock' },
-          { status: 409 }
-        );
-      }
     }
 
     // Create ticket

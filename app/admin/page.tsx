@@ -844,8 +844,7 @@ export default function AdminPage() {
                           </td>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <span className="text-sm text-gray-900 dark:text-white">
-                              {ticket.type === 'FULL_REFRESH' ? 'Full Refresh' :
-                               ticket.type === 'CUSTOM_DATA' ? 'Custom Data' :
+                              {ticket.type === 'CUSTOM_DATA' ? 'Custom Data' :
                                ticket.type === 'DELETE_DATASET' ? 'Delete Dataset' : ticket.type}
                             </span>
                           </td>
