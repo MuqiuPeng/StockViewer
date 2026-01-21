@@ -90,14 +90,10 @@ export default function StockViewer() {
   const [error, setError] = useState<string | null>(null);
   const [isAddDatasetModalOpen, setIsAddDatasetModalOpen] = useState(false);
   const [isIndicatorManagerOpen, setIsIndicatorManagerOpen] = useState(false);
-  const [isOutdated, setIsOutdated] = useState(false);
-  const [lastDataDate, setLastDataDate] = useState<string | null>(null);
-  const [isUpdating, setIsUpdating] = useState(false);
   const [definedIndicators, setDefinedIndicators] = useState<string[]>([]);
   const [indicatorGroups, setIndicatorGroups] = useState<Set<string>>(new Set());
   const [crosshairTime, setCrosshairTime] = useState<string | null>(null);
   const [showAddToGroupModal, setShowAddToGroupModal] = useState(false);
-  const [isOutdatedModalDismissed, setIsOutdatedModalDismissed] = useState(false);
   const [keyboardNavMode, setKeyboardNavMode] = useState(false);
   const [selectedCandleIndex, setSelectedCandleIndex] = useState<number | null>(null);
   const [preservedVisibleRange, setPreservedVisibleRange] = useState<{ width: number } | null>(null);
@@ -492,9 +488,6 @@ export default function StockViewer() {
     const loadDatasetData = async () => {
       setLoading(true);
       setError(null);
-      setIsOutdated(false);
-      setLastDataDate(null);
-      setIsOutdatedModalDismissed(false); // Reset dismissed state for new dataset
       // Don't reset selectedCandleIndex - we want to preserve crosshair position
 
       try {
@@ -508,18 +501,6 @@ export default function StockViewer() {
         }
 
         setDatasetData(data);
-
-        // Check if data is outdated based on lastUpdate time (older than 1 day)
-        if (data.meta.lastUpdate) {
-          const lastUpdateDate = new Date(data.meta.lastUpdate);
-          const now = new Date();
-          const daysDiff = (now.getTime() - lastUpdateDate.getTime()) / (1000 * 60 * 60 * 24);
-
-          if (daysDiff > 1) {
-            setIsOutdated(true);
-            setLastDataDate(lastUpdateDate.toLocaleDateString());
-          }
-        }
       } catch (err: any) {
         setError(`Failed to load dataset: ${err.message}`);
         setDatasetData(null);
@@ -638,62 +619,6 @@ export default function StockViewer() {
     }
   };
 
-  const handleUpdateData = async () => {
-    if (!datasetData) return;
-
-    setIsUpdating(true);
-    setError(null);
-
-    try {
-      // Extract symbol and dataSource from filename
-      // Format: {symbol}_{dataSource}.csv
-      const filename = datasetData.meta.filename;
-      const nameParts = filename.replace(/\.csv$/i, '').split('_');
-      const symbol = nameParts[0];
-      const dataSource = nameParts.length > 1 ? nameParts.slice(1).join('_') : 'stock_zh_a_hist';
-
-      const response = await fetch('/api/add-dataset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, dataSource }),
-      });
-
-      const data = await response.json();
-      if (data.error) {
-        throw new Error(data.message || 'Failed to update stock data');
-      }
-
-      // Refresh the dataset
-      await refreshDatasets();
-
-      // Reload the current dataset to show updated data
-      await reloadCurrentDataset();
-    } catch (err: any) {
-      setError(`Failed to update stock data: ${err.message}`);
-    } finally {
-      setIsUpdating(false);
-    }
-  };
-
-  // Enter key to trigger update when outdated notification is shown
-  useEffect(() => {
-    if (!isOutdated || !lastDataDate || isOutdatedModalDismissed || isUpdating) return;
-
-    const handleEnter = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
-        return;
-      }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        handleUpdateData();
-        setIsOutdatedModalDismissed(true);
-      }
-    };
-
-    window.addEventListener('keydown', handleEnter);
-    return () => window.removeEventListener('keydown', handleEnter);
-  }, [isOutdated, lastDataDate, isOutdatedModalDismissed, isUpdating]);
-
   const reloadCurrentDataset = async () => {
     if (!selectedDataset) return;
 
@@ -703,8 +628,6 @@ export default function StockViewer() {
 
       if (!updatedData.error) {
         setDatasetData(updatedData);
-        setIsOutdated(false);
-        setLastDataDate(null);
       }
 
       // Also reload defined indicators list
@@ -859,10 +782,10 @@ export default function StockViewer() {
           )}
         </div>
 
-        {/* Loading/Updating indicator */}
-        {(loading || isUpdating) && (
+        {/* Loading indicator */}
+        {loading && (
           <span className="text-sm text-gray-600 dark:text-gray-300">
-            {loading ? 'Loading dataset...' : 'Updating...'}
+            Loading dataset...
           </span>
         )}
 
@@ -1107,46 +1030,6 @@ export default function StockViewer() {
         </div>
       )}
 
-      {/* Outdated Data Warning Notification */}
-      {isOutdated && lastDataDate && !isOutdatedModalDismissed && (
-        <div className="fixed top-20 right-4 z-50 w-96 bg-white dark:bg-gray-800 rounded-lg shadow-2xl border-l-4 border-yellow-500 animate-slide-in">
-          <div className="p-4">
-            <div className="flex items-start gap-3">
-              <div className="text-2xl flex-shrink-0">⚠️</div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between mb-2">
-                  <h3 className="font-bold text-yellow-800 dark:text-yellow-400 text-sm">Data is Outdated</h3>
-                  <button
-                    onClick={() => setIsOutdatedModalDismissed(true)}
-                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 flex-shrink-0 ml-2"
-                    title="Dismiss"
-                  >
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-                <p className="text-gray-700 dark:text-gray-200 text-sm mb-1">
-                  <span className="font-semibold">{datasetData?.meta.name}</span>
-                </p>
-                <p className="text-gray-600 dark:text-gray-400 text-xs mb-3">
-                  Last update: <span className="font-medium">{lastDataDate}</span>
-                </p>
-                <button
-                  onClick={() => {
-                    handleUpdateData();
-                    setIsOutdatedModalDismissed(true);
-                  }}
-                  disabled={isUpdating}
-                  className="w-full px-3 py-2 bg-yellow-600 text-white text-sm rounded hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {isUpdating ? 'Updating...' : 'Update Now'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

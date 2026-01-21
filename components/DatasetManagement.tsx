@@ -45,7 +45,6 @@ export default function DatasetManagement() {
   const [error, setError] = useState<string | null>(null);
   const [isAddDatasetModalOpen, setIsAddDatasetModalOpen] = useState(false);
   const [isGroupManagerOpen, setIsGroupManagerOpen] = useState(false);
-  const [isUpdating, setIsUpdating] = useState<Record<string, boolean>>({});
   const [selectedDatasets, setSelectedDatasets] = useState<Set<string>>(new Set());
   const [showAddToGroupModal, setShowAddToGroupModal] = useState(false);
   const [targetDatasetForGroup, setTargetDatasetForGroup] = useState<string | null>(null);
@@ -133,43 +132,6 @@ export default function DatasetManagement() {
     }
   };
 
-  const handleUpdate = async (datasetName: string) => {
-    // Find the dataset to get its filename
-    const dataset = datasets.find(ds => ds.name === datasetName);
-    if (!dataset) {
-      setError('Dataset not found');
-      return;
-    }
-
-    // Extract symbol and dataSource from filename
-    // Format: {symbol}_{dataSource}.csv
-    const nameParts = dataset.filename.replace(/\.csv$/i, '').split('_');
-    const symbol = nameParts[0];
-    const dataSource = nameParts.length > 1 ? nameParts.slice(1).join('_') : 'stock_zh_a_hist';
-
-    setIsUpdating(prev => ({ ...prev, [datasetName]: true }));
-    setError(null);
-
-    try {
-      const response = await fetch('/api/add-dataset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ symbol, dataSource, forceUpdate: true }),
-      });
-
-      const data = await response.json();
-      if (data.error) {
-        throw new Error(data.message || 'Failed to update dataset');
-      }
-
-      await loadDatasets();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update dataset');
-    } finally {
-      setIsUpdating(prev => ({ ...prev, [datasetName]: false }));
-    }
-  };
-
   const handleAddDatasetSuccess = async () => {
     await loadDatasets();
   };
@@ -195,42 +157,6 @@ export default function DatasetManagement() {
     } else {
       setSelectedDatasets(new Set(datasets.map(ds => ds.filename)));
     }
-  };
-
-  const handleBatchUpdate = async () => {
-    if (selectedDatasets.size === 0) {
-      alert('Please select at least one dataset');
-      return;
-    }
-
-    // Filter out custom_upload datasets
-    const selectedArray = Array.from(selectedDatasets);
-    const updatableDatasets = selectedArray.filter(filename => {
-      const dataset = datasets.find(ds => ds.filename === filename);
-      return dataset && dataset.dataSource !== 'custom_upload';
-    });
-
-    if (updatableDatasets.length === 0) {
-      alert('No updatable datasets selected. Custom uploaded datasets cannot be updated.');
-      return;
-    }
-
-    const skippedCount = selectedArray.length - updatableDatasets.length;
-    const confirmMsg = skippedCount > 0
-      ? `Update ${updatableDatasets.length} dataset(s)? (${skippedCount} custom uploaded dataset(s) will be skipped)`
-      : `Update ${updatableDatasets.length} selected dataset(s)?`;
-
-    if (!confirm(confirmMsg)) {
-      return;
-    }
-
-    for (const filename of updatableDatasets) {
-      const dataset = datasets.find(ds => ds.filename === filename);
-      if (dataset) {
-        await handleUpdate(dataset.name);
-      }
-    }
-    setSelectedDatasets(new Set());
   };
 
   const handleBatchDelete = async () => {
@@ -546,12 +472,6 @@ export default function DatasetManagement() {
               {selectedDatasets.size} selected
             </span>
             <button
-              onClick={handleBatchUpdate}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-            >
-              🔄 Update Selected
-            </button>
-            <button
               onClick={handleBatchAddToGroup}
               className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700"
             >
@@ -714,23 +634,13 @@ export default function DatasetManagement() {
                           <td className="border border-gray-200 dark:border-gray-600 p-2">
                             <div className="flex gap-1 flex-wrap">
                               {dataset.dataSource !== 'custom_upload' && (
-                                <>
-                                  <button
-                                    onClick={() => handleUpdate(dataset.name)}
-                                    disabled={isUpdating[dataset.name]}
-                                    className="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 disabled:opacity-50"
-                                    title="Incremental update (fetch new data only)"
-                                  >
-                                    {isUpdating[dataset.name] ? 'Updating...' : 'Update'}
-                                  </button>
-                                  <button
-                                    onClick={() => setTicketModalStock(dataset)}
-                                    className="px-2 py-1 bg-orange-600 text-white rounded text-xs hover:bg-orange-700"
-                                    title="Request admin approval for full data refresh"
-                                  >
-                                    Full Refresh
-                                  </button>
-                                </>
+                                <button
+                                  onClick={() => setTicketModalStock(dataset)}
+                                  className="px-2 py-1 bg-orange-600 text-white rounded text-xs hover:bg-orange-700"
+                                  title="Request admin approval for full data refresh"
+                                >
+                                  Full Refresh
+                                </button>
                               )}
                               <button
                                 onClick={() => handleEditName(dataset)}
