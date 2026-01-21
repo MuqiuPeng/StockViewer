@@ -23,13 +23,18 @@ interface Indicator {
   id: string;
   name: string;
   dependencies?: string[];
+  dependencyColumns?: string[];
   outputColumn: string;
+  isGroup?: boolean;
+  groupName?: string;
+  expectedOutputs?: string[];
 }
 
 interface Strategy {
   id: string;
   name: string;
   dependencies?: string[];
+  dependencyColumns?: string[];
   strategyType?: string;
 }
 

@@ -7,12 +7,17 @@ interface RawIndicator {
   name: string;
   outputColumn: string;
   dependencies?: string[];
+  dependencyColumns?: string[]; // Specific column names referenced (e.g., "MACD:DIF")
+  isGroup?: boolean;
+  groupName?: string;
+  expectedOutputs?: string[];
 }
 
 interface RawStrategy {
   id: string;
   name: string;
   dependencies?: string[];
+  dependencyColumns?: string[]; // Specific column names referenced
 }
 
 /**
@@ -35,27 +40,64 @@ export function buildGraphModel(
   const lookup = new Map<string, string>();
 
   // Create indicator nodes (temporary positions)
+  // For group indicators, create separate nodes for each output
   indicators.forEach((ind) => {
-    const id = ind.id;
-    lookup.set(id, id);
-    lookup.set(ind.name, id);
-    lookup.set(ind.outputColumn, id);
+    if (ind.isGroup && ind.groupName && ind.expectedOutputs && ind.expectedOutputs.length > 0) {
+      // Group indicator: create a node for each output column
+      ind.expectedOutputs.forEach((outputName) => {
+        const fullColumnName = `${ind.groupName}:${outputName}`;
+        const nodeId = `${ind.id}:${outputName}`; // Unique node ID for each output
 
-    const node: GraphNode = {
-      id,
-      name: ind.name,
-      type: 'indicator',
-      color: '#3b82f6',
-      x: 0,
-      y: 0,
-      vx: 0,
-      vy: 0,
-      radius: nodeRadius,
-      componentId: 0,
-    };
+        // Map various lookup keys to this node
+        lookup.set(nodeId, nodeId);
+        lookup.set(fullColumnName, nodeId);
 
-    nodeIndex.set(id, nodes.length);
-    nodes.push(node);
+        const node: GraphNode = {
+          id: nodeId,
+          name: fullColumnName,
+          type: 'indicator',
+          color: '#3b82f6',
+          x: 0,
+          y: 0,
+          vx: 0,
+          vy: 0,
+          radius: nodeRadius,
+          componentId: 0,
+          parentId: ind.id, // Track parent group indicator
+        };
+
+        nodeIndex.set(nodeId, nodes.length);
+        nodes.push(node);
+      });
+
+      // Also add lookups for the group name and indicator id/name pointing to first output
+      const firstOutputNodeId = `${ind.id}:${ind.expectedOutputs[0]}`;
+      lookup.set(ind.id, firstOutputNodeId);
+      lookup.set(ind.name, firstOutputNodeId);
+      lookup.set(ind.groupName, firstOutputNodeId);
+    } else {
+      // Single indicator: create one node
+      const id = ind.id;
+      lookup.set(id, id);
+      lookup.set(ind.name, id);
+      lookup.set(ind.outputColumn, id);
+
+      const node: GraphNode = {
+        id,
+        name: ind.name,
+        type: 'indicator',
+        color: '#3b82f6',
+        x: 0,
+        y: 0,
+        vx: 0,
+        vy: 0,
+        radius: nodeRadius,
+        componentId: 0,
+      };
+
+      nodeIndex.set(id, nodes.length);
+      nodes.push(node);
+    }
   });
 
   // Create strategy nodes (temporary positions)
@@ -82,24 +124,50 @@ export function buildGraphModel(
   });
 
   // Create edges from indicator dependencies
+  // Use dependencyColumns for precise column-level dependencies when available
   let edgeId = 0;
   indicators.forEach((ind) => {
-    ind.dependencies?.forEach((depKey) => {
+    // Determine target node IDs for this indicator
+    const targetIds: string[] = [];
+    if (ind.isGroup && ind.groupName && ind.expectedOutputs && ind.expectedOutputs.length > 0) {
+      // Group indicator: all output nodes are targets
+      ind.expectedOutputs.forEach((outputName) => {
+        targetIds.push(`${ind.id}:${outputName}`);
+      });
+    } else {
+      // Single indicator: one target
+      targetIds.push(ind.id);
+    }
+
+    // Use dependencyColumns for precise edges if available
+    const depKeys = ind.dependencyColumns && ind.dependencyColumns.length > 0
+      ? ind.dependencyColumns
+      : ind.dependencies || [];
+
+    depKeys.forEach((depKey) => {
       const sourceId = lookup.get(depKey);
-      const targetId = ind.id;
-      if (sourceId && nodeIndex.has(sourceId) && nodeIndex.has(targetId)) {
-        edges.push({
-          id: `e${edgeId++}`,
-          sourceId,
-          targetId,
-        });
+      if (sourceId && nodeIndex.has(sourceId)) {
+        // Create edge to first target (we don't need edges to all outputs, just to one representative)
+        const targetId = targetIds[0];
+        if (targetId && nodeIndex.has(targetId)) {
+          edges.push({
+            id: `e${edgeId++}`,
+            sourceId,
+            targetId,
+          });
+        }
       }
     });
   });
 
   // Create edges from strategy dependencies
+  // Use dependencyColumns for precise column-level dependencies when available
   strategies.forEach((strat) => {
-    strat.dependencies?.forEach((depKey) => {
+    const depKeys = strat.dependencyColumns && strat.dependencyColumns.length > 0
+      ? strat.dependencyColumns
+      : strat.dependencies || [];
+
+    depKeys.forEach((depKey) => {
       const sourceId = lookup.get(depKey);
       const targetId = strat.id;
       if (sourceId && nodeIndex.has(sourceId) && nodeIndex.has(targetId)) {

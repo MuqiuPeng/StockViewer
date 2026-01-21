@@ -16,6 +16,7 @@ export interface GraphNode {
   fy?: number; // Pinned Y (during drag)
   radius: number;
   componentId: number;
+  parentId?: string; // For group indicator outputs, reference to parent indicator
 }
 
 export interface GraphEdge {

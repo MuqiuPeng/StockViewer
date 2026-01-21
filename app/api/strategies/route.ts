@@ -7,6 +7,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
+import { detectDependencies } from '@/lib/detect-dependencies';
 
 export const runtime = 'nodejs';
 
@@ -103,6 +104,12 @@ export async function POST(request: Request) {
       );
     }
 
+    // Detect dependencies from Python code
+    const allIndicators = await prisma.indicator.findMany({
+      select: { id: true, name: true, outputColumn: true, isGroup: true, groupName: true, expectedOutputs: true },
+    });
+    const { dependencies, dependencyColumns } = detectDependencies(pythonCode, allIndicators);
+
     // Create strategy
     const strategy = await prisma.strategy.create({
       data: {
@@ -115,7 +122,7 @@ export async function POST(request: Request) {
         parameters: parameters || {},
         constraints: validStrategyType === 'portfolio' ? constraints : undefined,
         externalDatasets: externalDatasets || undefined,
-        dependencies: [],
+        dependencies,
       },
     });
 

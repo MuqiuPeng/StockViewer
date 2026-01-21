@@ -8,6 +8,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
+import { detectDependencies } from '@/lib/detect-dependencies';
 
 export const runtime = 'nodejs';
 
@@ -140,6 +141,15 @@ export async function PUT(
     // Allow updating constraints for portfolio strategies
     if (constraints !== undefined && strategy.strategyType === 'portfolio') {
       updateData.constraints = constraints;
+    }
+
+    // Re-detect dependencies if code changed
+    if (pythonCode !== undefined) {
+      const allIndicators = await prisma.indicator.findMany({
+        select: { id: true, name: true, outputColumn: true, isGroup: true, groupName: true, expectedOutputs: true },
+      });
+      const { dependencies } = detectDependencies(pythonCode, allIndicators);
+      updateData.dependencies = dependencies;
     }
 
     const updated = await prisma.strategy.update({
