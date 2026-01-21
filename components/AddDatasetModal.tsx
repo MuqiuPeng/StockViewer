@@ -235,10 +235,8 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
             success: true,
             message: 'Added successfully',
           });
-          // Call onSuccess for the first successful addition
-          if (i === 0 || addResults.filter(r => r.success).length === 1) {
-            onSuccess(data.stock?.name || sym);
-          }
+          // Call onSuccess for each successful addition to refresh the list
+          onSuccess(data.stock?.name || sym);
         }
       } catch (err) {
         addResults.push({
