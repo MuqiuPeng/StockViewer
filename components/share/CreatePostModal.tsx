@@ -65,7 +65,7 @@ export default function CreatePostModal({
   const fetchItems = async () => {
     try {
       setLoadingItems(true);
-      const response = await fetch('/api/share/posts/my-items');
+      const response = await fetch('/api/subscription/posts/my-items');
       const data = await response.json();
 
       if (!response.ok) {
@@ -97,7 +97,7 @@ export default function CreatePostModal({
       setLoading(true);
       setError(null);
 
-      const response = await fetch('/api/share/posts', {
+      const response = await fetch('/api/subscription/posts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

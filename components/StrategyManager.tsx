@@ -41,7 +41,15 @@ export default function StrategyManager({ isOpen, onClose }: StrategyManagerProp
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to delete "${name}"?`)) {
+    // Find strategy to check ownership
+    const strategy = strategies.find(s => s.id === id);
+    const isOwner = strategy?.isOwner ?? true;
+
+    const confirmMessage = isOwner
+      ? `Are you sure you want to delete "${name}"?`
+      : `Are you sure you want to unsubscribe from "${name}"?\n\nThis will remove it from your collection but the strategy will still exist.`;
+
+    if (!confirm(confirmMessage)) {
       return;
     }
 
@@ -52,12 +60,12 @@ export default function StrategyManager({ isOpen, onClose }: StrategyManagerProp
 
       if (!response.ok) {
         const data = await response.json();
-        throw new Error(data.message || 'Failed to delete strategy');
+        throw new Error(data.message || (isOwner ? 'Failed to delete strategy' : 'Failed to unsubscribe'));
       }
 
       await loadStrategies();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete strategy');
+      alert(err instanceof Error ? err.message : 'Operation failed');
     }
   };
 
@@ -125,6 +133,7 @@ export default function StrategyManager({ isOpen, onClose }: StrategyManagerProp
             <thead>
               <tr className="bg-gray-100 dark:bg-gray-700">
                 <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Name</th>
+                <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Status</th>
                 <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Type</th>
                 <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Dependencies</th>
                 <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Description</th>
@@ -135,6 +144,20 @@ export default function StrategyManager({ isOpen, onClose }: StrategyManagerProp
               {strategies.map((strategy) => (
                 <tr key={strategy.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                   <td className="border dark:border-gray-600 p-2 font-medium dark:text-white">{strategy.name}</td>
+                  <td className="border dark:border-gray-600 p-2">
+                    {strategy.isOwner ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                        Owner
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                        <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                        Subscribed
+                      </span>
+                    )}
+                  </td>
                   <td className="border dark:border-gray-600 p-2 dark:text-gray-200">
                     <span className={`px-2 py-0.5 rounded text-xs ${
                       strategy.strategyType === 'portfolio'
@@ -163,17 +186,23 @@ export default function StrategyManager({ isOpen, onClose }: StrategyManagerProp
                   <td className="border dark:border-gray-600 p-2 dark:text-gray-200">{strategy.description}</td>
                   <td className="border dark:border-gray-600 p-2">
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => handleEdit(strategy)}
-                        className="px-3 py-1 bg-gray-600 text-white rounded text-sm hover:bg-gray-700"
-                      >
-                        Edit
-                      </button>
+                      {strategy.isOwner && (
+                        <button
+                          onClick={() => handleEdit(strategy)}
+                          className="px-3 py-1 bg-gray-600 text-white rounded text-sm hover:bg-gray-700"
+                        >
+                          Edit
+                        </button>
+                      )}
                       <button
                         onClick={() => handleDelete(strategy.id, strategy.name)}
-                        className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                        className={`px-3 py-1 text-white rounded text-sm ${
+                          strategy.isOwner
+                            ? 'bg-red-600 hover:bg-red-700'
+                            : 'bg-orange-600 hover:bg-orange-700'
+                        }`}
                       >
-                        Delete
+                        {strategy.isOwner ? 'Delete' : 'Unsubscribe'}
                       </button>
                     </div>
                   </td>

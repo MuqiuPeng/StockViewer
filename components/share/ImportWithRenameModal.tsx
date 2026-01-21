@@ -39,7 +39,7 @@ export default function ImportWithRenameModal({
       await onImport(displayName.trim() || null);
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Import failed');
+      setError(err instanceof Error ? err.message : 'Subscribe failed');
     } finally {
       setLoading(false);
     }
@@ -62,7 +62,7 @@ export default function ImportWithRenameModal({
       {/* Modal */}
       <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-md mx-4">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          Import {itemType === 'indicator' ? 'Indicator' : 'Strategy'}
+          Subscribe to {itemType === 'indicator' ? 'Indicator' : 'Strategy'}
         </h2>
 
         {/* Item info */}
@@ -127,7 +127,7 @@ export default function ImportWithRenameModal({
             disabled={loading}
             className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
           >
-            {loading ? 'Importing...' : 'Import'}
+            {loading ? 'Subscribing...' : 'Subscribe'}
           </button>
         </div>
       </div>

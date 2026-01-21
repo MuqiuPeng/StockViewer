@@ -18,6 +18,7 @@ export interface Strategy {
   dependencies?: string[];               // Indicator names/IDs this strategy depends on
   createdAt: string;
   updatedAt?: string;
+  isOwner?: boolean;                     // Whether current user is the creator
 }
 
 /**

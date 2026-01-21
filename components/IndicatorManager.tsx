@@ -16,6 +16,7 @@ interface Indicator {
   dependencyColumns?: string[];
   createdAt: string;
   updatedAt?: string;
+  isOwner?: boolean;
 }
 
 interface IndicatorManagerProps {
@@ -58,57 +59,77 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
   };
 
   const handleDelete = async (id: string, name: string) => {
+    // Find indicator to check ownership
+    const indicator = indicators.find(i => i.id === id);
+    const isOwner = indicator?.isOwner ?? true;
+
     try {
-      // First check if indicator has dependents
-      const checkResponse = await fetch(`/api/indicators/${id}?checkOnly=true`, {
-        method: 'DELETE',
-      });
-      const checkData = await checkResponse.json();
+      if (isOwner) {
+        // Owner flow: check for dependents
+        const checkResponse = await fetch(`/api/indicators/${id}?checkOnly=true`, {
+          method: 'DELETE',
+        });
+        const checkData = await checkResponse.json();
 
-      let shouldDelete = false;
-      let cascade = false;
+        let shouldDelete = false;
+        let cascade = false;
 
-      if (checkData.hasDependents && checkData.dependents.length > 0) {
-        // Show warning about dependents
-        const dependentNames = checkData.dependents.map((d: any) => d.name).join('\n  • ');
-        const message = `Warning: "${name}" is used by other indicators:\n  • ${dependentNames}\n\nDeleting it will also delete all dependent indicators.\n\nDo you want to proceed?`;
+        if (checkData.hasDependents && checkData.dependents.length > 0) {
+          // Show warning about dependents
+          const dependentNames = checkData.dependents.map((d: any) => d.name).join('\n  • ');
+          const message = `Warning: "${name}" is used by other indicators:\n  • ${dependentNames}\n\nDeleting it will also delete all dependent indicators.\n\nDo you want to proceed?`;
 
-        if (confirm(message)) {
-          shouldDelete = true;
-          cascade = true;
+          if (confirm(message)) {
+            shouldDelete = true;
+            cascade = true;
+          }
+        } else {
+          // No dependents, simple confirmation
+          if (confirm(`Are you sure you want to delete "${name}"?`)) {
+            shouldDelete = true;
+          }
+        }
+
+        if (!shouldDelete) {
+          return;
+        }
+
+        // Perform deletion
+        const deleteUrl = `/api/indicators/${id}${cascade ? '?cascade=true' : ''}`;
+        const response = await fetch(deleteUrl, {
+          method: 'DELETE',
+        });
+
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.message || 'Failed to delete indicator');
+        }
+
+        const result = await response.json();
+
+        // Show success message
+        if (cascade && result.deletedCount > 1) {
+          alert(`Successfully deleted ${result.deletedCount} indicators:\n  • ${result.deleted.map((d: any) => d.name).join('\n  • ')}`);
         }
       } else {
-        // No dependents, simple confirmation
-        if (confirm(`Are you sure you want to delete "${name}"?`)) {
-          shouldDelete = true;
+        // Subscriber flow: unsubscribe confirmation
+        if (!confirm(`Are you sure you want to unsubscribe from "${name}"?\n\nThis will remove it from your collection but the indicator will still exist.`)) {
+          return;
         }
-      }
 
-      if (!shouldDelete) {
-        return;
-      }
+        const response = await fetch(`/api/indicators/${id}`, {
+          method: 'DELETE',
+        });
 
-      // Perform deletion
-      const deleteUrl = `/api/indicators/${id}${cascade ? '?cascade=true' : ''}`;
-      const response = await fetch(deleteUrl, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to delete indicator');
-      }
-
-      const result = await response.json();
-
-      // Show success message
-      if (cascade && result.deletedCount > 1) {
-        alert(`Successfully deleted ${result.deletedCount} indicators:\n  • ${result.deleted.map((d: any) => d.name).join('\n  • ')}`);
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.message || 'Failed to unsubscribe');
+        }
       }
 
       await loadIndicators();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete indicator');
+      alert(err instanceof Error ? err.message : 'Operation failed');
     }
   };
 
@@ -197,6 +218,7 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
             <thead>
               <tr className="bg-gray-100 dark:bg-gray-700">
                 <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Name</th>
+                <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Status</th>
                 <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Description</th>
                 <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Depending Cols</th>
                 <th className="border dark:border-gray-600 p-2 text-left dark:text-white">Output Column</th>
@@ -207,6 +229,20 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
               {indicators.map((indicator) => (
                 <tr key={indicator.id} className="hover:bg-gray-50 dark:hover:bg-gray-700">
                   <td className="border dark:border-gray-600 p-2 font-medium dark:text-white">{indicator.name}</td>
+                  <td className="border dark:border-gray-600 p-2">
+                    {indicator.isOwner ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                        Owner
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                        <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                        Subscribed
+                      </span>
+                    )}
+                  </td>
                   <td className="border dark:border-gray-600 p-2 dark:text-gray-200">{indicator.description}</td>
                   <td className="border dark:border-gray-600 p-2 font-mono text-sm dark:text-gray-300">
                     {indicator.dependencyColumns && indicator.dependencyColumns.length > 0
@@ -222,17 +258,23 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
                       >
                         Apply
                       </button>
-                      <button
-                        onClick={() => handleEdit(indicator)}
-                        className="px-3 py-1 bg-gray-600 text-white rounded text-sm hover:bg-gray-700"
-                      >
-                        Edit
-                      </button>
+                      {indicator.isOwner && (
+                        <button
+                          onClick={() => handleEdit(indicator)}
+                          className="px-3 py-1 bg-gray-600 text-white rounded text-sm hover:bg-gray-700"
+                        >
+                          Edit
+                        </button>
+                      )}
                       <button
                         onClick={() => handleDelete(indicator.id, indicator.name)}
-                        className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                        className={`px-3 py-1 text-white rounded text-sm ${
+                          indicator.isOwner
+                            ? 'bg-red-600 hover:bg-red-700'
+                            : 'bg-orange-600 hover:bg-orange-700'
+                        }`}
                       >
-                        Delete
+                        {indicator.isOwner ? 'Delete' : 'Unsubscribe'}
                       </button>
                     </div>
                   </td>

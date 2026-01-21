@@ -4,13 +4,14 @@ import { useState, useEffect, useCallback } from 'react';
 import CreatePostModal from './share/CreatePostModal';
 import ImportWithRenameModal from './share/ImportWithRenameModal';
 
-interface SharePost {
+interface SubscriptionPost {
   id: string;
   title: string;
   content: string | null;
   createdAt: string;
-  isImported: boolean;
+  isSubscribed: boolean;
   isOwner: boolean;
+  subscriberCount: number;
   user: {
     id: string;
     name: string | null;
@@ -42,15 +43,15 @@ interface SharePost {
 
 type FilterType = 'all' | 'dataset' | 'indicator' | 'strategy';
 
-export default function SharePageContent() {
-  const [posts, setPosts] = useState<SharePost[]>([]);
+export default function SubscriptionPageContent() {
+  const [posts, setPosts] = useState<SubscriptionPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [filterType, setFilterType] = useState<FilterType>('all');
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [importingPost, setImportingPost] = useState<SharePost | null>(null);
+  const [subscribingPost, setSubscribingPost] = useState<SubscriptionPost | null>(null);
 
   // Search filters
   const [search, setSearch] = useState('');
@@ -81,7 +82,7 @@ export default function SharePageContent() {
       params.set('page', page.toString());
       params.set('limit', '20');
 
-      const response = await fetch(`/api/share/posts?${params}`);
+      const response = await fetch(`/api/subscription/posts?${params}`);
       const data = await response.json();
 
       if (!response.ok) {
@@ -111,11 +112,11 @@ export default function SharePageContent() {
 
   const hasActiveFilters = search || userEmail || dateFrom || dateTo;
 
-  const handleImportDataset = async (post: SharePost) => {
+  const handleSubscribeDataset = async (post: SubscriptionPost) => {
     if (!post.stock) return;
 
     try {
-      const response = await fetch('/api/share/datasets/import', {
+      const response = await fetch('/api/subscription/datasets/subscribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ stockId: post.stock.id }),
@@ -124,24 +125,24 @@ export default function SharePageContent() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.message || 'Import failed');
+        throw new Error(data.message || 'Subscribe failed');
       }
 
-      alert('Dataset imported successfully!');
+      alert('Dataset subscribed successfully!');
       fetchPosts();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Import failed');
+      alert(err instanceof Error ? err.message : 'Subscribe failed');
     }
   };
 
-  const handleImportIndicator = async (displayName: string | null) => {
-    if (!importingPost?.indicator) return;
+  const handleSubscribeIndicator = async (displayName: string | null) => {
+    if (!subscribingPost?.indicator) return;
 
-    const response = await fetch('/api/share/indicators/import', {
+    const response = await fetch('/api/subscription/indicators/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        indicatorId: importingPost.indicator.id,
+        indicatorId: subscribingPost.indicator.id,
         displayName,
       }),
     });
@@ -149,20 +150,20 @@ export default function SharePageContent() {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.message || 'Import failed');
+      throw new Error(data.message || 'Subscribe failed');
     }
 
     fetchPosts();
   };
 
-  const handleImportStrategy = async (displayName: string | null) => {
-    if (!importingPost?.strategy) return;
+  const handleSubscribeStrategy = async (displayName: string | null) => {
+    if (!subscribingPost?.strategy) return;
 
-    const response = await fetch('/api/share/strategies/import', {
+    const response = await fetch('/api/subscription/strategies/subscribe', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        strategyId: importingPost.strategy.id,
+        strategyId: subscribingPost.strategy.id,
         displayName,
       }),
     });
@@ -170,13 +171,13 @@ export default function SharePageContent() {
     const data = await response.json();
 
     if (!response.ok) {
-      throw new Error(data.message || 'Import failed');
+      throw new Error(data.message || 'Subscribe failed');
     }
 
     fetchPosts();
   };
 
-  const getPostType = (post: SharePost): 'dataset' | 'indicator' | 'strategy' | 'deleted' => {
+  const getPostType = (post: SubscriptionPost): 'dataset' | 'indicator' | 'strategy' | 'deleted' => {
     if (post.stock) return 'dataset';
     if (post.indicator) return 'indicator';
     if (post.strategy) return 'strategy';
@@ -218,10 +219,10 @@ export default function SharePageContent() {
         <div className="mb-6 flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Share
+              Subscription
             </h1>
             <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-              Share and discover datasets, indicators, and strategies
+              Share and subscribe to datasets, indicators, and strategies
             </p>
           </div>
           <button
@@ -406,9 +407,20 @@ export default function SharePageContent() {
                         </div>
                       </div>
                     </div>
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getTypeColor(postType)}`}>
-                      {postType}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      {/* Subscriber count badge for owners */}
+                      {post.isOwner && post.subscriberCount > 0 && (
+                        <span className="px-2 py-1 text-xs font-medium rounded-full bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200 flex items-center gap-1">
+                          <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z" />
+                          </svg>
+                          {post.subscriberCount}
+                        </span>
+                      )}
+                      <span className={`px-2 py-1 text-xs font-medium rounded-full ${getTypeColor(postType)}`}>
+                        {postType}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Post Title & Content */}
@@ -485,23 +497,26 @@ export default function SharePageContent() {
                       <span className="text-sm text-gray-400 dark:text-gray-500">
                         Your post
                       </span>
-                    ) : post.isImported ? (
-                      <span className="text-sm text-green-600 dark:text-green-400">
-                        Imported
+                    ) : post.isSubscribed ? (
+                      <span className="inline-flex items-center gap-1 text-sm text-green-600 dark:text-green-400 px-2 py-1 rounded-full bg-green-50 dark:bg-green-900/30">
+                        <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                        </svg>
+                        Subscribed
                       </span>
                     ) : postType === 'dataset' ? (
                       <button
-                        onClick={() => handleImportDataset(post)}
+                        onClick={() => handleSubscribeDataset(post)}
                         className="px-4 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700"
                       >
-                        Import Dataset
+                        Subscribe Dataset
                       </button>
                     ) : (
                       <button
-                        onClick={() => setImportingPost(post)}
+                        onClick={() => setSubscribingPost(post)}
                         className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
                       >
-                        Import {postType === 'indicator' ? 'Indicator' : 'Strategy'}
+                        Subscribe {postType === 'indicator' ? 'Indicator' : 'Strategy'}
                       </button>
                     )}
                   </div>
@@ -554,28 +569,28 @@ export default function SharePageContent() {
         }}
       />
 
-      {/* Import Modal for Indicator/Strategy */}
-      {importingPost && (importingPost.indicator || importingPost.strategy) && (
+      {/* Subscribe Modal for Indicator/Strategy */}
+      {subscribingPost && (subscribingPost.indicator || subscribingPost.strategy) && (
         <ImportWithRenameModal
           isOpen={true}
-          onClose={() => setImportingPost(null)}
-          itemType={importingPost.indicator ? 'indicator' : 'strategy'}
+          onClose={() => setSubscribingPost(null)}
+          itemType={subscribingPost.indicator ? 'indicator' : 'strategy'}
           item={
-            importingPost.indicator
+            subscribingPost.indicator
               ? {
-                  id: importingPost.indicator.id,
-                  name: importingPost.indicator.name,
-                  description: importingPost.indicator.description,
-                  creator: importingPost.user,
+                  id: subscribingPost.indicator.id,
+                  name: subscribingPost.indicator.name,
+                  description: subscribingPost.indicator.description,
+                  creator: subscribingPost.user,
                 }
               : {
-                  id: importingPost.strategy!.id,
-                  name: importingPost.strategy!.name,
-                  description: importingPost.strategy!.description,
-                  creator: importingPost.user,
+                  id: subscribingPost.strategy!.id,
+                  name: subscribingPost.strategy!.name,
+                  description: subscribingPost.strategy!.description,
+                  creator: subscribingPost.user,
                 }
           }
-          onImport={importingPost.indicator ? handleImportIndicator : handleImportStrategy}
+          onImport={subscribingPost.indicator ? handleSubscribeIndicator : handleSubscribeStrategy}
         />
       )}
     </div>
