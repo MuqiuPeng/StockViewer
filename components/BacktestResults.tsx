@@ -3,132 +3,34 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { createChart, IChartApi, ISeriesApi, ColorType } from 'lightweight-charts';
 import { useTheme } from './ThemeProvider';
-
-interface BacktestMetrics {
-  totalReturn: number;
-  totalReturnPct: number;
-  finalValue: number;
-  initialValue: number;
-  maxDrawdown: number;
-  maxDrawdownPct: number;
-  sharpeRatio: number;
-  sortinoRatio: number;
-  calmarRatio: number;
-  winRate: number;
-  avgWin: number;
-  avgLoss: number;
-  profitFactor: number;
-  tradeCount: number;
-  wonTrades?: number;
-  lostTrades?: number;
-  longestWinStreak?: number;
-  longestLossStreak?: number;
-  avgSlippagePct?: number;
-  totalSlippageCost?: number;
-  sameDayTrades?: number;
-  nextOpenTrades?: number;
-}
-
-interface EquityPoint {
-  date: string;
-  value: number;
-  cash?: number;
-  shares?: number;
-  stock_value?: number;
-  positions?: Record<string, number>;
-}
-
-interface TradeMarker {
-  signal_date?: string;
-  execution_date?: string;
-  date: string;
-  type: 'buy' | 'sell';
-  amount?: number;
-  price?: number;
-  signal_price?: number;
-  size?: number;
-  value?: number;
-  commission?: number;
-  execution_mode?: 'close' | 'next_open';
-  symbol?: string; // For portfolio backtests
-}
-
-interface DateRange {
-  startDate?: string;
-  endDate?: string;
-  dataPoints?: number;
-}
-
-interface StrategyInfo {
-  name?: string;
-  parameters?: Record<string, any>;
-  initialCash?: number;
-  commission?: number;
-  stockId?: string;
-}
-
-interface StockResult {
-  stockId: string;
-  metrics: BacktestMetrics;
-  equityCurve?: EquityPoint[];
-  tradeMarkers?: TradeMarker[];
-  dataPoints: number;
-}
-
-interface GroupBacktestResult {
-  type: 'group';
-  groupName: string;
-  aggregatedMetrics: {
-    totalReturn: number;
-    totalReturnPct: number;
-    avgFinalValue: number;
-    avgMaxDrawdownPct: number;
-    avgSharpeRatio: number;
-    avgSortinoRatio: number;
-    avgWinRate: number;
-    totalTrades: number;
-    stockCount: number;
-  };
-  stockResults: StockResult[];
-  errors?: Array<{ stockId: string; error: string }>;
-}
-
-interface PortfolioBacktestResult {
-  type: 'portfolio';
-  symbols: string[];
-  datasetFilenames?: Record<string, string>; // Mapping from stock code to original dataset filename
-  metrics: BacktestMetrics;
-  equityCurve: Array<{ date: string; value: number; cash?: number; shares?: number; positions?: Record<string, number> }>;
-  tradeMarkers: TradeMarker[];
-  dateRange?: {
-    startDate: string;
-    endDate: string;
-  };
-  positionSnapshots?: Array<{
-    date: string;
-    positions: Record<string, { shares: number; value: number; percentOfPortfolio: number }>;
-    cash: number;
-    totalValue: number;
-  }>;
-  perSymbolMetrics?: Array<{
-    symbol: string;
-    totalReturn: number;
-    totalReturnPct: number;
-    sharpeRatio: number;
-    maxDrawdownPct: number;
-    tradeCount: number;
-    contributionToPortfolio: number;
-    winRate: number;
-  }>;
-  perSymbolEquityCurves?: Record<string, Array<{ date: string; value: number; shares: number }>>;
-  constraints?: any;
-}
+import {
+  BacktestMetrics,
+  EquityPoint,
+  TradeMarker,
+  DateRange,
+  StrategyInfo,
+  StockResult,
+  GroupBacktestResult,
+  PortfolioBacktestResult,
+  CandleData,
+} from './backtest/types';
+import {
+  formatNumber,
+  formatPercent,
+  formatCurrency,
+  formatRatio,
+  calculateDrawdown,
+  filterCandlesByDateRange,
+} from './backtest/utils';
+import MetricCard, { MetricCardGrid, SmallMetric } from './backtest/MetricCard';
+import TabNav, { SectionHeader, TabItem } from './backtest/TabNav';
+import TradeTable, { CompactTradeList } from './backtest/TradeTable';
 
 interface BacktestResultsProps {
   metrics?: BacktestMetrics;
   equityCurve?: EquityPoint[];
   tradeMarkers?: TradeMarker[];
-  candles?: Array<{ time: number | string; open: number; high: number; low: number; close: number }>;
+  candles?: CandleData[];
   dateRange?: DateRange;
   strategyInfo?: StrategyInfo;
   groupResult?: GroupBacktestResult;
@@ -1314,25 +1216,6 @@ function PortfolioBacktestResults({
     }
   }, [theme]);
 
-  const formatNumber = (value: number | null | undefined, decimals: number = 2): string => {
-    if (value === null || value === undefined || isNaN(value)) {
-      return 'N/A';
-    }
-    if (value >= 1000000) {
-      return (value / 1000000).toFixed(decimals) + 'M';
-    } else if (value >= 1000) {
-      return (value / 1000).toFixed(decimals) + 'K';
-    }
-    return value.toFixed(decimals);
-  };
-
-  const formatPercent = (value: number | null | undefined): string => {
-    if (value === null || value === undefined || isNaN(value)) {
-      return 'N/A';
-    }
-    return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
-  };
-
   // Filtered and sorted trades
   const processedTrades = useMemo(() => {
     let filtered = portfolioResult.tradeMarkers.filter(trade => {
@@ -2105,25 +1988,6 @@ function GroupBacktestResults({
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [expandedStocks, setExpandedStocks] = useState<Set<string>>(new Set());
   const [stockCandles, setStockCandles] = useState<Record<string, any>>({});
-
-  const formatNumber = (value: number | null | undefined, decimals: number = 2): string => {
-    if (value === null || value === undefined || isNaN(value)) {
-      return 'N/A';
-    }
-    if (value >= 1000000) {
-      return (value / 1000000).toFixed(decimals) + 'M';
-    } else if (value >= 1000) {
-      return (value / 1000).toFixed(decimals) + 'K';
-    }
-    return value.toFixed(decimals);
-  };
-
-  const formatPercent = (value: number | null | undefined): string => {
-    if (value === null || value === undefined || isNaN(value)) {
-      return 'N/A';
-    }
-    return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
-  };
 
   const toggleExpanded = async (stockId: string) => {
     const newExpanded = new Set(expandedStocks);
@@ -3410,25 +3274,6 @@ export default function BacktestResults({
       try { drawdownChartApiRef.current.applyOptions(themeOptions); } catch (e) {}
     }
   }, [theme]);
-
-  const formatNumber = (value: number | null | undefined, decimals: number = 2): string => {
-    if (value === null || value === undefined || isNaN(value)) {
-      return 'N/A';
-    }
-    if (value >= 1000000) {
-      return (value / 1000000).toFixed(decimals) + 'M';
-    } else if (value >= 1000) {
-      return (value / 1000).toFixed(decimals) + 'K';
-    }
-    return value.toFixed(decimals);
-  };
-
-  const formatPercent = (value: number | null | undefined): string => {
-    if (value === null || value === undefined || isNaN(value)) {
-      return 'N/A';
-    }
-    return `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`;
-  };
 
   const handleExportJSON = () => {
     const exportData = {
