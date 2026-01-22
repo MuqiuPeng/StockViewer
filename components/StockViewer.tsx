@@ -971,9 +971,7 @@ export default function StockViewer() {
 
           {/* Resize Handle */}
           <div
-            className={`w-1 flex-shrink-0 cursor-col-resize hover:bg-blue-500 transition-colors ${
-              isResizing ? 'bg-blue-500' : 'bg-gray-200 dark:bg-gray-700'
-            }`}
+            className="w-2 flex-shrink-0 cursor-col-resize"
             onMouseDown={handleResizeStart}
             style={{ touchAction: 'none' }}
           />
