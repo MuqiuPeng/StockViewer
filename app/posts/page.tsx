@@ -67,6 +67,7 @@ export default function PostsPage() {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
+  const [hasDragged, setHasDragged] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const imageContainerRef = useRef<HTMLDivElement>(null);
 
@@ -78,7 +79,11 @@ export default function PostsPage() {
   };
 
   const handleImageClick = (e: React.MouseEvent<HTMLImageElement>) => {
-    if (isDragging) return;
+    // If user dragged, don't treat as click
+    if (hasDragged) {
+      setHasDragged(false);
+      return;
+    }
 
     if (zoomLevel >= MAX_ZOOM) {
       // Already at max zoom, reset
@@ -105,16 +110,22 @@ export default function PostsPage() {
     if (zoomLevel > 1) {
       e.preventDefault();
       setIsDragging(true);
+      setHasDragged(false);
       setDragStart({ x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y });
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isDragging && zoomLevel > 1) {
-      setDragOffset({
-        x: e.clientX - dragStart.x,
-        y: e.clientY - dragStart.y,
-      });
+      const newX = e.clientX - dragStart.x;
+      const newY = e.clientY - dragStart.y;
+
+      // Check if actually moved (threshold of 5px to avoid micro-movements)
+      if (Math.abs(newX - dragOffset.x) > 5 || Math.abs(newY - dragOffset.y) > 5) {
+        setHasDragged(true);
+      }
+
+      setDragOffset({ x: newX, y: newY });
     }
   };
 
