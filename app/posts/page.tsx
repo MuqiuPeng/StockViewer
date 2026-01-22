@@ -296,9 +296,17 @@ export default function PostsPage() {
                 {/* Post Header */}
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center text-sm font-medium">
-                      {post.user.name?.[0] || '?'}
-                    </div>
+                    {post.user.image ? (
+                      <img
+                        src={post.user.image}
+                        alt={post.user.name || 'User'}
+                        className="w-10 h-10 rounded-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center text-sm font-medium">
+                        {post.user.name?.[0] || '?'}
+                      </div>
+                    )}
                     <div>
                       <div className="font-medium dark:text-white">{post.user.name || 'Unknown'}</div>
                       <div className="text-xs text-gray-500">{formatTime(post.createdAt)}</div>
