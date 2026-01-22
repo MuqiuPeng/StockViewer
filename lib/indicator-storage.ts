@@ -24,8 +24,6 @@ export interface Indicator {
   // External datasets to include in parameters
   externalDatasets?: Record<string, { groupId: string; datasetName: string }>;
 
-  // Visibility: empty array = public, array with userIds = only those users can access
-  visibleTo?: string[];
   category?: string;
   tags?: string[];
 }
@@ -88,7 +86,6 @@ export async function saveIndicator(
   const dataWithDefaults = {
     ...indicatorData,
     dependencies: indicatorData.dependencies || [],
-    // visibleTo is set at API layer based on userId
   };
 
   return store.create(dataWithDefaults);

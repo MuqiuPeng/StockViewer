@@ -83,6 +83,12 @@ model User {
   // Share posts
   sharePosts SharePost[]
 
+  // User Groups
+  ownedGroups       UserGroup[]           @relation("GroupOwner")
+  groupMemberships  UserGroupMember[]
+  groupInvitations  UserGroupInvitation[]
+  groupMessages     UserGroupMessage[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
@@ -183,12 +189,10 @@ model UserStock {
 // SHARED INDICATORS
 // ============================================================================
 
-/// Indicator definitions - can be shared
-/// visibleTo: [] = public, ['userId1'] = only those users
+/// Indicator definitions
 model Indicator {
-  id        String   @id @default(cuid())
+  id        String @id @default(cuid())
   createdBy String
-  visibleTo String[]
 
   name         String
   description  String @db.Text
@@ -218,10 +222,10 @@ model Indicator {
   indicatorValues IndicatorValue[]
   stockIndicators StockIndicator[]
   sharePosts      SharePost[]
+  groupMessages   UserGroupMessage[]
 
   @@unique([name]) // Globally unique names for shared indicators
   @@index([createdBy])
-  @@index([visibleTo])
   @@index([category])
 }
 
@@ -282,12 +286,10 @@ model StockIndicator {
 // SHARED STRATEGIES
 // ============================================================================
 
-/// Trading strategies - can be shared
-/// visibleTo: [] = public, ['userId1'] = only those users
+/// Trading strategies
 model Strategy {
-  id        String   @id @default(cuid())
+  id        String @id @default(cuid())
   createdBy String
-  visibleTo String[]
 
   name             String
   description      String   @db.Text
@@ -305,10 +307,10 @@ model Strategy {
   userStrategies  UserStrategy[]
   backtestHistory BacktestHistoryEntry[]
   sharePosts      SharePost[]
+  groupMessages   UserGroupMessage[]
 
   @@unique([name]) // Globally unique names for shared strategies
   @@index([createdBy])
-  @@index([visibleTo])
 }
 
 /// User's strategy collection (subscriptions)
@@ -364,12 +366,10 @@ model BacktestHistoryEntry {
 // SHARED STOCK GROUPS
 // ============================================================================
 
-/// Stock groups (watchlists, portfolios) - can be shared
-/// visibleTo: [] = public, ['userId1'] = only those users
+/// Stock groups (watchlists, portfolios)
 model StockGroup {
-  id        String   @id @default(cuid())
+  id        String @id @default(cuid())
   createdBy String
-  visibleTo String[]
 
   name           String
   description    String?  @db.Text
@@ -380,12 +380,12 @@ model StockGroup {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  creator    User             @relation("GroupCreator", fields: [createdBy], references: [id], onDelete: Cascade)
-  userGroups UserStockGroup[]
+  creator       User               @relation("GroupCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  userGroups    UserStockGroup[]
+  groupMessages UserGroupMessage[]
 
   @@unique([name]) // Globally unique names for shared groups
   @@index([createdBy])
-  @@index([visibleTo])
 }
 
 /// User's group collection (subscriptions)
@@ -409,11 +409,9 @@ model UserStockGroup {
 // ============================================================================
 
 /// View settings (chart configs) - can be shared as presets
-/// visibleTo: [] = public, ['userId1'] = only those users
 model ViewSetting {
-  id        String   @id @default(cuid())
+  id        String @id @default(cuid())
   createdBy String
-  visibleTo String[]
 
   name               String
   enabledIndicators1 String[]
@@ -424,12 +422,12 @@ model ViewSetting {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  creator          User              @relation("ViewSettingCreator", fields: [createdBy], references: [id], onDelete: Cascade)
+  creator          User               @relation("ViewSettingCreator", fields: [createdBy], references: [id], onDelete: Cascade)
   userViewSettings UserViewSetting[]
+  groupMessages    UserGroupMessage[]
 
   @@unique([name]) // Globally unique names for shared presets
   @@index([createdBy])
-  @@index([visibleTo])
 }
 
 /// User's view setting collection (subscriptions)
@@ -575,4 +573,85 @@ model SharePost {
 
   @@index([userId])
   @@index([createdAt])
+}
+
+// ============================================================================
+// USER GROUPS
+// ============================================================================
+
+/// User groups for team collaboration
+model UserGroup {
+  id          String @id @default(cuid())
+  name        String
+  description String? @db.Text
+  ownerId     String
+
+  owner       User                  @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members     UserGroupMember[]
+  invitations UserGroupInvitation[]
+  messages    UserGroupMessage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([ownerId])
+}
+
+/// User group membership
+model UserGroupMember {
+  id       String @id @default(cuid())
+  groupId  String
+  userId   String
+  joinedAt DateTime @default(now())
+
+  group UserGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+}
+
+/// User group invitations
+model UserGroupInvitation {
+  id        String @id @default(cuid())
+  groupId   String
+  userId    String
+  status    String @default("pending") // pending | accepted | rejected
+  createdAt DateTime @default(now())
+
+  group UserGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+  @@index([status])
+}
+
+/// User group messages (chat + resource sharing)
+model UserGroupMessage {
+  id      String  @id @default(cuid())
+  groupId String
+  userId  String
+  content String? @db.Text
+
+  // Shared resources (only one can be set)
+  indicatorId   String?
+  strategyId    String?
+  stockGroupId  String?
+  viewSettingId String?
+
+  group       UserGroup    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  indicator   Indicator?   @relation(fields: [indicatorId], references: [id], onDelete: SetNull)
+  strategy    Strategy?    @relation(fields: [strategyId], references: [id], onDelete: SetNull)
+  stockGroup  StockGroup?  @relation(fields: [stockGroupId], references: [id], onDelete: SetNull)
+  viewSetting ViewSetting? @relation(fields: [viewSettingId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([groupId])
+  @@index([userId])
+  @@index([groupId, createdAt])
 }

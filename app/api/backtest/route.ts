@@ -140,16 +140,18 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check access - user must own the strategy or have access to it
+    // Check access - user must own the strategy or have it in their collection
     const isOwner = strategy.createdBy === userId;
-    const isPublic = strategy.visibleTo.length === 0;
-    const hasAccess = strategy.visibleTo.includes(userId);
-
-    if (!isOwner && !isPublic && !hasAccess) {
-      return NextResponse.json(
-        { error: 'Forbidden', message: 'You do not have access to this strategy' },
-        { status: 403 }
-      );
+    if (!isOwner) {
+      const inCollection = await prisma.userStrategy.findUnique({
+        where: { userId_strategyId: { userId, strategyId } },
+      });
+      if (!inCollection) {
+        return NextResponse.json(
+          { error: 'Forbidden', message: 'You do not have access to this strategy' },
+          { status: 403 }
+        );
+      }
     }
 
     // Parse dates

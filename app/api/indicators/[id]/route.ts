@@ -37,16 +37,18 @@ export async function GET(
       );
     }
 
-    // Check access
+    // Check access - user must own it or have it in their collection
     const isOwner = indicator.createdBy === userId;
-    const isPublic = indicator.visibleTo.length === 0;
-    const hasAccess = indicator.visibleTo.includes(userId);
-
-    if (!isOwner && !isPublic && !hasAccess) {
-      return NextResponse.json(
-        { error: 'Access denied' },
-        { status: 403 }
-      );
+    if (!isOwner) {
+      const inCollection = await prisma.userIndicator.findUnique({
+        where: { userId_indicatorId: { userId, indicatorId: params.id } },
+      });
+      if (!inCollection) {
+        return NextResponse.json(
+          { error: 'Access denied' },
+          { status: 403 }
+        );
+      }
     }
 
     return NextResponse.json({
@@ -101,7 +103,7 @@ export async function PUT(
     const {
       name, description, pythonCode, outputColumn,
       isGroup, groupName, expectedOutputs, externalDatasets,
-      category, tags, visibleTo
+      category, tags
     } = body;
 
     // Validate Python code if provided
@@ -142,7 +144,6 @@ export async function PUT(
     if (externalDatasets !== undefined) updateData.externalDatasets = externalDatasets;
     if (category !== undefined) updateData.category = category;
     if (tags !== undefined) updateData.tags = tags;
-    if (visibleTo !== undefined) updateData.visibleTo = visibleTo;
 
     // Re-detect dependencies and handle versioning if code changed
     if (pythonCode !== undefined) {

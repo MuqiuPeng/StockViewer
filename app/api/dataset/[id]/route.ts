@@ -127,13 +127,18 @@ export async function GET(
     }));
 
     // Get indicator values
-    // Get user's own indicators and indicators they have access to (public or shared with them)
+    // Get user's own indicators and indicators in their collection
+    const userIndicators = await prisma.userIndicator.findMany({
+      where: { userId },
+      select: { indicatorId: true },
+    });
+    const userIndicatorIds = userIndicators.map(ui => ui.indicatorId);
+
     const allIndicators = await prisma.indicator.findMany({
       where: {
         OR: [
-          { createdBy: userId },                  // Own indicators
-          { visibleTo: { isEmpty: true } },       // Public indicators
-          { visibleTo: { has: userId } },         // Shared with this user
+          { createdBy: userId },          // Own indicators
+          { id: { in: userIndicatorIds } }, // Indicators in collection
         ],
       },
       select: {

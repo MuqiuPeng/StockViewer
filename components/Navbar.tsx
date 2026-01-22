@@ -38,7 +38,7 @@ export default function Navbar() {
     { href: '/viewer', label: 'Viewer' },
     { href: '/backtest', label: 'Backtest' },
     { href: '/datasets', label: 'Datasets' },
-    { href: '/subscription', label: 'Subscription' },
+    { href: '/groups', label: 'Groups' },
     { href: '/dependencies', label: 'Dependencies' },
     { href: '/docs', label: 'Docs' },
   ];

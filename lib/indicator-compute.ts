@@ -26,7 +26,6 @@ export interface IndicatorMeta {
   groupName?: string;
   expectedOutputs?: string[];
   externalDatasets?: Record<string, { groupId: string; datasetName: string }>;
-  visibleTo: string[];
   createdBy: string;
 }
 
@@ -85,7 +84,6 @@ export async function loadIndicator(indicatorId: string): Promise<IndicatorMeta 
     groupName: indicator.groupName || undefined,
     expectedOutputs: indicator.expectedOutputs.length > 0 ? indicator.expectedOutputs : undefined,
     externalDatasets: indicator.externalDatasets as Record<string, { groupId: string; datasetName: string }> | undefined,
-    visibleTo: indicator.visibleTo,
     createdBy: indicator.createdBy,
   };
 }
@@ -325,17 +323,26 @@ export async function computeIndicator(
       };
     }
 
-    // Check access permissions
+    // Check access permissions - user must own it or have it in their collection
     const isOwner = indicator.createdBy === userId;
-    const isPublic = indicator.visibleTo.length === 0;
-    const hasAccess = userId ? indicator.visibleTo.includes(userId) : false;
-
-    if (!isOwner && !isPublic && !hasAccess) {
+    if (!isOwner && userId) {
+      const inCollection = await prisma.userIndicator.findUnique({
+        where: { userId_indicatorId: { userId, indicatorId } },
+      });
+      if (!inCollection) {
+        return {
+          success: false,
+          stockId,
+          indicatorId,
+          error: 'Access denied to indicator',
+        };
+      }
+    } else if (!isOwner && !userId) {
       return {
         success: false,
         stockId,
         indicatorId,
-        error: 'Access denied to private indicator',
+        error: 'Authentication required',
       };
     }
 
@@ -616,13 +623,15 @@ export async function getIndicatorValues(
     return { values: [], computed: false, error: 'Indicator not found' };
   }
 
-  // Check access
+  // Check access - user must own it or have it in their collection
   const isOwner = indicator.createdBy === userId;
-  const isPublic = indicator.visibleTo.length === 0;
-  const hasAccess = indicator.visibleTo.includes(userId);
-
-  if (!isOwner && !isPublic && !hasAccess) {
-    return { values: [], computed: false, error: 'Access denied' };
+  if (!isOwner) {
+    const inCollection = await prisma.userIndicator.findUnique({
+      where: { userId_indicatorId: { userId, indicatorId } },
+    });
+    if (!inCollection) {
+      return { values: [], computed: false, error: 'Access denied' };
+    }
   }
 
   // Try to load cached values with current version

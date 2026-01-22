@@ -35,16 +35,18 @@ export async function GET(
       );
     }
 
-    // Check access
+    // Check access - user must own it or have it in their collection
     const isOwner = strategy.createdBy === userId;
-    const isPublic = strategy.visibleTo.length === 0;
-    const hasAccess = strategy.visibleTo.includes(userId);
-
-    if (!isOwner && !isPublic && !hasAccess) {
-      return NextResponse.json(
-        { error: 'Access denied' },
-        { status: 403 }
-      );
+    if (!isOwner) {
+      const inCollection = await prisma.userStrategy.findUnique({
+        where: { userId_strategyId: { userId, strategyId: params.id } },
+      });
+      if (!inCollection) {
+        return NextResponse.json(
+          { error: 'Access denied' },
+          { status: 403 }
+        );
+      }
     }
 
     return NextResponse.json({
@@ -96,7 +98,7 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { name, description, pythonCode, parameters, constraints, externalDatasets, visibleTo } = body;
+    const { name, description, pythonCode, parameters, constraints, externalDatasets } = body;
 
     // Validate Python code if provided
     if (pythonCode) {
@@ -136,7 +138,6 @@ export async function PUT(
     if (pythonCode !== undefined) updateData.pythonCode = pythonCode;
     if (parameters !== undefined) updateData.parameters = parameters;
     if (externalDatasets !== undefined) updateData.externalDatasets = externalDatasets;
-    if (visibleTo !== undefined) updateData.visibleTo = visibleTo;
 
     // Allow updating constraints for portfolio strategies
     if (constraints !== undefined && strategy.strategyType === 'portfolio') {

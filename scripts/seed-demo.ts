@@ -71,8 +71,7 @@ async function main() {
         data: {
           ...ind,
           createdBy: user.id,
-          visibleTo: [],  // Public
-          dependencies: [],
+                    dependencies: [],
           dependencyColumns: [],
           expectedOutputs: [],
           tags: [],
@@ -101,8 +100,7 @@ async function main() {
         dependencies: ['EMA12', 'EMA26'],
         dependencyColumns: [],
         createdBy: user.id,
-        visibleTo: [],  // Public
-        expectedOutputs: [],
+                expectedOutputs: [],
         tags: [],
       }
     });
@@ -153,8 +151,7 @@ async function main() {
         data: {
           ...strat,
           createdBy: user.id,
-          visibleTo: [],  // Public
-        }
+                  }
       });
       // Add to user's collection
       await prisma.userStrategy.create({

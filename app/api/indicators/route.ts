@@ -49,7 +49,6 @@ export async function GET() {
       createdAt: ui.indicator.createdAt.toISOString(),
       updatedAt: ui.indicator.updatedAt.toISOString(),
       isOwner: ui.indicator.createdBy === userId,
-      visibleTo: ui.indicator.visibleTo,
     }));
 
     return NextResponse.json({ indicators });
@@ -75,7 +74,7 @@ export async function POST(request: Request) {
     const {
       name, description, pythonCode, outputColumn,
       isGroup, groupName, expectedOutputs, externalDatasets,
-      category, tags, visibleTo
+      category, tags
     } = body;
 
     // Validate required fields
@@ -136,7 +135,6 @@ export async function POST(request: Request) {
     const indicator = await prisma.indicator.create({
       data: {
         createdBy: userId,
-        visibleTo: visibleTo || [], // Empty = public by default
         name,
         description,
         pythonCode,

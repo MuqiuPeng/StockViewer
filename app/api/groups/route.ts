@@ -62,7 +62,6 @@ async function syncDataSourceGroups(userId: string): Promise<void> {
       const group = await prisma.stockGroup.create({
         data: {
           createdBy: userId,
-          visibleTo: [], // Public
           name: `[${dataSource}]`,
           description: `Auto-generated group for ${dataSource} data source`,
           stockIds,
@@ -108,7 +107,6 @@ export async function GET() {
       createdAt: ug.group.createdAt.toISOString(),
       updatedAt: ug.group.updatedAt.toISOString(),
       isOwner: ug.group.createdBy === userId,
-      visibleTo: ug.group.visibleTo,
     }));
 
     return NextResponse.json({ groups });
@@ -131,7 +129,7 @@ export async function POST(request: Request) {
     const { userId } = authResult;
 
     const body = await request.json();
-    const { name, description, stockIds, visibleTo } = body;
+    const { name, description, stockIds } = body;
 
     if (!name || typeof name !== 'string' || name.trim() === '') {
       return NextResponse.json(
@@ -155,7 +153,6 @@ export async function POST(request: Request) {
     const group = await prisma.stockGroup.create({
       data: {
         createdBy: userId,
-        visibleTo: visibleTo || [], // Empty = public by default
         name: name.trim(),
         description: description?.trim() || null,
         stockIds: Array.isArray(stockIds) ? stockIds : [],
@@ -197,7 +194,7 @@ export async function PUT(request: Request) {
     const { userId } = authResult;
 
     const body = await request.json();
-    const { id, name, description, stockIds, visibleTo } = body;
+    const { id, name, description, stockIds } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -267,9 +264,6 @@ export async function PUT(request: Request) {
         );
       }
       updateData.stockIds = stockIds;
-    }
-    if (visibleTo !== undefined) {
-      updateData.visibleTo = visibleTo;
     }
 
     const updated = await prisma.stockGroup.update({

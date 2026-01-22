@@ -34,16 +34,18 @@ export async function GET(
       );
     }
 
-    // Check access
+    // Check access - user must own it or have it in their collection
     const isOwner = group.createdBy === userId;
-    const isPublic = group.visibleTo.length === 0;
-    const hasAccess = group.visibleTo.includes(userId);
-
-    if (!isOwner && !isPublic && !hasAccess) {
-      return NextResponse.json(
-        { error: 'Access denied' },
-        { status: 403 }
-      );
+    if (!isOwner) {
+      const inCollection = await prisma.userStockGroup.findUnique({
+        where: { userId_groupId: { userId, groupId: params.id } },
+      });
+      if (!inCollection) {
+        return NextResponse.json(
+          { error: 'Access denied' },
+          { status: 403 }
+        );
+      }
     }
 
     return NextResponse.json({
@@ -103,7 +105,7 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { name, description, stockIds, visibleTo } = body;
+    const { name, description, stockIds } = body;
 
     // Build update data
     const updateData: any = {};
@@ -139,9 +141,6 @@ export async function PUT(
         );
       }
       updateData.stockIds = stockIds;
-    }
-    if (visibleTo !== undefined) {
-      updateData.visibleTo = visibleTo;
     }
 
     const updated = await prisma.stockGroup.update({

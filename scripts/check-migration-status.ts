@@ -49,11 +49,7 @@ async function main() {
 
   // Indicator statistics
   const indicatorCount = await prisma.indicator.count();
-  const publicIndicators = await prisma.indicator.count({ where: { visibleTo: { isEmpty: true } } });
-  const privateIndicators = indicatorCount - publicIndicators;
   console.log(`\nIndicators: ${indicatorCount}`);
-  console.log(`  - Public (visibleTo empty): ${publicIndicators}`);
-  console.log(`  - Private/Shared: ${privateIndicators}`);
 
   // Cached indicator values
   const indicatorValueCount = await prisma.indicatorValue.count();

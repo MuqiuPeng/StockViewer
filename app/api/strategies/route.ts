@@ -41,7 +41,6 @@ export async function GET() {
       createdAt: us.strategy.createdAt.toISOString(),
       updatedAt: us.strategy.updatedAt.toISOString(),
       isOwner: us.strategy.createdBy === userId,
-      visibleTo: us.strategy.visibleTo,
     }));
 
     return NextResponse.json({ strategies });
@@ -64,7 +63,7 @@ export async function POST(request: Request) {
     const { userId } = authResult;
 
     const body = await request.json();
-    const { name, description, pythonCode, parameters, strategyType, constraints, externalDatasets, visibleTo } = body;
+    const { name, description, pythonCode, parameters, strategyType, constraints, externalDatasets } = body;
 
     // Validate required fields
     if (!name || !description || !pythonCode) {
@@ -114,7 +113,6 @@ export async function POST(request: Request) {
     const strategy = await prisma.strategy.create({
       data: {
         createdBy: userId,
-        visibleTo: visibleTo || [], // Empty = public by default
         name,
         description,
         pythonCode,
