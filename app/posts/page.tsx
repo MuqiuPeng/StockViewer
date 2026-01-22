@@ -59,8 +59,21 @@ export default function PostsPage() {
   // Ref for paste area
   const modalRef = useRef<HTMLDivElement>(null);
 
-  // Image lightbox
-  const [lightboxImage, setLightboxImage] = useState<{ url: string; caption: string | null } | null>(null);
+  // Image lightbox with zoom
+  const [lightboxImage, setLightboxImage] = useState<{
+    images: PostImage[];
+    currentIndex: number;
+  } | null>(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
+
+  // Track current image index for each post
+  const [postImageIndices, setPostImageIndices] = useState<Record<string, number>>({});
+
+  const getPostImageIndex = (postId: string) => postImageIndices[postId] || 0;
+
+  const setPostImageIndex = (postId: string, index: number) => {
+    setPostImageIndices(prev => ({ ...prev, [postId]: index }));
+  };
 
   // Handle paste event for images
   const handlePaste = async (e: React.ClipboardEvent) => {
@@ -330,20 +343,62 @@ export default function PostsPage() {
 
                 {/* Post Images */}
                 {post.images.length > 0 && (
-                  <div className="grid grid-cols-2 gap-2 mb-4">
-                    {post.images.map((img) => (
-                      <div key={img.id} className="relative">
-                        <img
-                          src={img.url}
-                          alt={img.caption || ''}
-                          className="w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                          onClick={() => setLightboxImage({ url: img.url, caption: img.caption })}
-                        />
-                        {img.caption && (
-                          <p className="text-xs text-gray-500 mt-1">{img.caption}</p>
-                        )}
-                      </div>
-                    ))}
+                  <div className="relative mb-4">
+                    {/* Image container with fixed height */}
+                    <div
+                      className="relative w-full h-[150px] rounded-lg overflow-hidden cursor-pointer"
+                      onClick={() => {
+                        setLightboxImage({ images: post.images, currentIndex: getPostImageIndex(post.id) });
+                        setZoomLevel(1);
+                      }}
+                    >
+                      <img
+                        src={post.images[getPostImageIndex(post.id)].url}
+                        alt={post.images[getPostImageIndex(post.id)].caption || ''}
+                        className="w-full h-auto absolute top-0 left-0 object-cover object-top"
+                        style={{ minHeight: '100%' }}
+                      />
+                    </div>
+
+                    {/* Navigation arrows */}
+                    {post.images.length > 1 && (
+                      <>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const currentIndex = getPostImageIndex(post.id);
+                            setPostImageIndex(post.id, currentIndex === 0 ? post.images.length - 1 : currentIndex - 1);
+                          }}
+                          className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center"
+                        >
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const currentIndex = getPostImageIndex(post.id);
+                            setPostImageIndex(post.id, currentIndex === post.images.length - 1 ? 0 : currentIndex + 1);
+                          }}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center"
+                        >
+                          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        </button>
+
+                        {/* Image counter */}
+                        <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/50 text-white text-xs rounded">
+                          {getPostImageIndex(post.id) + 1} / {post.images.length}
+                        </div>
+                      </>
+                    )}
+
+                    {/* Caption */}
+                    {post.images[getPostImageIndex(post.id)].caption && (
+                      <p className="text-xs text-gray-500 mt-1">{post.images[getPostImageIndex(post.id)].caption}</p>
+                    )}
                   </div>
                 )}
 
@@ -597,11 +652,17 @@ export default function PostsPage() {
       {lightboxImage && (
         <div
           className="fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-90"
-          onClick={() => setLightboxImage(null)}
+          onClick={() => {
+            setLightboxImage(null);
+            setZoomLevel(1);
+          }}
         >
           {/* Close button */}
           <button
-            onClick={() => setLightboxImage(null)}
+            onClick={() => {
+              setLightboxImage(null);
+              setZoomLevel(1);
+            }}
             className="absolute top-4 right-4 text-white hover:text-gray-300 z-10"
           >
             <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -609,19 +670,103 @@ export default function PostsPage() {
             </svg>
           </button>
 
+          {/* Zoom controls */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-black/50 rounded-lg px-3 py-2 z-10">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setZoomLevel(prev => Math.max(0.5, prev - 0.25));
+              }}
+              className="text-white hover:text-gray-300 px-2"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+              </svg>
+            </button>
+            <span className="text-white text-sm min-w-[60px] text-center">{Math.round(zoomLevel * 100)}%</span>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setZoomLevel(prev => Math.min(3, prev + 0.25));
+              }}
+              className="text-white hover:text-gray-300 px-2"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setZoomLevel(1);
+              }}
+              className="text-white hover:text-gray-300 text-xs ml-2 px-2 py-1 border border-white/30 rounded"
+            >
+              Reset
+            </button>
+          </div>
+
+          {/* Navigation arrows */}
+          {lightboxImage.images.length > 1 && (
+            <>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxImage(prev => prev ? {
+                    ...prev,
+                    currentIndex: prev.currentIndex === 0 ? prev.images.length - 1 : prev.currentIndex - 1
+                  } : null);
+                  setZoomLevel(1);
+                }}
+                className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center z-10"
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setLightboxImage(prev => prev ? {
+                    ...prev,
+                    currentIndex: prev.currentIndex === prev.images.length - 1 ? 0 : prev.currentIndex + 1
+                  } : null);
+                  setZoomLevel(1);
+                }}
+                className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center z-10"
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </>
+          )}
+
           {/* Image container */}
           <div
-            className="max-w-[90vw] max-h-[90vh] flex flex-col items-center"
+            className="max-w-[90vw] max-h-[90vh] flex flex-col items-center overflow-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <img
-              src={lightboxImage.url}
-              alt={lightboxImage.caption || ''}
-              className="max-w-full max-h-[85vh] object-contain rounded-lg"
+              src={lightboxImage.images[lightboxImage.currentIndex].url}
+              alt={lightboxImage.images[lightboxImage.currentIndex].caption || ''}
+              className="object-contain rounded-lg transition-transform duration-200"
+              style={{
+                transform: `scale(${zoomLevel})`,
+                maxWidth: zoomLevel <= 1 ? '90vw' : 'none',
+                maxHeight: zoomLevel <= 1 ? '80vh' : 'none',
+              }}
             />
-            {lightboxImage.caption && (
-              <p className="text-white text-center mt-4 px-4">{lightboxImage.caption}</p>
-            )}
+            <div className="mt-4 text-center">
+              {lightboxImage.images[lightboxImage.currentIndex].caption && (
+                <p className="text-white px-4">{lightboxImage.images[lightboxImage.currentIndex].caption}</p>
+              )}
+              {lightboxImage.images.length > 1 && (
+                <p className="text-gray-400 text-sm mt-2">
+                  {lightboxImage.currentIndex + 1} / {lightboxImage.images.length}
+                </p>
+              )}
+            </div>
           </div>
         </div>
       )}
