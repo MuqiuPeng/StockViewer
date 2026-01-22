@@ -10,6 +10,7 @@ import { BacktestHistoryEntry } from '@/lib/backtest-history-storage';
 import { Strategy } from '@/lib/strategy-storage';
 
 interface DatasetInfo {
+  id: string;
   name: string;
   code: string;
   filename: string;
@@ -301,7 +302,7 @@ export default function BacktestPage() {
           setBacktestParams(null); // Clear params when closing
         }}
         onRun={handleRunBacktest}
-        currentDataset={datasets.length > 0 ? datasets[0].name : ''}
+        currentDataset={datasets.length > 0 ? datasets[0].id : ''}
         strategies={strategies}
         datasets={datasets}
         groups={groups}
