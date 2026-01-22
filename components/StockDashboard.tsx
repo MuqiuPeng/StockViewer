@@ -548,7 +548,7 @@ export default function StockDashboard() {
       <RunBacktestModal
         isOpen={isRunBacktestOpen}
         onClose={() => setIsRunBacktestOpen(false)}
-        onRun={async (strategyId, datasetName, initialCash, commission, parameters) => {
+        onRun={async (strategyId, target, initialCash, commission, parameters, startDate, endDate) => {
           setIsBacktestLoading(true);
           setIsRunBacktestOpen(false);
           try {
@@ -557,10 +557,14 @@ export default function StockDashboard() {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 strategyId,
-                datasetName,
-                initialCash,
-                commission,
-                parameters,
+                target,
+                parameters: {
+                  initialCash,
+                  commission,
+                  startDate,
+                  endDate,
+                  strategyParameters: parameters,
+                },
               }),
             });
 

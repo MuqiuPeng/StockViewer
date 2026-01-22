@@ -201,11 +201,13 @@ export default function BacktestPage() {
         body: JSON.stringify({
           strategyId,
           target,
-          initialCash,
-          commission,
-          parameters,
-          startDate,
-          endDate,
+          parameters: {
+            initialCash,
+            commission,
+            startDate,
+            endDate,
+            strategyParameters: parameters,
+          },
         }),
       });
 
