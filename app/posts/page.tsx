@@ -36,6 +36,7 @@ interface Resource {
   name: string;
   description?: string;
   type: 'indicator' | 'strategy' | 'stockGroup' | 'viewSetting' | 'backtestHistory';
+  isOwner?: boolean;
 }
 
 export default function PostsPage() {
@@ -126,11 +127,13 @@ export default function PostsPage() {
         }));
       } else {
         const items = data.indicators || data.strategies || data.groups || data.settings || [];
-        resources = items.filter((r: any) => r.isOwner).map((r: any) => ({
+        // Include both owned and subscribed resources
+        resources = items.map((r: any) => ({
           id: r.id,
           name: r.name,
           description: r.description,
           type,
+          isOwner: r.isOwner,
         }));
       }
       setAvailableResources(resources);
@@ -541,7 +544,18 @@ export default function PostsPage() {
                       onClick={() => handleAddAttachment(resource)}
                       className="w-full text-left p-3 border dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-700"
                     >
-                      <div className="font-medium dark:text-white">{resource.name}</div>
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium dark:text-white">{resource.name}</span>
+                        {resource.isOwner !== undefined && (
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${
+                            resource.isOwner
+                              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'
+                              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
+                          }`}>
+                            {resource.isOwner ? 'Owned' : 'Subscribed'}
+                          </span>
+                        )}
+                      </div>
                       {resource.description && (
                         <div className="text-sm text-gray-500 truncate">{resource.description}</div>
                       )}
