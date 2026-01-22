@@ -59,6 +59,9 @@ export default function PostsPage() {
   // Ref for paste area
   const modalRef = useRef<HTMLDivElement>(null);
 
+  // Image lightbox
+  const [lightboxImage, setLightboxImage] = useState<{ url: string; caption: string | null } | null>(null);
+
   // Handle paste event for images
   const handlePaste = async (e: React.ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -322,7 +325,12 @@ export default function PostsPage() {
                   <div className="grid grid-cols-2 gap-2 mb-4">
                     {post.images.map((img) => (
                       <div key={img.id} className="relative">
-                        <img src={img.url} alt={img.caption || ''} className="w-full rounded-lg" />
+                        <img
+                          src={img.url}
+                          alt={img.caption || ''}
+                          className="w-full rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => setLightboxImage({ url: img.url, caption: img.caption })}
+                        />
                         {img.caption && (
                           <p className="text-xs text-gray-500 mt-1">{img.caption}</p>
                         )}
@@ -573,6 +581,39 @@ export default function PostsPage() {
                 Cancel
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Image Lightbox */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-90"
+          onClick={() => setLightboxImage(null)}
+        >
+          {/* Close button */}
+          <button
+            onClick={() => setLightboxImage(null)}
+            className="absolute top-4 right-4 text-white hover:text-gray-300 z-10"
+          >
+            <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
+          {/* Image container */}
+          <div
+            className="max-w-[90vw] max-h-[90vh] flex flex-col items-center"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <img
+              src={lightboxImage.url}
+              alt={lightboxImage.caption || ''}
+              className="max-w-full max-h-[85vh] object-contain rounded-lg"
+            />
+            {lightboxImage.caption && (
+              <p className="text-white text-center mt-4 px-4">{lightboxImage.caption}</p>
+            )}
           </div>
         </div>
       )}
