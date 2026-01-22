@@ -112,7 +112,19 @@ export default function StockViewer() {
   const [isSaveViewSettingModalOpen, setIsSaveViewSettingModalOpen] = useState(false);
 
   // Resizable panel state
-  const [leftPanelWidth, setLeftPanelWidth] = useState(320); // Default width in pixels
+  const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
+    // Load from localStorage on initial render
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('viewer-left-panel-width');
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!isNaN(parsed) && parsed >= 200) {
+          return parsed;
+        }
+      }
+    }
+    return 320; // Default width in pixels
+  });
   const [isResizing, setIsResizing] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -443,6 +455,11 @@ export default function StockViewer() {
       setConstantLines2(setting.constantLines2 || []);
     }
   }, [selectedViewSetting, viewSettings]);
+
+  // Save panel width to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('viewer-left-panel-width', leftPanelWidth.toString());
+  }, [leftPanelWidth]);
 
   // Panel resize handlers
   const handleResizeStart = useCallback((e: React.MouseEvent) => {
