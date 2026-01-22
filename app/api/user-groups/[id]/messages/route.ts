@@ -67,6 +67,7 @@ export async function GET(
             outputColumn: true,
             isGroup: true,
             groupName: true,
+            dependencies: true,
           },
         },
         strategy: {
@@ -75,6 +76,7 @@ export async function GET(
             name: true,
             description: true,
             strategyType: true,
+            dependencies: true,
           },
         },
         stockGroup: {
@@ -261,6 +263,7 @@ export async function POST(
             outputColumn: true,
             isGroup: true,
             groupName: true,
+            dependencies: true,
           },
         },
         strategy: {
@@ -269,6 +272,7 @@ export async function POST(
             name: true,
             description: true,
             strategyType: true,
+            dependencies: true,
           },
         },
         stockGroup: {

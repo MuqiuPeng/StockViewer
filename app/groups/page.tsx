@@ -52,12 +52,14 @@ interface Message {
     id: string;
     name: string;
     description: string;
+    dependencies: string[];
     isImported: boolean;
   } | null;
   strategy: {
     id: string;
     name: string;
     description: string;
+    dependencies: string[];
     isImported: boolean;
   } | null;
   stockGroup: {
@@ -389,23 +391,29 @@ export default function GroupsPage() {
 
   const renderResource = (message: Message) => {
     if (message.indicator) {
+      const deps = message.indicator.dependencies || [];
       return (
         <div className="bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-700 rounded p-3 mt-2">
           <div className="flex justify-between items-start">
-            <div>
+            <div className="flex-1 min-w-0">
               <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">INDICATOR</span>
               <h4 className="font-semibold text-purple-800 dark:text-purple-200">{message.indicator.name}</h4>
               <p className="text-sm text-purple-600 dark:text-purple-400">{message.indicator.description}</p>
+              {deps.length > 0 && (
+                <p className="text-xs text-purple-500 dark:text-purple-400 mt-1">
+                  Dependencies: {deps.join(', ')}
+                </p>
+              )}
             </div>
             {!message.indicator.isImported ? (
               <button
                 onClick={() => handleImportResource('indicator', message.indicator!.id)}
-                className="px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700"
+                className="px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700 whitespace-nowrap ml-2"
               >
-                Import
+                Import{deps.length > 0 ? ` (+${deps.length})` : ''}
               </button>
             ) : (
-              <span className="text-xs text-green-600 dark:text-green-400">Imported</span>
+              <span className="text-xs text-green-600 dark:text-green-400 ml-2">Imported</span>
             )}
           </div>
         </div>
@@ -413,23 +421,29 @@ export default function GroupsPage() {
     }
 
     if (message.strategy) {
+      const deps = message.strategy.dependencies || [];
       return (
         <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded p-3 mt-2">
           <div className="flex justify-between items-start">
-            <div>
+            <div className="flex-1 min-w-0">
               <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">STRATEGY</span>
               <h4 className="font-semibold text-blue-800 dark:text-blue-200">{message.strategy.name}</h4>
               <p className="text-sm text-blue-600 dark:text-blue-400">{message.strategy.description}</p>
+              {deps.length > 0 && (
+                <p className="text-xs text-blue-500 dark:text-blue-400 mt-1">
+                  Dependencies: {deps.join(', ')}
+                </p>
+              )}
             </div>
             {!message.strategy.isImported ? (
               <button
                 onClick={() => handleImportResource('strategy', message.strategy!.id)}
-                className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+                className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 whitespace-nowrap ml-2"
               >
-                Import
+                Import{deps.length > 0 ? ` (+${deps.length})` : ''}
               </button>
             ) : (
-              <span className="text-xs text-green-600 dark:text-green-400">Imported</span>
+              <span className="text-xs text-green-600 dark:text-green-400 ml-2">Imported</span>
             )}
           </div>
         </div>
