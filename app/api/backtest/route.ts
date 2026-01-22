@@ -335,9 +335,21 @@ export async function POST(request: Request) {
       }, storage);
     }
 
+    // Build dateRange from equity curve or parameters
+    const firstDate = result.equityCurve?.[0]?.date;
+    const lastDate = result.equityCurve?.[result.equityCurve.length - 1]?.date;
+    const dateRange = {
+      startDate: firstDate || parameters.startDate,
+      endDate: lastDate || parameters.endDate,
+      dataPoints: result.equityCurve?.length || 0,
+    };
+
     return NextResponse.json({
       success: result.success,
-      result,
+      result: {
+        ...result,
+        dateRange,
+      },
       historyEntry: historyEntry ? { id: historyEntry.id } : null,
     });
   } catch (error) {
