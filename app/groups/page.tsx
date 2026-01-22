@@ -48,6 +48,7 @@ interface Message {
     image: string | null;
   };
   content: string | null;
+  isOwn: boolean;
   indicator: {
     id: string;
     name: string;
@@ -379,6 +380,25 @@ export default function GroupsPage() {
     }
   };
 
+  const handleRetractMessage = async (messageId: string) => {
+    if (!selectedGroupId) return;
+    if (!confirm('Are you sure you want to retract this share?')) return;
+    try {
+      const response = await fetch(
+        `/api/user-groups/${selectedGroupId}/messages?messageId=${messageId}`,
+        { method: 'DELETE' }
+      );
+      const data = await response.json();
+      if (data.error) {
+        alert(data.message || 'Failed to retract');
+      } else {
+        setMessages(messages.filter(m => m.id !== messageId));
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to retract');
+    }
+  };
+
   const formatTime = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -405,16 +425,27 @@ export default function GroupsPage() {
                 </p>
               )}
             </div>
-            {!message.indicator.isImported ? (
-              <button
-                onClick={() => handleImportResource('indicator', message.indicator!.id)}
-                className="px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700 whitespace-nowrap ml-2"
-              >
-                Import{deps.length > 0 ? ` (+${deps.length})` : ''}
-              </button>
-            ) : (
-              <span className="text-xs text-green-600 dark:text-green-400 ml-2">Imported</span>
-            )}
+            <div className="flex items-center gap-2 ml-2">
+              {message.isOwn && (
+                <button
+                  onClick={() => handleRetractMessage(message.id)}
+                  className="px-2 py-1 text-xs text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
+                  title="Retract this share"
+                >
+                  Retract
+                </button>
+              )}
+              {!message.indicator.isImported && !message.isOwn ? (
+                <button
+                  onClick={() => handleImportResource('indicator', message.indicator!.id)}
+                  className="px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700 whitespace-nowrap"
+                >
+                  Import{deps.length > 0 ? ` (+${deps.length})` : ''}
+                </button>
+              ) : !message.isOwn ? (
+                <span className="text-xs text-green-600 dark:text-green-400">Imported</span>
+              ) : null}
+            </div>
           </div>
         </div>
       );
@@ -435,16 +466,27 @@ export default function GroupsPage() {
                 </p>
               )}
             </div>
-            {!message.strategy.isImported ? (
-              <button
-                onClick={() => handleImportResource('strategy', message.strategy!.id)}
-                className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 whitespace-nowrap ml-2"
-              >
-                Import{deps.length > 0 ? ` (+${deps.length})` : ''}
-              </button>
-            ) : (
-              <span className="text-xs text-green-600 dark:text-green-400 ml-2">Imported</span>
-            )}
+            <div className="flex items-center gap-2 ml-2">
+              {message.isOwn && (
+                <button
+                  onClick={() => handleRetractMessage(message.id)}
+                  className="px-2 py-1 text-xs text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
+                  title="Retract this share"
+                >
+                  Retract
+                </button>
+              )}
+              {!message.strategy.isImported && !message.isOwn ? (
+                <button
+                  onClick={() => handleImportResource('strategy', message.strategy!.id)}
+                  className="px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 whitespace-nowrap"
+                >
+                  Import{deps.length > 0 ? ` (+${deps.length})` : ''}
+                </button>
+              ) : !message.isOwn ? (
+                <span className="text-xs text-green-600 dark:text-green-400">Imported</span>
+              ) : null}
+            </div>
           </div>
         </div>
       );
@@ -454,21 +496,32 @@ export default function GroupsPage() {
       return (
         <div className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded p-3 mt-2">
           <div className="flex justify-between items-start">
-            <div>
+            <div className="flex-1 min-w-0">
               <span className="text-xs text-green-600 dark:text-green-400 font-medium">STOCK GROUP</span>
               <h4 className="font-semibold text-green-800 dark:text-green-200">{message.stockGroup.name}</h4>
               <p className="text-sm text-green-600 dark:text-green-400">{message.stockGroup.stockIds.length} stocks</p>
             </div>
-            {!message.stockGroup.isImported ? (
-              <button
-                onClick={() => handleImportResource('stockGroup', message.stockGroup!.id)}
-                className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
-              >
-                Import
-              </button>
-            ) : (
-              <span className="text-xs text-green-600 dark:text-green-400">Imported</span>
-            )}
+            <div className="flex items-center gap-2 ml-2">
+              {message.isOwn && (
+                <button
+                  onClick={() => handleRetractMessage(message.id)}
+                  className="px-2 py-1 text-xs text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
+                  title="Retract this share"
+                >
+                  Retract
+                </button>
+              )}
+              {!message.stockGroup.isImported && !message.isOwn ? (
+                <button
+                  onClick={() => handleImportResource('stockGroup', message.stockGroup!.id)}
+                  className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                >
+                  Import
+                </button>
+              ) : !message.isOwn ? (
+                <span className="text-xs text-green-600 dark:text-green-400">Imported</span>
+              ) : null}
+            </div>
           </div>
         </div>
       );
@@ -478,20 +531,31 @@ export default function GroupsPage() {
       return (
         <div className="bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-700 rounded p-3 mt-2">
           <div className="flex justify-between items-start">
-            <div>
+            <div className="flex-1 min-w-0">
               <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">VIEW SETTING</span>
               <h4 className="font-semibold text-orange-800 dark:text-orange-200">{message.viewSetting.name}</h4>
             </div>
-            {!message.viewSetting.isImported ? (
-              <button
-                onClick={() => handleImportResource('viewSetting', message.viewSetting!.id)}
-                className="px-3 py-1 bg-orange-600 text-white rounded text-sm hover:bg-orange-700"
-              >
-                Import
-              </button>
-            ) : (
-              <span className="text-xs text-green-600 dark:text-green-400">Imported</span>
-            )}
+            <div className="flex items-center gap-2 ml-2">
+              {message.isOwn && (
+                <button
+                  onClick={() => handleRetractMessage(message.id)}
+                  className="px-2 py-1 text-xs text-gray-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded"
+                  title="Retract this share"
+                >
+                  Retract
+                </button>
+              )}
+              {!message.viewSetting.isImported && !message.isOwn ? (
+                <button
+                  onClick={() => handleImportResource('viewSetting', message.viewSetting!.id)}
+                  className="px-3 py-1 bg-orange-600 text-white rounded text-sm hover:bg-orange-700"
+                >
+                  Import
+                </button>
+              ) : !message.isOwn ? (
+                <span className="text-xs text-green-600 dark:text-green-400">Imported</span>
+              ) : null}
+            </div>
           </div>
         </div>
       );

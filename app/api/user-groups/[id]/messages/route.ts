@@ -141,6 +141,7 @@ export async function GET(
         id: m.id,
         user: m.user,
         content: m.content,
+        isOwn: m.userId === userId,
         indicator: m.indicator ? { ...m.indicator, isImported: importedIndicators.has(m.indicatorId!) } : null,
         strategy: m.strategy ? { ...m.strategy, isImported: importedStrategies.has(m.strategyId!) } : null,
         stockGroup: m.stockGroup ? { ...m.stockGroup, isImported: importedStockGroups.has(m.stockGroupId!) } : null,
@@ -153,6 +154,75 @@ export async function GET(
     console.error('Error loading messages:', error);
     return NextResponse.json(
       { error: 'Failed to load messages', message: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    );
+  }
+}
+
+// DELETE /api/user-groups/:id/messages - Delete/retract a message
+export async function DELETE(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const authResult = await getApiStorage();
+    if (!authResult.success) {
+      return authResult.response;
+    }
+    const { userId } = authResult;
+
+    const { searchParams } = new URL(request.url);
+    const messageId = searchParams.get('messageId');
+
+    if (!messageId) {
+      return NextResponse.json(
+        { error: 'Invalid input', message: 'messageId is required' },
+        { status: 400 }
+      );
+    }
+
+    // Find the message
+    const message = await prisma.userGroupMessage.findUnique({
+      where: { id: messageId },
+      include: { group: true },
+    });
+
+    if (!message) {
+      return NextResponse.json(
+        { error: 'Message not found' },
+        { status: 404 }
+      );
+    }
+
+    // Check if user is the message sender
+    if (message.userId !== userId) {
+      return NextResponse.json(
+        { error: 'Permission denied', message: 'You can only retract your own messages' },
+        { status: 403 }
+      );
+    }
+
+    // Check if message belongs to the specified group
+    if (message.groupId !== params.id) {
+      return NextResponse.json(
+        { error: 'Invalid request', message: 'Message does not belong to this group' },
+        { status: 400 }
+      );
+    }
+
+    // Delete the message
+    await prisma.userGroupMessage.delete({
+      where: { id: messageId },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: 'Message retracted',
+    });
+  } catch (error) {
+    console.error('Error retracting message:', error);
+    return NextResponse.json(
+      { error: 'Failed to retract message', message: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
@@ -298,6 +368,7 @@ export async function POST(
         id: message.id,
         user: message.user,
         content: message.content,
+        isOwn: true,
         indicator: message.indicator ? { ...message.indicator, isImported: true } : null,
         strategy: message.strategy ? { ...message.strategy, isImported: true } : null,
         stockGroup: message.stockGroup ? { ...message.stockGroup, isImported: true } : null,
