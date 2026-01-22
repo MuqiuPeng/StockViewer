@@ -12,12 +12,17 @@ interface AdminStatus {
   pendingUsers?: number;
 }
 
+interface NotificationCount {
+  unreadCount: number;
+}
+
 export default function Navbar() {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
   const { data: session, status } = useSession();
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [adminStatus, setAdminStatus] = useState<AdminStatus>({ isAdmin: false });
+  const [notificationCount, setNotificationCount] = useState(0);
 
   // Check if we're in database mode (auth required)
   const isDatabaseMode = process.env.NEXT_PUBLIC_STORAGE_MODE === 'database';
@@ -29,8 +34,15 @@ export default function Navbar() {
         .then((res) => res.json())
         .then((data) => setAdminStatus(data))
         .catch(() => setAdminStatus({ isAdmin: false }));
+
+      // Fetch notification count
+      fetch('/api/notifications')
+        .then((res) => res.json())
+        .then((data) => setNotificationCount(data.unreadCount || 0))
+        .catch(() => setNotificationCount(0));
     } else {
       setAdminStatus({ isAdmin: false });
+      setNotificationCount(0);
     }
   }, [session]);
 
@@ -117,7 +129,7 @@ export default function Navbar() {
                 <div className="relative">
                   <button
                     onClick={() => setShowUserMenu(!showUserMenu)}
-                    className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                    className="relative flex items-center gap-2 p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                   >
                     {session.user.image ? (
                       <img
@@ -130,6 +142,12 @@ export default function Navbar() {
                         {session.user.name?.charAt(0) || session.user.email?.charAt(0) || 'U'}
                       </div>
                     )}
+                    {/* Notification badge */}
+                    {notificationCount > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] flex items-center justify-center px-1 text-xs font-medium text-white bg-red-500 rounded-full">
+                        {notificationCount > 99 ? '99+' : notificationCount}
+                      </span>
+                    )}
                   </button>
 
                   {/* Dropdown menu */}
@@ -140,6 +158,7 @@ export default function Navbar() {
                         onClick={() => setShowUserMenu(false)}
                       />
                       <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-900 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
+                        {/* User info */}
                         <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
                           <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
                             {session.user.name}
@@ -148,6 +167,39 @@ export default function Navbar() {
                             {session.user.email}
                           </p>
                         </div>
+
+                        {/* Notifications */}
+                        <Link
+                          href="/notifications"
+                          onClick={() => setShowUserMenu(false)}
+                          className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-2"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                          </svg>
+                          Notifications
+                          {notificationCount > 0 && (
+                            <span className="ml-auto px-2 py-0.5 text-xs font-medium text-white bg-red-500 rounded-full">
+                              {notificationCount > 99 ? '99+' : notificationCount}
+                            </span>
+                          )}
+                        </Link>
+
+                        {/* Profile */}
+                        <Link
+                          href="/profile"
+                          onClick={() => setShowUserMenu(false)}
+                          className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center gap-2"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                          </svg>
+                          Profile
+                        </Link>
+
+                        <div className="border-t border-gray-200 dark:border-gray-700 my-1" />
+
+                        {/* Sign out */}
                         <button
                           onClick={() => {
                             setShowUserMenu(false);
