@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface PostAttachment {
   id: string;
@@ -54,6 +54,34 @@ export default function PostsPage() {
   const [resourceType, setResourceType] = useState<string>('indicator');
   const [availableResources, setAvailableResources] = useState<Resource[]>([]);
   const [loadingResources, setLoadingResources] = useState(false);
+
+  // Ref for paste area
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Handle paste event for images
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          const reader = new FileReader();
+          reader.onload = (event) => {
+            const dataUrl = event.target?.result as string;
+            if (dataUrl) {
+              setNewImages(prev => [...prev, { url: dataUrl, caption: '' }]);
+            }
+          };
+          reader.readAsDataURL(file);
+        }
+        break;
+      }
+    }
+  };
 
   useEffect(() => {
     loadPosts();
@@ -356,7 +384,11 @@ export default function PostsPage() {
       {showCreateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center">
           <div className="absolute inset-0 bg-black bg-opacity-50" onClick={() => setShowCreateModal(false)} />
-          <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <div
+            ref={modalRef}
+            onPaste={handlePaste}
+            className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+          >
             <h3 className="text-xl font-bold dark:text-white mb-4">Create Post</h3>
 
             {/* Content */}
@@ -368,15 +400,15 @@ export default function PostsPage() {
               rows={4}
             />
 
-            {/* Image URL input */}
+            {/* Image input */}
             <div className="mt-4">
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Image URL (optional)
+                Images (paste or enter URL)
               </label>
               <div className="flex gap-2">
                 <input
                   type="text"
-                  placeholder="https://..."
+                  placeholder="Paste image or enter URL..."
                   className="flex-1 p-2 border dark:border-gray-600 rounded dark:bg-gray-700 dark:text-white"
                   onKeyPress={(e) => {
                     if (e.key === 'Enter') {
@@ -389,6 +421,7 @@ export default function PostsPage() {
                   }}
                 />
               </div>
+              <p className="text-xs text-gray-500 mt-1">Press Ctrl+V / Cmd+V anywhere to paste images from clipboard</p>
               {newImages.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-2">
                   {newImages.map((img, i) => (
