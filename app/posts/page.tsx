@@ -413,7 +413,7 @@ export default function PostsPage() {
                   <div className="relative mb-4">
                     {/* Image container with fixed height */}
                     <div
-                      className="relative w-full h-[150px] rounded-lg overflow-hidden cursor-pointer"
+                      className="relative w-full h-[300px] rounded-lg overflow-hidden cursor-pointer"
                       onClick={() => {
                         setLightboxImage({ images: post.images, currentIndex: getPostImageIndex(post.id) });
                         setZoomLevel(1);
