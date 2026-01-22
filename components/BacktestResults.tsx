@@ -2289,6 +2289,7 @@ export default function BacktestResults({
   const [hoveredTime, setHoveredTime] = useState<number | null>(null);
   const [nearestLeftTrade, setNearestLeftTrade] = useState<any>(null);
   const [nearestRightTrade, setNearestRightTrade] = useState<any>(null);
+  const [isWarningsModalOpen, setIsWarningsModalOpen] = useState(false);
 
   // Composition pie chart state - for single stock
   const [singleCompositionData, setSingleCompositionData] = useState<Array<{ name: string; value: number; color: string }>>([]);
@@ -3484,22 +3485,13 @@ export default function BacktestResults({
               <span className="text-gray-600 dark:text-gray-400 font-medium">Strategy:</span>{' '}
               <span className="font-semibold text-gray-900 dark:text-white">{strategyInfo.name || 'N/A'}</span>
               {warnings.length > 0 && (
-                <div className="relative group">
-                  <span className="text-yellow-600 font-bold text-lg cursor-help">⚠️</span>
-                  {/* Tooltip */}
-                  <div className="absolute left-0 bottom-full mb-2 hidden group-hover:block z-50">
-                    <div className="bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-700 rounded-lg shadow-lg p-3 min-w-[300px] max-w-[500px]">
-                      <div className="font-semibold text-yellow-800 dark:text-yellow-200 mb-2">Performance Warnings</div>
-                      <ul className="space-y-1">
-                        {warnings.map((warn, idx) => (
-                          <li key={idx} className="text-sm text-yellow-700 dark:text-yellow-300">• {warn}</li>
-                        ))}
-                      </ul>
-                      {/* Arrow */}
-                      <div className="absolute top-full left-4 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-yellow-300 dark:border-t-yellow-700"></div>
-                    </div>
-                  </div>
-                </div>
+                <button
+                  onClick={() => setIsWarningsModalOpen(true)}
+                  className="text-yellow-600 font-bold text-lg hover:scale-110 transition-transform"
+                  title="Click to view warnings"
+                >
+                  ⚠️
+                </button>
               )}
             </div>
             {strategyInfo.stockId && (
@@ -4598,6 +4590,48 @@ export default function BacktestResults({
             <div className="p-4 bg-gray-50 dark:bg-gray-800 border dark:border-gray-700 rounded-lg text-center text-gray-600 dark:text-gray-400">
               Returns distribution histogram will be displayed here
               <div className="mt-2 text-sm">(Visualization in progress)</div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Warnings Modal */}
+      {isWarningsModalOpen && warnings.length > 0 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black bg-opacity-50"
+            onClick={() => setIsWarningsModalOpen(false)}
+          />
+          <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-lg mx-4">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-xl font-bold text-yellow-600 dark:text-yellow-400 flex items-center gap-2">
+                <span>⚠️</span> Performance Warnings
+              </h2>
+              <button
+                onClick={() => setIsWarningsModalOpen(false)}
+                className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+            <div className="space-y-3">
+              {warnings.map((warn, idx) => (
+                <div
+                  key={idx}
+                  className="flex items-start gap-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg"
+                >
+                  <span className="text-yellow-500 mt-0.5">•</span>
+                  <p className="text-sm text-yellow-800 dark:text-yellow-200">{warn}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-6 text-right">
+              <button
+                onClick={() => setIsWarningsModalOpen(false)}
+                className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white rounded hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors"
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>
