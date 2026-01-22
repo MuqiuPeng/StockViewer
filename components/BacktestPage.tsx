@@ -91,8 +91,26 @@ export default function BacktestPage() {
     // Close the detail modal
     setSelectedHistoryEntry(null);
 
-    // Display the stored result directly
-    setBacktestResults(entry.result);
+    // Reconstruct the result with proper type and dateRange for display
+    // This handles both new entries (with type/dateRange) and old entries (without)
+    const result = entry.result as any; // Use any to handle extended fields
+    const enhancedResult = {
+      ...result,
+      // Ensure type is set (for old history entries that don't have it)
+      type: result.type || entry.target.type,
+      // Ensure dateRange is set (reconstruct from equityCurve if missing)
+      dateRange: result.dateRange || (result.equityCurve && result.equityCurve.length > 0 ? {
+        startDate: result.equityCurve[0]?.date,
+        endDate: result.equityCurve[result.equityCurve.length - 1]?.date,
+        dataPoints: result.equityCurve.length,
+      } : undefined),
+      // Ensure symbols is set for portfolio/group display
+      symbols: result.symbols || entry.target.symbols,
+      // For group backtests, ensure groupName is available
+      groupName: result.groupName || entry.target.groupName,
+    };
+
+    setBacktestResults(enhancedResult);
 
     // Load dataset for single stock backtests (for chart display)
     if (entry.target.type === 'single' && entry.target.stockId) {

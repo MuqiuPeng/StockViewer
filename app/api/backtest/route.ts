@@ -292,18 +292,44 @@ export async function POST(request: Request) {
     }
 
     // Execute backtest
-    const result: BacktestResult = await executeBacktest(backtestInput);
+    const rawResult: BacktestResult = await executeBacktest(backtestInput);
+
+    // Build dateRange from equity curve or parameters
+    const firstDate = rawResult.equityCurve?.[0]?.date;
+    const lastDate = rawResult.equityCurve?.[rawResult.equityCurve.length - 1]?.date;
+    const dateRange = {
+      startDate: firstDate || parameters.startDate,
+      endDate: lastDate || parameters.endDate,
+      dataPoints: rawResult.equityCurve?.length || 0,
+    };
+
+    // Build the enhanced result with type and dateRange
+    // This ensures the result can be properly displayed when loaded from history
+    const result = {
+      ...rawResult,
+      type: target.type, // 'single', 'portfolio', or 'group'
+      dateRange,
+      symbols, // Include symbols for portfolio/group display
+    };
 
     // Save to history if requested and successful
     let historyEntry: BacktestHistoryEntry | null = null;
 
     if (saveToHistory && result.success && result.metrics) {
-      // Calculate duration
-      const firstDate = result.equityCurve?.[0]?.date;
-      const lastDate = result.equityCurve?.[result.equityCurve.length - 1]?.date;
+      // Calculate duration in days
       const duration = firstDate && lastDate
         ? Math.ceil((new Date(lastDate).getTime() - new Date(firstDate).getTime()) / (1000 * 60 * 60 * 24))
         : 0;
+
+      // Fetch group name if this is a group backtest
+      let groupName: string | undefined;
+      if (target.type === 'group' && target.groupId) {
+        const group = await prisma.stockGroup.findUnique({
+          where: { id: target.groupId },
+          select: { name: true },
+        });
+        groupName = group?.name;
+      }
 
       historyEntry = await createBacktestHistoryEntry({
         strategyId: strategy.id,
@@ -314,6 +340,7 @@ export async function POST(request: Request) {
           stockId: target.stockId,
           symbols,
           groupId: target.groupId,
+          groupName,
         },
         parameters: {
           initialCash: parameters.initialCash || 100000,
@@ -323,7 +350,7 @@ export async function POST(request: Request) {
           strategyParameters: parameters.strategyParameters,
           constraints: parameters.constraints,
         },
-        result,
+        result, // Save the enhanced result with type and dateRange
         starred: false,
         summary: {
           totalReturn: result.metrics.totalReturn,
@@ -335,21 +362,9 @@ export async function POST(request: Request) {
       }, storage);
     }
 
-    // Build dateRange from equity curve or parameters
-    const firstDate = result.equityCurve?.[0]?.date;
-    const lastDate = result.equityCurve?.[result.equityCurve.length - 1]?.date;
-    const dateRange = {
-      startDate: firstDate || parameters.startDate,
-      endDate: lastDate || parameters.endDate,
-      dataPoints: result.equityCurve?.length || 0,
-    };
-
     return NextResponse.json({
       success: result.success,
-      result: {
-        ...result,
-        dateRange,
-      },
+      result,
       historyEntry: historyEntry ? { id: historyEntry.id } : null,
     });
   } catch (error) {
