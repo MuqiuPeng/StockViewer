@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import ChartPanel from './ChartPanel';
 import IndicatorSelector from './IndicatorSelector';
 import AddDatasetModal from './AddDatasetModal';
@@ -110,6 +110,11 @@ export default function StockViewer() {
   const [constantLines1, setConstantLines1] = useState<ConstantLine[]>([]);
   const [constantLines2, setConstantLines2] = useState<ConstantLine[]>([]);
   const [isSaveViewSettingModalOpen, setIsSaveViewSettingModalOpen] = useState(false);
+
+  // Resizable panel state
+  const [leftPanelWidth, setLeftPanelWidth] = useState(320); // Default width in pixels
+  const [isResizing, setIsResizing] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   // Base indicators from API (not custom calculated)
   const BASE_INDICATORS = ['volume', 'turnover', 'amplitude', 'change_pct', 'change_amount', 'turnover_rate'];
@@ -438,6 +443,38 @@ export default function StockViewer() {
       setConstantLines2(setting.constantLines2 || []);
     }
   }, [selectedViewSetting, viewSettings]);
+
+  // Panel resize handlers
+  const handleResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!containerRef.current) return;
+      const containerRect = containerRef.current.getBoundingClientRect();
+      const newWidth = e.clientX - containerRect.left;
+      // Constrain width between 200px and 50% of container
+      const minWidth = 200;
+      const maxWidth = containerRect.width * 0.5;
+      setLeftPanelWidth(Math.max(minWidth, Math.min(maxWidth, newWidth)));
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing]);
 
   // Save view setting handler
   const handleSaveViewSetting = async (name: string, existingId?: string) => {
@@ -891,8 +928,12 @@ export default function StockViewer() {
       </div>
 
       {datasetData && (
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 flex-1 min-h-0 overflow-hidden">
-          <div className="lg:col-span-1 flex flex-col space-y-4 min-h-0 overflow-hidden">
+        <div ref={containerRef} className="flex flex-1 min-h-0 overflow-hidden">
+          {/* Left Panel - Resizable */}
+          <div
+            className="flex flex-col space-y-4 min-h-0 overflow-hidden flex-shrink-0"
+            style={{ width: leftPanelWidth }}
+          >
             <IndicatorSelector
               indicators={(datasetData.meta?.indicators || []).filter((ind: string) =>
                 isDefinedIndicator(ind)
@@ -927,7 +968,18 @@ export default function StockViewer() {
               />
             </div>
           </div>
-          <div className="lg:col-span-3 flex flex-col min-h-0 overflow-hidden">
+
+          {/* Resize Handle */}
+          <div
+            className={`w-1 flex-shrink-0 cursor-col-resize hover:bg-blue-500 transition-colors ${
+              isResizing ? 'bg-blue-500' : 'bg-gray-200 dark:bg-gray-700'
+            }`}
+            onMouseDown={handleResizeStart}
+            style={{ touchAction: 'none' }}
+          />
+
+          {/* Right Panel - Chart */}
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden ml-4">
             <ChartPanel
               candles={datasetData.candles || []}
               indicators={datasetData.indicators || {}}
