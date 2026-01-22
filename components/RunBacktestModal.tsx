@@ -12,6 +12,7 @@ interface Strategy {
 }
 
 interface DatasetInfo {
+  id: string;
   name: string;
   code: string;
   filename: string;
@@ -140,7 +141,7 @@ export default function RunBacktestModal({
         setStartDate('');
         setEndDate('');
         setMode('single');
-        setSelectedDataset(currentDataset || (datasets.length > 0 ? datasets[0].name : ''));
+        setSelectedDataset(currentDataset || (datasets.length > 0 ? datasets[0].id : ''));
         setSelectedGroupId(groups.length > 0 ? groups[0].id : '');
         setSelectedSymbols([]);
         if (strategies.length > 0) {
@@ -348,7 +349,7 @@ export default function RunBacktestModal({
                   required
                 >
                   {datasets.map((ds) => (
-                    <option key={ds.name} value={ds.filename || ds.name}>
+                    <option key={ds.id} value={ds.id}>
                       {formatDatasetDisplay(ds)} ({ds.rowCount.toLocaleString()} rows)
                     </option>
                   ))}
@@ -410,11 +411,8 @@ export default function RunBacktestModal({
                         key={group.id}
                         type="button"
                         onClick={() => {
-                          const groupStocks = group.stockIds.map(name => {
-                            const ds = datasets.find(d => d.name === name || d.filename === name);
-                            return ds?.filename || name;
-                          });
-                          setSelectedSymbols(groupStocks);
+                          // group.stockIds already contains database IDs
+                          setSelectedSymbols(group.stockIds);
                         }}
                         className="text-xs px-3 py-1.5 bg-white dark:bg-gray-700 border border-blue-300 dark:border-blue-600 rounded hover:bg-blue-100 dark:hover:bg-gray-600 transition-colors dark:text-white"
                       >
@@ -455,10 +453,10 @@ export default function RunBacktestModal({
                       const displayName = formatDatasetDisplay(ds).toLowerCase();
                       return displayName.includes(search) || ds.code?.toLowerCase().includes(search);
                     }).map((ds) => {
-                      const isChecked = selectedSymbols.includes(ds.filename || ds.name);
+                      const isChecked = selectedSymbols.includes(ds.id);
                       return (
                         <label
-                          key={ds.name}
+                          key={ds.id}
                           className={`grid grid-cols-12 gap-2 items-center px-3 py-2.5 cursor-pointer border-b border-gray-100 dark:border-gray-700 hover:bg-blue-50 dark:hover:bg-gray-700 transition-colors ${
                             isChecked ? 'bg-blue-50 dark:bg-blue-900/30' : ''
                           }`}
@@ -468,11 +466,10 @@ export default function RunBacktestModal({
                               type="checkbox"
                               checked={isChecked}
                               onChange={(e) => {
-                                const symbol = ds.filename || ds.name;
                                 if (e.target.checked) {
-                                  setSelectedSymbols([...selectedSymbols, symbol]);
+                                  setSelectedSymbols([...selectedSymbols, ds.id]);
                                 } else {
-                                  setSelectedSymbols(selectedSymbols.filter(s => s !== symbol));
+                                  setSelectedSymbols(selectedSymbols.filter(s => s !== ds.id));
                                 }
                               }}
                               className="w-4 h-4"
@@ -520,7 +517,7 @@ export default function RunBacktestModal({
                 <div className="mt-2 flex gap-2">
                   <button
                     type="button"
-                    onClick={() => setSelectedSymbols(datasets.map(ds => ds.filename || ds.name))}
+                    onClick={() => setSelectedSymbols(datasets.map(ds => ds.id))}
                     className="text-xs px-2 py-1 border dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white"
                   >
                     Select All

@@ -179,13 +179,8 @@ export default function BacktestPage() {
     try {
       // Load dataset for candles (needed for BacktestPanel) - only for single stock
       if (target.type === 'single') {
-        let datasetApiName = target.stockId;
-        if (!datasetApiName.toLowerCase().endsWith('.csv')) {
-          datasetApiName = `${datasetApiName}.csv`;
-        }
-        const datasetNameForApi = datasetApiName.replace(/\.csv$/i, '');
-
-        const datasetRes = await fetch(`/api/dataset/${encodeURIComponent(datasetNameForApi)}`);
+        // stockId is now a database ID, which the dataset API handles directly
+        const datasetRes = await fetch(`/api/dataset/${encodeURIComponent(target.stockId)}`);
         const datasetResult = await datasetRes.json();
         if (!datasetResult.error) {
           setDatasetData(datasetResult);
