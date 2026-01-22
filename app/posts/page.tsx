@@ -65,6 +65,62 @@ export default function PostsPage() {
     currentIndex: number;
   } | null>(null);
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const imageContainerRef = useRef<HTMLDivElement>(null);
+
+  const MAX_ZOOM = 3;
+
+  const resetZoom = () => {
+    setZoomLevel(1);
+    setDragOffset({ x: 0, y: 0 });
+  };
+
+  const handleImageClick = (e: React.MouseEvent<HTMLImageElement>) => {
+    if (isDragging) return;
+
+    if (zoomLevel >= MAX_ZOOM) {
+      // Already at max zoom, reset
+      resetZoom();
+    } else {
+      // Zoom to max, centered on click point
+      const rect = e.currentTarget.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
+
+      // Calculate offset to center the clicked point
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+
+      const offsetX = (centerX - clickX) * (MAX_ZOOM - 1);
+      const offsetY = (centerY - clickY) * (MAX_ZOOM - 1);
+
+      setZoomLevel(MAX_ZOOM);
+      setDragOffset({ x: offsetX, y: offsetY });
+    }
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (zoomLevel > 1) {
+      e.preventDefault();
+      setIsDragging(true);
+      setDragStart({ x: e.clientX - dragOffset.x, y: e.clientY - dragOffset.y });
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDragging && zoomLevel > 1) {
+      setDragOffset({
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y,
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
 
   // Track current image index for each post
   const [postImageIndices, setPostImageIndices] = useState<Record<string, number>>({});
@@ -654,14 +710,16 @@ export default function PostsPage() {
           className="fixed inset-0 z-[70] flex items-center justify-center bg-black bg-opacity-90"
           onClick={() => {
             setLightboxImage(null);
-            setZoomLevel(1);
+            resetZoom();
           }}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
         >
           {/* Close button */}
           <button
             onClick={() => {
               setLightboxImage(null);
-              setZoomLevel(1);
+              resetZoom();
             }}
             className="absolute top-4 right-4 text-white hover:text-gray-300 z-10"
           >
@@ -676,6 +734,7 @@ export default function PostsPage() {
               onClick={(e) => {
                 e.stopPropagation();
                 setZoomLevel(prev => Math.max(0.5, prev - 0.25));
+                if (zoomLevel <= 1) setDragOffset({ x: 0, y: 0 });
               }}
               className="text-white hover:text-gray-300 px-2"
             >
@@ -687,7 +746,7 @@ export default function PostsPage() {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                setZoomLevel(prev => Math.min(3, prev + 0.25));
+                setZoomLevel(prev => Math.min(MAX_ZOOM, prev + 0.25));
               }}
               className="text-white hover:text-gray-300 px-2"
             >
@@ -698,12 +757,18 @@ export default function PostsPage() {
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                setZoomLevel(1);
+                resetZoom();
               }}
               className="text-white hover:text-gray-300 text-xs ml-2 px-2 py-1 border border-white/30 rounded"
             >
               Reset
             </button>
+          </div>
+
+          {/* Hint */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/60 text-xs z-10">
+            {zoomLevel < MAX_ZOOM ? 'Click image to zoom in' : 'Click image to reset'}
+            {zoomLevel > 1 && ' • Drag to pan'}
           </div>
 
           {/* Navigation arrows */}
@@ -716,7 +781,7 @@ export default function PostsPage() {
                     ...prev,
                     currentIndex: prev.currentIndex === 0 ? prev.images.length - 1 : prev.currentIndex - 1
                   } : null);
-                  setZoomLevel(1);
+                  resetZoom();
                 }}
                 className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center z-10"
               >
@@ -731,7 +796,7 @@ export default function PostsPage() {
                     ...prev,
                     currentIndex: prev.currentIndex === prev.images.length - 1 ? 0 : prev.currentIndex + 1
                   } : null);
-                  setZoomLevel(1);
+                  resetZoom();
                 }}
                 className="absolute right-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-black/50 hover:bg-black/70 text-white rounded-full flex items-center justify-center z-10"
               >
@@ -744,17 +809,26 @@ export default function PostsPage() {
 
           {/* Image container */}
           <div
-            className="max-w-[90vw] max-h-[90vh] flex flex-col items-center overflow-auto"
+            ref={imageContainerRef}
+            className="flex flex-col items-center overflow-hidden"
+            style={{ maxWidth: '90vw', maxHeight: '90vh' }}
             onClick={(e) => e.stopPropagation()}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
           >
             <img
               src={lightboxImage.images[lightboxImage.currentIndex].url}
               alt={lightboxImage.images[lightboxImage.currentIndex].caption || ''}
-              className="object-contain rounded-lg transition-transform duration-200"
+              className="object-contain rounded-lg select-none"
+              onClick={handleImageClick}
+              draggable={false}
               style={{
-                transform: `scale(${zoomLevel})`,
-                maxWidth: zoomLevel <= 1 ? '90vw' : 'none',
-                maxHeight: zoomLevel <= 1 ? '80vh' : 'none',
+                transform: `scale(${zoomLevel}) translate(${dragOffset.x / zoomLevel}px, ${dragOffset.y / zoomLevel}px)`,
+                maxWidth: '90vw',
+                maxHeight: '80vh',
+                cursor: zoomLevel > 1 ? (isDragging ? 'grabbing' : 'grab') : 'zoom-in',
+                transition: isDragging ? 'none' : 'transform 0.2s ease-out',
               }}
             />
             <div className="mt-4 text-center">
