@@ -171,12 +171,29 @@ export async function POST(request: Request) {
         );
       }
 
-      stockIds = [target.stockId];
-
-      // Get stock info
-      const stock = await prisma.stock.findUnique({
+      // Get stock info - try by ID first, then by filename (symbol_dataSource), then by symbol
+      let stock = await prisma.stock.findUnique({
         where: { id: target.stockId },
       });
+
+      // If not found by ID, try to parse as filename (symbol_dataSource)
+      if (!stock) {
+        const parts = target.stockId.split('_');
+        if (parts.length >= 2) {
+          const symbol = parts[0];
+          const dataSource = parts.slice(1).join('_');
+          stock = await prisma.stock.findFirst({
+            where: { symbol, dataSource },
+          });
+        }
+      }
+
+      // Try by symbol only
+      if (!stock) {
+        stock = await prisma.stock.findFirst({
+          where: { symbol: target.stockId },
+        });
+      }
 
       if (!stock) {
         return NextResponse.json(
@@ -185,10 +202,12 @@ export async function POST(request: Request) {
         );
       }
 
+      stockIds = [stock.id];
+
       symbols = [stock.symbol];
 
       // Build data records
-      const data = await buildDataRecords(target.stockId, startDate, endDate);
+      const data = await buildDataRecords(stock.id, startDate, endDate);
 
       if (data.length === 0) {
         return NextResponse.json(
