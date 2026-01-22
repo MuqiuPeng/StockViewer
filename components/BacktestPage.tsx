@@ -96,11 +96,19 @@ export default function BacktestPage() {
 
     // Load dataset for single stock backtests (for chart display)
     if (entry.target.type === 'single' && entry.target.stockId) {
-      const datasetApiName = entry.target.stockId.replace(/\.csv$/i, '');
-      const datasetRes = await fetch(`/api/dataset/${encodeURIComponent(datasetApiName)}`);
-      const datasetResult = await datasetRes.json();
-      if (!datasetResult.error) {
-        setDatasetData(datasetResult);
+      try {
+        // stockId could be a database ID or a filename - the dataset API handles both
+        const datasetRes = await fetch(`/api/dataset/${encodeURIComponent(entry.target.stockId)}`);
+        const datasetResult = await datasetRes.json();
+        if (!datasetResult.error) {
+          setDatasetData(datasetResult);
+        } else {
+          console.warn('Failed to load dataset:', datasetResult.error);
+          setDatasetData(null);
+        }
+      } catch (err) {
+        console.error('Error loading dataset:', err);
+        setDatasetData(null);
       }
     } else {
       setDatasetData(null);
@@ -114,6 +122,9 @@ export default function BacktestPage() {
       commission: entry.parameters.commission,
       parameters: entry.parameters.strategyParameters || {},
       stockId: entry.target.type === 'single' ? entry.target.stockId : undefined,
+      targetType: entry.target.type,
+      symbols: entry.target.type === 'portfolio' ? entry.target.symbols : undefined,
+      groupId: entry.target.type === 'group' ? entry.target.groupId : undefined,
     });
   };
 
@@ -352,12 +363,12 @@ export default function BacktestPage() {
                 commission: backtestParams?.commission,
               }}
             />
-          ) : datasetData ? (
+          ) : backtestResults.metrics ? (
             <BacktestResults
               metrics={backtestResults.metrics}
               equityCurve={backtestResults.equityCurve}
               tradeMarkers={backtestResults.tradeMarkers}
-              candles={datasetData.candles}
+              candles={datasetData?.candles || []}
               dateRange={backtestResults.dateRange}
               strategyInfo={{
                 name: selectedStrategy?.name,
