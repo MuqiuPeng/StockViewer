@@ -113,6 +113,21 @@ export default function GroupsPage() {
   // Left panel tab
   const [leftTab, setLeftTab] = useState<'groups' | 'invitations'>('groups');
 
+  // Expanded dependencies tracking
+  const [expandedDeps, setExpandedDeps] = useState<Set<string>>(new Set());
+
+  const toggleDepsExpanded = (messageId: string) => {
+    setExpandedDeps(prev => {
+      const next = new Set(prev);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
+  };
+
   const selectedGroup = groups.find(g => g.id === selectedGroupId);
 
   useEffect(() => {
@@ -412,6 +427,7 @@ export default function GroupsPage() {
   const renderResource = (message: Message) => {
     if (message.indicator) {
       const deps = message.indicator.dependencies || [];
+      const isExpanded = expandedDeps.has(message.id);
       return (
         <div className="bg-purple-50 dark:bg-purple-900/30 border border-purple-200 dark:border-purple-700 rounded p-3 mt-2">
           <div className="flex justify-between items-start">
@@ -419,11 +435,6 @@ export default function GroupsPage() {
               <span className="text-xs text-purple-600 dark:text-purple-400 font-medium">INDICATOR</span>
               <h4 className="font-semibold text-purple-800 dark:text-purple-200">{message.indicator.name}</h4>
               <p className="text-sm text-purple-600 dark:text-purple-400">{message.indicator.description}</p>
-              {deps.length > 0 && (
-                <p className="text-xs text-purple-500 dark:text-purple-400 mt-1">
-                  Dependencies: {deps.join(', ')}
-                </p>
-              )}
             </div>
             <div className="flex items-center gap-2 ml-2">
               {message.isOwn && (
@@ -447,12 +458,41 @@ export default function GroupsPage() {
               ) : null}
             </div>
           </div>
+          {deps.length > 0 && (
+            <div className="mt-2 border-t border-purple-200 dark:border-purple-700 pt-2">
+              <button
+                onClick={() => toggleDepsExpanded(message.id)}
+                className="flex items-center gap-1 text-xs text-purple-600 dark:text-purple-400 hover:text-purple-800 dark:hover:text-purple-200"
+              >
+                <svg
+                  className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+                Dependencies ({deps.length})
+              </button>
+              {isExpanded && (
+                <div className="mt-2 pl-5 space-y-1">
+                  {deps.map((dep, i) => (
+                    <div key={i} className="text-xs text-purple-600 dark:text-purple-400 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 bg-purple-400 rounded-full" />
+                      {dep}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       );
     }
 
     if (message.strategy) {
       const deps = message.strategy.dependencies || [];
+      const isExpanded = expandedDeps.has(message.id);
       return (
         <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded p-3 mt-2">
           <div className="flex justify-between items-start">
@@ -460,11 +500,6 @@ export default function GroupsPage() {
               <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">STRATEGY</span>
               <h4 className="font-semibold text-blue-800 dark:text-blue-200">{message.strategy.name}</h4>
               <p className="text-sm text-blue-600 dark:text-blue-400">{message.strategy.description}</p>
-              {deps.length > 0 && (
-                <p className="text-xs text-blue-500 dark:text-blue-400 mt-1">
-                  Dependencies: {deps.join(', ')}
-                </p>
-              )}
             </div>
             <div className="flex items-center gap-2 ml-2">
               {message.isOwn && (
@@ -488,6 +523,34 @@ export default function GroupsPage() {
               ) : null}
             </div>
           </div>
+          {deps.length > 0 && (
+            <div className="mt-2 border-t border-blue-200 dark:border-blue-700 pt-2">
+              <button
+                onClick={() => toggleDepsExpanded(message.id)}
+                className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200"
+              >
+                <svg
+                  className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+                Dependencies ({deps.length})
+              </button>
+              {isExpanded && (
+                <div className="mt-2 pl-5 space-y-1">
+                  {deps.map((dep, i) => (
+                    <div key={i} className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 bg-blue-400 rounded-full" />
+                      {dep}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       );
     }
