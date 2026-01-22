@@ -40,6 +40,11 @@ interface Invitation {
   createdAt: string;
 }
 
+interface Dependency {
+  name: string;
+  creatorName: string;
+}
+
 interface Message {
   id: string;
   user: {
@@ -53,14 +58,14 @@ interface Message {
     id: string;
     name: string;
     description: string;
-    dependencies: string[];
+    dependencies: Dependency[];
     isImported: boolean;
   } | null;
   strategy: {
     id: string;
     name: string;
     description: string;
-    dependencies: string[];
+    dependencies: Dependency[];
     isImported: boolean;
   } | null;
   stockGroup: {
@@ -479,7 +484,9 @@ export default function GroupsPage() {
                   {deps.map((dep, i) => (
                     <div key={i} className="text-xs text-purple-600 dark:text-purple-400 flex items-center gap-1">
                       <span className="w-1.5 h-1.5 bg-purple-400 rounded-full" />
-                      {dep}
+                      <span className="text-purple-500 dark:text-purple-300">{dep.creatorName}</span>
+                      <span>/</span>
+                      <span className="font-medium">{dep.name}</span>
                     </div>
                   ))}
                 </div>
@@ -544,7 +551,9 @@ export default function GroupsPage() {
                   {deps.map((dep, i) => (
                     <div key={i} className="text-xs text-blue-600 dark:text-blue-400 flex items-center gap-1">
                       <span className="w-1.5 h-1.5 bg-blue-400 rounded-full" />
-                      {dep}
+                      <span className="text-blue-500 dark:text-blue-300">{dep.creatorName}</span>
+                      <span>/</span>
+                      <span className="font-medium">{dep.name}</span>
                     </div>
                   ))}
                 </div>

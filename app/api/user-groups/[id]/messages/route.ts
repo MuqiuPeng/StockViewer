@@ -136,14 +136,58 @@ export async function GET(
     const importedStockGroups = new Set(userStockGroups.map(usg => usg.groupId));
     const importedViewSettings = new Set(userViewSettings.map(uvs => uvs.viewSettingId));
 
+    // Collect all dependency IDs from indicators and strategies
+    const allDepIds = new Set<string>();
+    messages.forEach(m => {
+      if (m.indicator?.dependencies) {
+        m.indicator.dependencies.forEach(id => allDepIds.add(id));
+      }
+      if (m.strategy?.dependencies) {
+        m.strategy.dependencies.forEach(id => allDepIds.add(id));
+      }
+    });
+
+    // Look up dependency details (name + creator)
+    const depIndicators = allDepIds.size > 0
+      ? await prisma.indicator.findMany({
+          where: { id: { in: Array.from(allDepIds) } },
+          select: {
+            id: true,
+            name: true,
+            creator: { select: { name: true } },
+          },
+        })
+      : [];
+
+    const depInfoMap = new Map(
+      depIndicators.map(ind => [
+        ind.id,
+        { name: ind.name, creatorName: ind.creator?.name || 'Unknown' },
+      ])
+    );
+
+    // Helper to enrich dependencies
+    const enrichDependencies = (deps: string[] | null) => {
+      if (!deps || deps.length === 0) return [];
+      return deps.map(id => depInfoMap.get(id) || { name: id, creatorName: 'Unknown' });
+    };
+
     return NextResponse.json({
       messages: messages.reverse().map(m => ({
         id: m.id,
         user: m.user,
         content: m.content,
         isOwn: m.userId === userId,
-        indicator: m.indicator ? { ...m.indicator, isImported: importedIndicators.has(m.indicatorId!) } : null,
-        strategy: m.strategy ? { ...m.strategy, isImported: importedStrategies.has(m.strategyId!) } : null,
+        indicator: m.indicator ? {
+          ...m.indicator,
+          dependencies: enrichDependencies(m.indicator.dependencies),
+          isImported: importedIndicators.has(m.indicatorId!),
+        } : null,
+        strategy: m.strategy ? {
+          ...m.strategy,
+          dependencies: enrichDependencies(m.strategy.dependencies),
+          isImported: importedStrategies.has(m.strategyId!),
+        } : null,
         stockGroup: m.stockGroup ? { ...m.stockGroup, isImported: importedStockGroups.has(m.stockGroupId!) } : null,
         viewSetting: m.viewSetting ? { ...m.viewSetting, isImported: importedViewSettings.has(m.viewSettingId!) } : null,
         createdAt: m.createdAt.toISOString(),
@@ -362,6 +406,38 @@ export async function POST(
       },
     });
 
+    // Enrich dependencies for the response
+    const allDepIds = new Set<string>();
+    if (message.indicator?.dependencies) {
+      message.indicator.dependencies.forEach(id => allDepIds.add(id));
+    }
+    if (message.strategy?.dependencies) {
+      message.strategy.dependencies.forEach(id => allDepIds.add(id));
+    }
+
+    const depIndicators = allDepIds.size > 0
+      ? await prisma.indicator.findMany({
+          where: { id: { in: Array.from(allDepIds) } },
+          select: {
+            id: true,
+            name: true,
+            creator: { select: { name: true } },
+          },
+        })
+      : [];
+
+    const depInfoMap = new Map(
+      depIndicators.map(ind => [
+        ind.id,
+        { name: ind.name, creatorName: ind.creator?.name || 'Unknown' },
+      ])
+    );
+
+    const enrichDependencies = (deps: string[] | null) => {
+      if (!deps || deps.length === 0) return [];
+      return deps.map(id => depInfoMap.get(id) || { name: id, creatorName: 'Unknown' });
+    };
+
     return NextResponse.json({
       success: true,
       message: {
@@ -369,8 +445,16 @@ export async function POST(
         user: message.user,
         content: message.content,
         isOwn: true,
-        indicator: message.indicator ? { ...message.indicator, isImported: true } : null,
-        strategy: message.strategy ? { ...message.strategy, isImported: true } : null,
+        indicator: message.indicator ? {
+          ...message.indicator,
+          dependencies: enrichDependencies(message.indicator.dependencies),
+          isImported: true,
+        } : null,
+        strategy: message.strategy ? {
+          ...message.strategy,
+          dependencies: enrichDependencies(message.strategy.dependencies),
+          isImported: true,
+        } : null,
         stockGroup: message.stockGroup ? { ...message.stockGroup, isImported: true } : null,
         viewSetting: message.viewSetting ? { ...message.viewSetting, isImported: true } : null,
         createdAt: message.createdAt.toISOString(),
