@@ -22,7 +22,7 @@ export async function POST(
     const { userId } = authResult;
 
     const body = await request.json();
-    const { attachmentId, newName } = body;
+    const { attachmentId, renamedItems } = body;
 
     if (!attachmentId) {
       return NextResponse.json(
@@ -52,36 +52,107 @@ export async function POST(
     }
 
     const snapshot = attachment.snapshot as any;
-    const baseName = newName || snapshot.name || snapshot.strategyName || 'Template';
+    const dependencies = attachment.dependencies as any;
 
-    // Generate unique name
-    const generateUniqueName = async (table: string, name: string): Promise<string> => {
-      let uniqueName = name;
-      let counter = 1;
-      while (true) {
-        const existing = await (prisma as any)[table].findUnique({
-          where: { name: uniqueName },
-        });
-        if (!existing) break;
-        uniqueName = `${name} (${counter})`;
-        counter++;
-      }
-      return uniqueName;
+    // Get the name for an item (from renamedItems or original)
+    const getName = (id: string, originalName: string): string => {
+      return renamedItems?.[id] || originalName;
     };
 
-    let created: any = null;
+    // Track created resources for dependency mapping
+    const createdResources: Record<string, { id: string; type: string }> = {};
+    const importedItems: { id: string; name: string; type: string }[] = [];
+
+    // Helper to add user subscription
+    const addToUserCollection = async (type: string, resourceId: string) => {
+      switch (type) {
+        case 'indicator':
+          await prisma.userIndicator.upsert({
+            where: { userId_indicatorId: { userId, indicatorId: resourceId } },
+            update: {},
+            create: { userId, indicatorId: resourceId },
+          });
+          break;
+        case 'strategy':
+          await prisma.userStrategy.upsert({
+            where: { userId_strategyId: { userId, strategyId: resourceId } },
+            update: {},
+            create: { userId, strategyId: resourceId },
+          });
+          break;
+        case 'stockGroup':
+          await prisma.userStockGroup.upsert({
+            where: { userId_groupId: { userId, groupId: resourceId } },
+            update: {},
+            create: { userId, groupId: resourceId },
+          });
+          break;
+        case 'viewSetting':
+          await prisma.userViewSetting.upsert({
+            where: { userId_viewSettingId: { userId, viewSettingId: resourceId } },
+            update: {},
+            create: { userId, viewSettingId: resourceId },
+          });
+          break;
+      }
+    };
+
+    // Import indicator dependencies first (for both indicator and strategy types)
+    const indicatorDeps = snapshot.dependencies as string[] || [];
+    for (const depId of indicatorDeps) {
+      const depIndicator = await prisma.indicator.findUnique({
+        where: { id: depId },
+      });
+      if (depIndicator) {
+        const newName = getName(depId, depIndicator.name);
+
+        // Check if user already has this indicator
+        const existingUserInd = await prisma.userIndicator.findUnique({
+          where: { userId_indicatorId: { userId, indicatorId: depId } },
+        });
+
+        if (existingUserInd) {
+          // Already subscribed, just track it
+          createdResources[depId] = { id: depId, type: 'indicator' };
+        } else {
+          // Create new indicator with new name
+          const newIndicator = await prisma.indicator.create({
+            data: {
+              createdBy: userId,
+              name: newName,
+              description: depIndicator.description,
+              pythonCode: depIndicator.pythonCode,
+              outputColumn: newName.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+              dependencies: depIndicator.dependencies as string[] || [],
+              dependencyColumns: depIndicator.dependencyColumns as string[] || [],
+              isGroup: depIndicator.isGroup,
+              groupName: depIndicator.groupName,
+              expectedOutputs: depIndicator.expectedOutputs as string[] || [],
+              externalDatasets: depIndicator.externalDatasets ?? undefined,
+              category: depIndicator.category,
+              tags: depIndicator.tags as string[] || [],
+            },
+          });
+          await addToUserCollection('indicator', newIndicator.id);
+          createdResources[depId] = { id: newIndicator.id, type: 'indicator' };
+          importedItems.push({ id: newIndicator.id, name: newName, type: 'indicator' });
+        }
+      }
+    }
+
+    let mainCreated: any = null;
+    const mainName = getName(attachment.id, snapshot.name || snapshot.strategyName || 'Template');
 
     switch (attachment.type) {
       case 'indicator': {
-        const uniqueName = await generateUniqueName('indicator', baseName);
-        created = await prisma.indicator.create({
+        mainCreated = await prisma.indicator.create({
           data: {
             createdBy: userId,
-            name: uniqueName,
+            name: mainName,
             description: snapshot.description || '',
             pythonCode: snapshot.pythonCode || '',
-            outputColumn: uniqueName.toLowerCase().replace(/[^a-z0-9]/g, '_'),
-            dependencies: snapshot.dependencies || [],
+            outputColumn: mainName.toLowerCase().replace(/[^a-z0-9]/g, '_'),
+            dependencies: indicatorDeps.map(depId => createdResources[depId]?.id || depId),
             dependencyColumns: snapshot.dependencyColumns || [],
             isGroup: snapshot.isGroup || false,
             groupName: snapshot.groupName || null,
@@ -91,84 +162,121 @@ export async function POST(
             tags: snapshot.tags || [],
           },
         });
-        // Add to user's collection
-        await prisma.userIndicator.create({
-          data: { userId, indicatorId: created.id },
-        });
+        await addToUserCollection('indicator', mainCreated.id);
+        importedItems.push({ id: mainCreated.id, name: mainName, type: 'indicator' });
         break;
       }
       case 'strategy': {
-        const uniqueName = await generateUniqueName('strategy', baseName);
-        created = await prisma.strategy.create({
+        mainCreated = await prisma.strategy.create({
           data: {
             createdBy: userId,
-            name: uniqueName,
+            name: mainName,
             description: snapshot.description || '',
             pythonCode: snapshot.pythonCode || '',
             strategyType: snapshot.strategyType || 'single',
             constraints: snapshot.constraints || null,
             parameters: snapshot.parameters || null,
             externalDatasets: snapshot.externalDatasets || null,
-            dependencies: snapshot.dependencies || [],
+            dependencies: indicatorDeps.map(depId => createdResources[depId]?.id || depId),
           },
         });
-        // Add to user's collection
-        await prisma.userStrategy.create({
-          data: { userId, strategyId: created.id },
-        });
+        await addToUserCollection('strategy', mainCreated.id);
+        importedItems.push({ id: mainCreated.id, name: mainName, type: 'strategy' });
         break;
       }
       case 'stockGroup': {
-        const uniqueName = await generateUniqueName('stockGroup', baseName);
-        created = await prisma.stockGroup.create({
+        mainCreated = await prisma.stockGroup.create({
           data: {
             createdBy: userId,
-            name: uniqueName,
+            name: mainName,
             description: snapshot.description || null,
             stockIds: snapshot.stockIds || [],
           },
         });
-        // Add to user's collection
-        await prisma.userStockGroup.create({
-          data: { userId, groupId: created.id },
-        });
+        await addToUserCollection('stockGroup', mainCreated.id);
+        importedItems.push({ id: mainCreated.id, name: mainName, type: 'stockGroup' });
         break;
       }
       case 'viewSetting': {
-        const uniqueName = await generateUniqueName('viewSetting', baseName);
-        created = await prisma.viewSetting.create({
+        mainCreated = await prisma.viewSetting.create({
           data: {
             createdBy: userId,
-            name: uniqueName,
+            name: mainName,
             enabledIndicators1: snapshot.enabledIndicators1 || [],
             enabledIndicators2: snapshot.enabledIndicators2 || [],
             constantLines1: snapshot.constantLines1 || [],
             constantLines2: snapshot.constantLines2 || [],
           },
         });
-        // Add to user's collection
-        await prisma.userViewSetting.create({
-          data: { userId, viewSettingId: created.id },
-        });
+        await addToUserCollection('viewSetting', mainCreated.id);
+        importedItems.push({ id: mainCreated.id, name: mainName, type: 'viewSetting' });
         break;
       }
       case 'backtestHistory': {
-        // For backtest history, we just copy the entry to the user's history
-        // The user can then re-run it with the same parameters
-        const deps = attachment.dependencies as any;
-
-        // Find or use the strategy
-        let strategyId = deps?.strategyId;
+        // Import strategy dependency if exists
+        let strategyId = dependencies?.strategyId;
         if (strategyId) {
-          const existingStrategy = await prisma.strategy.findUnique({
+          const strategy = await prisma.strategy.findUnique({
             where: { id: strategyId },
           });
-          if (!existingStrategy) {
-            strategyId = null;
+          if (strategy) {
+            const existingUserStrategy = await prisma.userStrategy.findUnique({
+              where: { userId_strategyId: { userId, strategyId } },
+            });
+
+            if (!existingUserStrategy) {
+              const newStrategyName = getName(strategyId, strategy.name);
+              const newStrategy = await prisma.strategy.create({
+                data: {
+                  createdBy: userId,
+                  name: newStrategyName,
+                  description: strategy.description,
+                  pythonCode: strategy.pythonCode,
+                  strategyType: strategy.strategyType,
+                  constraints: strategy.constraints ?? undefined,
+                  parameters: strategy.parameters ?? undefined,
+                  externalDatasets: strategy.externalDatasets ?? undefined,
+                  dependencies: (strategy.dependencies as string[] || []).map(
+                    depId => createdResources[depId]?.id || depId
+                  ),
+                },
+              });
+              await addToUserCollection('strategy', newStrategy.id);
+              strategyId = newStrategy.id;
+              importedItems.push({ id: newStrategy.id, name: newStrategyName, type: 'strategy' });
+            }
           }
         }
 
-        created = await prisma.backtestHistoryEntry.create({
+        // Import stock group dependency if exists
+        let stockGroupId = dependencies?.stockGroupId;
+        if (stockGroupId) {
+          const group = await prisma.stockGroup.findUnique({
+            where: { id: stockGroupId },
+          });
+          if (group) {
+            const existingUserGroup = await prisma.userStockGroup.findUnique({
+              where: { userId_groupId: { userId, groupId: stockGroupId } },
+            });
+
+            if (!existingUserGroup) {
+              const newGroupName = getName(stockGroupId, group.name);
+              const newGroup = await prisma.stockGroup.create({
+                data: {
+                  createdBy: userId,
+                  name: newGroupName,
+                  description: group.description,
+                  stockIds: group.stockIds as string[] || [],
+                },
+              });
+              await addToUserCollection('stockGroup', newGroup.id);
+              stockGroupId = newGroup.id;
+              importedItems.push({ id: newGroup.id, name: newGroupName, type: 'stockGroup' });
+            }
+          }
+        }
+
+        mainCreated = await prisma.backtestHistoryEntry.create({
           data: {
             userId,
             strategyId: strategyId || '',
@@ -186,6 +294,11 @@ export async function POST(
             tags: [...(snapshot.tags || []), 'template'],
           },
         });
+        importedItems.push({
+          id: mainCreated.id,
+          name: snapshot.strategyName || 'Template Strategy',
+          type: 'backtestHistory'
+        });
         break;
       }
       default:
@@ -197,12 +310,13 @@ export async function POST(
 
     return NextResponse.json({
       success: true,
-      message: `Created ${attachment.type} from template`,
+      message: `Imported ${importedItems.length} item(s)`,
       resource: {
-        id: created.id,
-        name: created.name || created.strategyName,
+        id: mainCreated.id,
+        name: mainCreated.name || mainCreated.strategyName,
         type: attachment.type,
       },
+      importedItems,
     });
   } catch (error) {
     console.error('Error using template:', error);

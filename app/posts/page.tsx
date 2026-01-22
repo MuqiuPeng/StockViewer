@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import ImportTemplateModal from '@/components/ImportTemplateModal';
 
 interface PostAttachment {
   id: string;
@@ -55,6 +56,12 @@ export default function PostsPage() {
   const [resourceType, setResourceType] = useState<string>('indicator');
   const [availableResources, setAvailableResources] = useState<Resource[]>([]);
   const [loadingResources, setLoadingResources] = useState(false);
+
+  // Import template modal
+  const [importModal, setImportModal] = useState<{
+    postId: string;
+    attachmentId: string;
+  } | null>(null);
 
   // Ref for paste area
   const modalRef = useRef<HTMLDivElement>(null);
@@ -277,25 +284,8 @@ export default function PostsPage() {
     }
   };
 
-  const handleUseTemplate = async (postId: string, attachment: PostAttachment) => {
-    const newName = prompt(`Enter name for the new ${attachment.type}:`, attachment.originalName);
-    if (!newName) return;
-
-    try {
-      const response = await fetch(`/api/posts/${postId}/use-template`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ attachmentId: attachment.id, newName }),
-      });
-      const data = await response.json();
-      if (data.error) {
-        alert(data.message || 'Failed to use template');
-      } else {
-        alert(`Created ${data.resource.type}: ${data.resource.name}`);
-      }
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to use template');
-    }
+  const handleUseTemplate = (postId: string, attachment: PostAttachment) => {
+    setImportModal({ postId, attachmentId: attachment.id });
   };
 
   const handleDeletePost = async (postId: string) => {
@@ -854,6 +844,19 @@ export default function PostsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Import Template Modal */}
+      {importModal && (
+        <ImportTemplateModal
+          postId={importModal.postId}
+          attachmentId={importModal.attachmentId}
+          onClose={() => setImportModal(null)}
+          onSuccess={(resource) => {
+            setImportModal(null);
+            alert(`Successfully imported: ${resource.name}`);
+          }}
+        />
       )}
     </div>
   );
