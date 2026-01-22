@@ -82,6 +82,7 @@ model User {
 
   // Share posts
   sharePosts SharePost[]
+  posts      Post[]
 
   // User Groups
   ownedGroups       UserGroup[]           @relation("GroupOwner")
@@ -548,17 +549,73 @@ model CsvDataBlob {
 }
 
 // ============================================================================
-// SHARE POSTS
+// POSTS (Template-based sharing)
 // ============================================================================
 
-/// Share posts - users can share their datasets, indicators, or strategies
+/// Posts - users can share content with snapshots of their resources
+model Post {
+  id      String  @id @default(cuid())
+  userId  String
+  content String? @db.Text
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  images     PostImage[]
+  attachments PostAttachment[]
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+/// Post images
+model PostImage {
+  id       String @id @default(cuid())
+  postId   String
+  url      String @db.Text
+  caption  String?
+  position Int    @default(0)
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+}
+
+/// Post attachments - snapshot-based templates of shared resources
+model PostAttachment {
+  id     String @id @default(cuid())
+  postId String
+
+  // Type: indicator, strategy, stockGroup, viewSetting, backtestHistory
+  type String
+
+  // Original resource reference (for display/linking)
+  originalId   String?
+  originalName String
+
+  // Snapshot data stored as JSON (complete template)
+  snapshot Json @db.JsonB
+
+  // For backtest history: dependencies
+  // Contains: { strategyId, strategyName, stockIds, stockGroupId, stockGroupName }
+  dependencies Json? @db.JsonB
+
+  createdAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([type])
+}
+
+/// Legacy SharePost - keeping for backwards compatibility
 model SharePost {
   id      String  @id @default(cuid())
   userId  String
   title   String
-  content String? @db.Text // Optional post content
+  content String? @db.Text
 
-  // What's being shared (only one should be set)
   stockId     String?
   indicatorId String?
   strategyId  String?

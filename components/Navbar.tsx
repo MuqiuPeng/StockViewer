@@ -51,6 +51,7 @@ export default function Navbar() {
     { href: '/backtest', label: 'Backtest' },
     { href: '/datasets', label: 'Datasets' },
     { href: '/groups', label: 'Groups' },
+    { href: '/posts', label: 'Posts' },
     { href: '/dependencies', label: 'Dependencies' },
     { href: '/docs', label: 'Docs' },
   ];
