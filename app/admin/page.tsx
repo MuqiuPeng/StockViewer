@@ -195,6 +195,11 @@ export default function AdminPage() {
 
   // First, verify admin status before loading any data
   useEffect(() => {
+    // Skip if already verified or currently checking
+    if (isAdminVerified !== null) {
+      return;
+    }
+
     if (status === 'unauthenticated') {
       router.replace('/auth/signin');
       return;
@@ -203,22 +208,33 @@ export default function AdminPage() {
     if (status === 'authenticated') {
       // Check admin status first
       fetch('/api/admin/status')
-        .then((res) => res.json())
+        .then((res) => {
+          if (!res.ok) {
+            throw new Error(`HTTP ${res.status}`);
+          }
+          return res.json();
+        })
         .then((data) => {
+          console.log('Admin status response:', data);
           if (!data.isAdmin) {
             // Not admin - redirect immediately
+            console.log('Not admin, redirecting. Reason:', data.reason);
+            setIsAdminVerified(false);
             router.replace('/');
           } else {
             // Admin verified - allow rendering
             setIsAdminVerified(true);
           }
         })
-        .catch(() => {
+        .catch((err) => {
           // Error checking admin status - redirect for safety
+          console.error('Error checking admin status:', err);
+          setIsAdminVerified(false);
           router.replace('/');
         });
     }
-  }, [status, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status]);
 
   // Only load data after admin is verified
   useEffect(() => {
