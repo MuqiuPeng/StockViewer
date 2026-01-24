@@ -4,6 +4,8 @@ import { isAdmin, isSuperAdmin } from '@/lib/admin';
 import { prisma } from '@/lib/prisma';
 import { UserStatus } from '@prisma/client';
 
+export const dynamic = 'force-dynamic';
+
 // PATCH /api/admin/users/:id - Update user status or admin flag
 export async function PATCH(
   request: NextRequest,

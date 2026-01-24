@@ -4,18 +4,23 @@ import { isAdmin } from '@/lib/admin';
 import { prisma } from '@/lib/prisma';
 import { TicketStatus, UserStatus } from '@prisma/client';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const session = await auth();
 
     if (!session?.user?.id) {
-      return NextResponse.json({ isAdmin: false });
+      console.log('Admin status check: No session or user ID');
+      return NextResponse.json({ isAdmin: false, reason: 'no_session' });
     }
 
+    console.log('Admin status check for user:', session.user.id, session.user.email);
     const adminStatus = await isAdmin(session.user.id);
+    console.log('Admin status result:', adminStatus);
 
     if (!adminStatus) {
-      return NextResponse.json({ isAdmin: false });
+      return NextResponse.json({ isAdmin: false, reason: 'not_admin' });
     }
 
     // Get pending counts for admin
@@ -35,6 +40,10 @@ export async function GET() {
     });
   } catch (error) {
     console.error('Error checking admin status:', error);
-    return NextResponse.json({ isAdmin: false });
+    return NextResponse.json({
+      isAdmin: false,
+      reason: 'error',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
 }

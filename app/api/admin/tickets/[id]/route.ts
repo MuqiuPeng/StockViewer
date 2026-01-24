@@ -11,6 +11,7 @@ import { isAdmin } from '@/lib/admin';
 import { Prisma } from '@prisma/client';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 // GET /api/admin/tickets/:id - Get ticket details
 export async function GET(

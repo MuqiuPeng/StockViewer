@@ -4,6 +4,8 @@ import { isAdmin } from '@/lib/admin';
 import { prisma } from '@/lib/prisma';
 import { UserStatus } from '@prisma/client';
 
+export const dynamic = 'force-dynamic';
+
 // GET /api/admin/users - Get all users with stats
 export async function GET(request: NextRequest) {
   try {

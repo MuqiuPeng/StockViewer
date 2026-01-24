@@ -7,17 +7,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
+import { isAdmin } from '@/lib/admin';
 
 export const runtime = 'nodejs';
-
-// Check if user is admin
-async function checkAdmin(userId: string): Promise<boolean> {
-  const user = await prisma.user.findUnique({
-    where: { id: userId },
-    select: { isAdmin: true },
-  });
-  return user?.isAdmin ?? false;
-}
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,7 +21,7 @@ export async function GET(request: NextRequest) {
     const { userId } = authResult;
 
     // Check admin
-    if (!(await checkAdmin(userId))) {
+    if (!(await isAdmin(userId))) {
       return NextResponse.json(
         { error: 'Forbidden', message: 'Admin access required' },
         { status: 403 }
@@ -120,7 +113,7 @@ export async function DELETE(request: NextRequest) {
     const { userId } = authResult;
 
     // Check admin
-    if (!(await checkAdmin(userId))) {
+    if (!(await isAdmin(userId))) {
       return NextResponse.json(
         { error: 'Forbidden', message: 'Admin access required' },
         { status: 403 }

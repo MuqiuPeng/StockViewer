@@ -9,6 +9,7 @@ import { getApiStorage } from '@/lib/api-auth';
 import { isAdmin } from '@/lib/admin';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 // GET /api/admin/tickets - List all tickets (admin only)
 export async function GET(request: Request) {
