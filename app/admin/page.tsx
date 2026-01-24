@@ -122,7 +122,8 @@ export default function AdminPage() {
 
       if (!response.ok) {
         if (response.status === 403) {
-          router.push('/');
+          console.error('Tickets fetch: 403 Forbidden');
+          setError('Access denied');
           return;
         }
         throw new Error(data.message || 'Failed to fetch tickets');
@@ -135,7 +136,7 @@ export default function AdminPage() {
     } finally {
       setTicketsLoading(false);
     }
-  }, [ticketStatusFilter, router]);
+  }, [ticketStatusFilter]);
 
   const fetchUsers = useCallback(async () => {
     try {
@@ -150,7 +151,8 @@ export default function AdminPage() {
 
       if (!response.ok) {
         if (response.status === 403) {
-          router.push('/');
+          console.error('Users fetch: 403 Forbidden');
+          setError('Access denied');
           return;
         }
         throw new Error(data.message || 'Failed to fetch users');
@@ -163,7 +165,7 @@ export default function AdminPage() {
     } finally {
       setUsersLoading(false);
     }
-  }, [userStatusFilter, router]);
+  }, [userStatusFilter]);
 
   const fetchDatasets = useCallback(async () => {
     try {
@@ -178,7 +180,8 @@ export default function AdminPage() {
 
       if (!response.ok) {
         if (response.status === 403) {
-          router.push('/');
+          console.error('Datasets fetch: 403 Forbidden');
+          setError('Access denied');
           return;
         }
         throw new Error(data.message || 'Failed to fetch datasets');
@@ -191,7 +194,7 @@ export default function AdminPage() {
     } finally {
       setDatasetsLoading(false);
     }
-  }, [datasetsSearch, router]);
+  }, [datasetsSearch]);
 
   // First, verify admin status before loading any data
   useEffect(() => {

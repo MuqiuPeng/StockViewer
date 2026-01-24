@@ -16,12 +16,15 @@ export async function GET(request: NextRequest) {
   try {
     const authResult = await getApiStorage();
     if (!authResult.success) {
+      console.log('Admin datasets: auth failed');
       return authResult.response;
     }
     const { userId } = authResult;
 
     // Check admin
-    if (!(await isAdmin(userId))) {
+    const adminStatus = await isAdmin(userId);
+    console.log('Admin datasets check:', { userId, isAdmin: adminStatus });
+    if (!adminStatus) {
       return NextResponse.json(
         { error: 'Forbidden', message: 'Admin access required' },
         { status: 403 }
