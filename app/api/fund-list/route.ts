@@ -3,6 +3,7 @@ import { API_CONFIG } from '@/lib/env';
 import { fetchWithRetry } from '@/lib/fetch-utils';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 /**
  * GET /api/fund-list

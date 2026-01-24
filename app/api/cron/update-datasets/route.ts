@@ -13,6 +13,7 @@ import { spawn } from 'child_process';
 import { API_CONFIG } from '@/lib/env';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 export const maxDuration = 300; // 5 minutes max for cron jobs
 
 // Verify cron secret to prevent unauthorized access

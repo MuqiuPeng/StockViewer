@@ -17,6 +17,7 @@ import { Prisma } from '@prisma/client';
 import { spawn } from 'child_process';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 // Supported data sources
 const SUPPORTED_DATA_SOURCES = [
