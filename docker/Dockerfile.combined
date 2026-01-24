@@ -86,7 +86,8 @@ RUN mkdir -p data/csv data/indicators data/strategies data/groups \
 COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 COPY docker/entrypoint.sh /app/entrypoint.sh
 COPY docker/update-datasets.sh /app/update-datasets.sh
-RUN chmod +x /app/entrypoint.sh /app/update-datasets.sh
+COPY docker/start-nextjs.sh /app/start-nextjs.sh
+RUN chmod +x /app/entrypoint.sh /app/update-datasets.sh /app/start-nextjs.sh
 
 # Environment variables
 ENV PORT=3000
