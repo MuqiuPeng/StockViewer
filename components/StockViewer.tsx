@@ -417,6 +417,47 @@ export default function StockViewer() {
   }, []);
 
   // Load datasets list, groups, and defined indicators on mount
+  // Load indicators function - extracted for reuse
+  const loadIndicators = async () => {
+    try {
+      const res = await fetch('/api/indicators');
+      const data = await res.json();
+      if (data.indicators) {
+        const outputColumns = data.indicators.map((ind: any) => ind.outputColumn);
+        setDefinedIndicators(outputColumns);
+
+        // Track which indicators are groups and their periods
+        const groups = new Set<string>();
+        const periodMap = new Map<string, Period>();
+        const idMap = new Map<string, string>();
+
+        data.indicators.forEach((ind: any) => {
+          if (ind.isGroup && ind.groupName) {
+            groups.add(ind.groupName);
+            // For group indicators, set period for the group name
+            periodMap.set(ind.groupName, (ind.period as Period) || 'daily');
+            // Map group output columns to indicator ID
+            if (ind.expectedOutputs) {
+              ind.expectedOutputs.forEach((output: string) => {
+                idMap.set(`${ind.groupName}:${output}`, ind.id);
+              });
+            }
+          } else {
+            // For single indicators, set period for the output column
+            periodMap.set(ind.outputColumn, (ind.period as Period) || 'daily');
+            // Map output column to indicator ID
+            idMap.set(ind.outputColumn, ind.id);
+          }
+        });
+        setIndicatorGroups(groups);
+        setIndicatorPeriodMap(periodMap);
+        setIndicatorIdMap(idMap);
+      }
+    } catch (err) {
+      console.error('Failed to load indicators:', err);
+    }
+  };
+
   useEffect(() => {
     // Load datasets
     fetch('/api/datasets')
@@ -446,44 +487,7 @@ export default function StockViewer() {
       });
 
     // Load defined indicators
-    fetch('/api/indicators')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.indicators) {
-          const outputColumns = data.indicators.map((ind: any) => ind.outputColumn);
-          setDefinedIndicators(outputColumns);
-
-          // Track which indicators are groups and their periods
-          const groups = new Set<string>();
-          const periodMap = new Map<string, Period>();
-          const idMap = new Map<string, string>();
-
-          data.indicators.forEach((ind: any) => {
-            if (ind.isGroup && ind.groupName) {
-              groups.add(ind.groupName);
-              // For group indicators, set period for the group name
-              periodMap.set(ind.groupName, (ind.period as Period) || 'daily');
-              // Map group output columns to indicator ID
-              if (ind.expectedOutputs) {
-                ind.expectedOutputs.forEach((output: string) => {
-                  idMap.set(`${ind.groupName}:${output}`, ind.id);
-                });
-              }
-            } else {
-              // For single indicators, set period for the output column
-              periodMap.set(ind.outputColumn, (ind.period as Period) || 'daily');
-              // Map output column to indicator ID
-              idMap.set(ind.outputColumn, ind.id);
-            }
-          });
-          setIndicatorGroups(groups);
-          setIndicatorPeriodMap(periodMap);
-          setIndicatorIdMap(idMap);
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to load indicators:', err);
-      });
+    loadIndicators();
 
     // Load view settings
     fetch('/api/view-settings')
@@ -713,6 +717,54 @@ export default function StockViewer() {
       computeIndicators();
     }
   }, [datasetData, selectedDataset, enabledIndicators1, enabledIndicators2, indicatorIdMap, datasets, selectedPeriod]);
+
+  // Handle indicator update - recompute if the indicator is currently enabled
+  const handleIndicatorUpdate = async (indicatorName: string, indicatorId: string) => {
+    // Check if this indicator is enabled in either chart
+    const isEnabled = enabledIndicators1.has(indicatorName) || enabledIndicators2.has(indicatorName);
+
+    if (!isEnabled || !selectedDataset) {
+      // If not enabled, still reload indicators list
+      loadIndicators();
+      return;
+    }
+
+    // Get the current stock ID
+    const dataset = datasets.find(d => d.id === selectedDataset || `${d.code}_${d.dataSource}` === selectedDataset);
+    const stockId = dataset?.id;
+    if (!stockId) {
+      loadIndicators();
+      return;
+    }
+
+    // Recompute the indicator for current dataset
+    setComputingIndicator(indicatorName);
+    try {
+      // Force recompute by calling the API
+      await fetch(`/api/indicator-values?indicatorId=${indicatorId}&stockId=${stockId}&autoCompute=true`);
+
+      // Clear cache for current dataset to force reload
+      for (const key of periodCacheRef.current.keys()) {
+        if (key.startsWith(selectedDataset)) {
+          periodCacheRef.current.delete(key);
+        }
+      }
+
+      // Reload dataset data
+      const res = await fetch(`/api/dataset/${encodeURIComponent(selectedDataset)}?period=${selectedPeriod}`);
+      const data = await res.json();
+      if (!data.error) {
+        const cacheKey = `${selectedDataset}_${selectedPeriod}`;
+        periodCacheRef.current.set(cacheKey, data);
+        setDatasetData(data);
+      }
+    } catch (err) {
+      console.error('Failed to recompute indicator after update:', err);
+    } finally {
+      setComputingIndicator(null);
+      loadIndicators();
+    }
+  };
 
   // Update keyboard nav date ref when crosshair moves in keyboard nav mode
   useEffect(() => {
@@ -1311,6 +1363,7 @@ export default function StockViewer() {
       <IndicatorManager
         isOpen={isIndicatorManagerOpen}
         onClose={() => setIsIndicatorManagerOpen(false)}
+        onIndicatorUpdate={handleIndicatorUpdate}
       />
 
       <SaveViewSettingModal

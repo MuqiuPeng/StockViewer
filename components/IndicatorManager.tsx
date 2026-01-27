@@ -21,9 +21,10 @@ interface Indicator {
 interface IndicatorManagerProps {
   isOpen: boolean;
   onClose: () => void;
+  onIndicatorUpdate?: (indicatorName: string, indicatorId: string) => void;
 }
 
-export default function IndicatorManager({ isOpen, onClose }: IndicatorManagerProps) {
+export default function IndicatorManager({ isOpen, onClose, onIndicatorUpdate }: IndicatorManagerProps) {
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -148,11 +149,16 @@ export default function IndicatorManager({ isOpen, onClose }: IndicatorManagerPr
     setViewingIndicator(null);
   };
 
-  const handleEditorSuccess = () => {
+  const handleEditorSuccess = (savedIndicator?: any, _type?: 'indicator') => {
     setIsEditorOpen(false);
     setEditingIndicator(null);
     setViewingIndicator(null);
     loadIndicators();
+
+    // Notify parent that indicator was updated
+    if (savedIndicator && onIndicatorUpdate) {
+      onIndicatorUpdate(savedIndicator.name, savedIndicator.id);
+    }
   };
 
   const formatOutputColumn = (indicator: Indicator): string => {
