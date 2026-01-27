@@ -1116,6 +1116,10 @@ export async function computeIndicator(
     const resourceManifest = await buildResourceManifest(userId);
     const detectedImports = detectImportCalls(indicator.pythonCode);
 
+    console.log('[computeIndicator] Python code:', indicator.pythonCode);
+    console.log('[computeIndicator] Detected imports:', JSON.stringify(detectedImports, null, 2));
+    console.log('[computeIndicator] Available indicators in manifest:', Object.keys(resourceManifest.indicators));
+
     // Preload detected resources (with lazy computation)
     const preloadedIndicators = await preloadIndicatorValues(
       detectedImports.indicators,
@@ -1127,6 +1131,10 @@ export async function computeIndicator(
       detectedImports.datasets,
       resourceManifest
     );
+
+    console.log('[computeIndicator] Preloaded indicators keys:', Object.keys(preloadedIndicators));
+    console.log('[computeIndicator] Preloaded indicators sample:',
+      Object.entries(preloadedIndicators).map(([k, v]) => `${k}: ${v.length} values`));
 
     // Execute Python indicator
     const executionResult: PythonExecutionResult = await executePythonIndicator({
