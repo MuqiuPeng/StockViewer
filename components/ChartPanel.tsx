@@ -527,6 +527,11 @@ export default function ChartPanel({
     });
 
     indicator1Chart.subscribeCrosshairMove((param) => {
+      // Track the current crosshair time for locking (only when not locked)
+      if (param.time && !crosshairLockedRef.current) {
+        lastCrosshairTimeRef.current = param.time as string;
+      }
+
       // If locked, force crosshair back to locked position
       if (crosshairLockedRef.current && lockedTimeRef.current) {
         setLockedCrosshair(lockedTimeRef.current);
@@ -567,6 +572,11 @@ export default function ChartPanel({
     });
 
     indicator2Chart.subscribeCrosshairMove((param) => {
+      // Track the current crosshair time for locking (only when not locked)
+      if (param.time && !crosshairLockedRef.current) {
+        lastCrosshairTimeRef.current = param.time as string;
+      }
+
       // If locked, force crosshair back to locked position
       if (crosshairLockedRef.current && lockedTimeRef.current) {
         setLockedCrosshair(lockedTimeRef.current);
