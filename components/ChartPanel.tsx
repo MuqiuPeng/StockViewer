@@ -424,12 +424,42 @@ export default function ChartPanel({
     });
     candlestickSeriesRef.current = candlestickSeries;
 
+    // Helper function to set crosshair at locked position on all charts
+    const setLockedCrosshair = (lockedTime: string) => {
+      try {
+        const candleSeries = candlestickSeriesRef.current;
+        const indicator1Series = Array.from(indicator1SeriesRef.current.values())[0];
+        const indicator2Series = Array.from(indicator2SeriesRef.current.values())[0];
+
+        if (candleSeries) {
+          candlestickChart.setCrosshairPosition(0, lockedTime, candleSeries);
+        }
+        if (indicator1Series) {
+          indicator1Chart.setCrosshairPosition(0, lockedTime, indicator1Series);
+        }
+        if (indicator2Series) {
+          indicator2Chart.setCrosshairPosition(0, lockedTime, indicator2Series);
+        }
+      } catch (error) {
+        // Ignore errors
+      }
+    };
+
     // Subscribe to crosshair move events on all charts
     // Synchronize crosshair across all three charts
     candlestickChart.subscribeCrosshairMove((param) => {
-      // Track the current crosshair time for locking
-      if (param.time) {
+      // Track the current crosshair time for locking (only when not locked)
+      if (param.time && !crosshairLockedRef.current) {
         lastCrosshairTimeRef.current = param.time as string;
+      }
+
+      // If locked, force crosshair back to locked position
+      if (crosshairLockedRef.current && lockedTimeRef.current) {
+        setLockedCrosshair(lockedTimeRef.current);
+        if (onCrosshairMove) {
+          onCrosshairMove(lockedTimeRef.current);
+        }
+        return;
       }
 
       if (onCrosshairMove) {
@@ -472,6 +502,15 @@ export default function ChartPanel({
     });
 
     indicator1Chart.subscribeCrosshairMove((param) => {
+      // If locked, force crosshair back to locked position
+      if (crosshairLockedRef.current && lockedTimeRef.current) {
+        setLockedCrosshair(lockedTimeRef.current);
+        if (onCrosshairMove) {
+          onCrosshairMove(lockedTimeRef.current);
+        }
+        return;
+      }
+
       if (onCrosshairMove) {
         onCrosshairMove(param.time as string | null);
       }
@@ -503,6 +542,15 @@ export default function ChartPanel({
     });
 
     indicator2Chart.subscribeCrosshairMove((param) => {
+      // If locked, force crosshair back to locked position
+      if (crosshairLockedRef.current && lockedTimeRef.current) {
+        setLockedCrosshair(lockedTimeRef.current);
+        if (onCrosshairMove) {
+          onCrosshairMove(lockedTimeRef.current);
+        }
+        return;
+      }
+
       if (onCrosshairMove) {
         onCrosshairMove(param.time as string | null);
       }
@@ -1380,21 +1428,6 @@ export default function ChartPanel({
             }
           }}
         />
-        {/* Overlay to block mouse events when crosshair is locked (but allow click to unlock) */}
-        {crosshairLocked && !keyboardNavMode && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              zIndex: 10,
-              cursor: 'pointer',
-            }}
-            onClick={toggleCrosshairLock}
-          />
-        )}
         {/* Overlay to block mouse events when keyboard nav is on */}
         {keyboardNavMode && (
           <div
@@ -1438,34 +1471,6 @@ export default function ChartPanel({
             }
           }}
         />
-        {/* Overlay to block mouse events when crosshair is locked */}
-        {crosshairLocked && !keyboardNavMode && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              zIndex: 10,
-              cursor: 'pointer',
-            }}
-            onClick={(e) => {
-              const container = indicator1ContainerRef.current;
-              if (!container) return;
-              const rect = container.getBoundingClientRect();
-              const clickX = e.clientX - rect.left;
-              const priceScaleWidth = 80;
-              // Click on Y-axis -> open modal, else unlock crosshair
-              if (clickX >= rect.width - priceScaleWidth) {
-                setActiveChart(1);
-                setModalOpen(true);
-              } else {
-                toggleCrosshairLock();
-              }
-            }}
-          />
-        )}
         {/* Overlay to block scroll/drag events when keyboard nav is on */}
         {keyboardNavMode && (
           <div
@@ -1519,34 +1524,6 @@ export default function ChartPanel({
             }
           }}
         />
-        {/* Overlay to block mouse events when crosshair is locked */}
-        {crosshairLocked && !keyboardNavMode && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              zIndex: 10,
-              cursor: 'pointer',
-            }}
-            onClick={(e) => {
-              const container = indicator2ContainerRef.current;
-              if (!container) return;
-              const rect = container.getBoundingClientRect();
-              const clickX = e.clientX - rect.left;
-              const priceScaleWidth = 80;
-              // Click on Y-axis -> open modal, else unlock crosshair
-              if (clickX >= rect.width - priceScaleWidth) {
-                setActiveChart(2);
-                setModalOpen(true);
-              } else {
-                toggleCrosshairLock();
-              }
-            }}
-          />
-        )}
         {/* Overlay to block scroll/drag events when keyboard nav is on */}
         {keyboardNavMode && (
           <div
