@@ -35,18 +35,25 @@ interface ImportableIndicator {
   description: string;
   isOwner: boolean;
   outputColumn: string;
+  isGroup?: boolean;
+  groupName?: string;
+  expectedOutputs?: string[];
 }
 
-interface ImportableDataset {
+// Flattened indicator item for import panel (group indicators expanded to columns)
+interface ImportableItem {
   id: string;
-  symbol: string;
-  name: string;
-  dataSource: string;
+  indicatorName: string;  // Original indicator name
+  columnName: string;     // Column to access (for group: specific output, for single: 'value')
+  displayName: string;    // Display name in UI
+  ownerEmail: string;
+  isOwner: boolean;
+  isGroupColumn: boolean; // Whether this is a column from a group indicator
 }
 
 interface PlaceholderInfo {
-  type: 'indicator' | 'dataset';
-  id: string;  // Indicator or dataset ID
+  type: 'indicator';
+  id: string;
   displayName: string;  // Display name shown in tag
   // Position in editor
   startOffset: number;
@@ -58,8 +65,8 @@ interface PlaceholderInfo {
 
 // Placeholder formats:
 // - ◈name◈ for base columns (OHLCV) -> data['name']
-// - ◈IND:name◈ for indicators -> data.import_('name')['value']
-// - ◇DS:symbol◇ for datasets -> data.import_('symbol', type='dataset')
+// - ◈IND:name◈ for single indicators -> data.import_('name')['value']
+// - ◈IND:name:column◈ for group indicator columns -> data.import_('name')['column']
 
 // Base columns that are always available
 const BASE_COLUMNS = ['open', 'high', 'low', 'close', 'volume'];
@@ -73,14 +80,14 @@ const transformPlaceholdersToCode = (code: string): string => {
     result = result.replace(new RegExp(`◈${col}◈`, 'g'), `data['${col}']`);
   }
 
-  // Transform indicator placeholders: ◈IND:name◈ -> data.import_('name')['value']
-  result = result.replace(/◈IND:([^◈]+)◈/g, (_, name) => {
-    return `data.import_('${name}')['value']`;
+  // Transform group indicator column placeholders: ◈IND:name:column◈ -> data.import_('name')['column']
+  result = result.replace(/◈IND:([^:◈]+):([^◈]+)◈/g, (_, name, column) => {
+    return `data.import_('${name}')['${column}']`;
   });
 
-  // Transform dataset placeholders: ◇DS:symbol◇ -> data.import_('symbol', type='dataset')
-  result = result.replace(/◇DS:([^◇]+)◇/g, (_, symbol) => {
-    return `data.import_('${symbol}', type='dataset')`;
+  // Transform single indicator placeholders: ◈IND:name◈ -> data.import_('name')['value']
+  result = result.replace(/◈IND:([^◈]+)◈/g, (_, name) => {
+    return `data.import_('${name}')['value']`;
   });
 
   return result;
@@ -96,26 +103,19 @@ const transformCodeToPlaceholders = (code: string): string => {
     result = result.replace(new RegExp(`data\\["${col}"\\]`, 'g'), `◈${col}◈`);
   }
 
-  // IMPORTANT: Match dataset imports FIRST (more specific pattern)
-  // data.import_('symbol', type='dataset') -> ◇DS:symbol◇
+  // Handle user-specific imports: data.import_(user='email', indicator='name')['column'] -> ◈IND:name:column◈
   result = result.replace(
-    /data\.import_\(\s*['"]([^'"]+)['"]\s*,\s*type\s*=\s*['"]dataset['"]\s*\)/g,
-    (_, symbol) => `◇DS:${symbol}◇`
+    /data\.import_\(\s*user\s*=\s*['"][^'"]+['"]\s*,\s*indicator\s*=\s*['"]([^'"]+)['"]\s*\)\s*\['([^']+)'\]/g,
+    (_, name, column) => column === 'value' ? `◈IND:${name}◈` : `◈IND:${name}:${column}◈`
   );
 
-  // Handle user-specific imports: data.import_(user='email', indicator='name')['value'] -> ◈IND:name◈
+  // Match indicator imports with column access: data.import_('name')['column'] -> ◈IND:name:column◈ or ◈IND:name◈
   result = result.replace(
-    /data\.import_\(\s*user\s*=\s*['"][^'"]+['"]\s*,\s*indicator\s*=\s*['"]([^'"]+)['"]\s*\)\s*\['value'\]/g,
-    (_, name) => `◈IND:${name}◈`
+    /data\.import_\(\s*['"]([^'"]+)['"]\s*\)\s*\['([^']+)'\]/g,
+    (_, name, column) => column === 'value' ? `◈IND:${name}◈` : `◈IND:${name}:${column}◈`
   );
 
-  // Match indicator imports with ['value']: data.import_('name')['value'] -> ◈IND:name◈
-  result = result.replace(
-    /data\.import_\(\s*['"]([^'"]+)['"]\s*\)\s*\['value'\]/g,
-    (_, name) => `◈IND:${name}◈`
-  );
-
-  // Also match without ['value'] for backward compatibility
+  // Match imports without column access (backward compatibility): data.import_('name') -> ◈IND:name◈
   result = result.replace(
     /data\.import_\(\s*['"]([^'"]+)['"]\s*\)/g,
     (_, name) => `◈IND:${name}◈`
@@ -196,7 +196,7 @@ const findPlaceholders = (code: string): PlaceholderInfo[] => {
       let match;
       while ((match = colRegex.exec(line)) !== null) {
         placeholders.push({
-          type: 'indicator', // treat as indicator type for styling
+          type: 'indicator',
           id: col,
           displayName: col,
           startOffset: offset + match.index,
@@ -208,27 +208,12 @@ const findPlaceholders = (code: string): PlaceholderInfo[] => {
       }
     }
 
-    // Find indicator placeholders ◈IND:name◈
+    // Find indicator placeholders ◈IND:name◈ or ◈IND:name:column◈
     const indRegex = /◈IND:([^◈]+)◈/g;
     let match;
     while ((match = indRegex.exec(line)) !== null) {
       placeholders.push({
         type: 'indicator',
-        id: '',
-        displayName: match[1],
-        startOffset: offset + match.index,
-        endOffset: offset + match.index + match[0].length,
-        lineNumber: lineIdx + 1,
-        column: match.index + 1,
-        length: match[0].length,
-      });
-    }
-
-    // Find dataset placeholders ◇DS:name◇
-    const dsRegex = /◇DS:([^◇]+)◇/g;
-    while ((match = dsRegex.exec(line)) !== null) {
-      placeholders.push({
-        type: 'dataset',
         id: '',
         displayName: match[1],
         startOffset: offset + match.index,
@@ -305,36 +290,25 @@ export default function IndicatorEditorModal({
     pendingSubmit: any; // Store the pending request body
   } | null>(null);
 
-  // Import panel state (always visible) - hierarchical: Dataset -> Indicators
+  // Import panel state - flat list of importable items (indicators expanded to columns)
   const [importSearchQuery, setImportSearchQuery] = useState('');
   const [availableIndicators, setAvailableIndicators] = useState<ImportableIndicator[]>([]);
-  const [availableDatasets, setAvailableDatasets] = useState<ImportableDataset[]>([]);
+  const [importableItems, setImportableItems] = useState<ImportableItem[]>([]);
   const [loadingImportData, setLoadingImportData] = useState(false);
   const [selectedPlaceholder, setSelectedPlaceholder] = useState<PlaceholderInfo | null>(null);
   const [placeholderDecorations, setPlaceholderDecorations] = useState<string[]>([]);
-  // Expanded datasets in hierarchy (null = current dataset expanded by default)
-  const [expandedDataset, setExpandedDataset] = useState<string | null>(null);
   // Track if outputColumn was manually edited by user
   const [outputColumnManuallyEdited, setOutputColumnManuallyEdited] = useState(false);
 
   // Get display info for a placeholder - uses embedded displayName
   const getPlaceholderDisplayInfo = useCallback((placeholder: PlaceholderInfo): { label: string; detail: string } => {
-    if (placeholder.type === 'indicator') {
-      // Look up by display name in available indicators
-      const ind = availableIndicators.find(i => i.name === placeholder.displayName);
-      return {
-        label: placeholder.displayName,
-        detail: ind?.ownerEmail || ''
-      };
-    } else {
-      // Look up by display name (symbol) in available datasets
-      const ds = availableDatasets.find(d => d.symbol === placeholder.displayName);
-      return {
-        label: placeholder.displayName,
-        detail: ds?.name || ''
-      };
-    }
-  }, [availableIndicators, availableDatasets]);
+    // Look up by display name in importable items
+    const item = importableItems.find(i => i.displayName === placeholder.displayName);
+    return {
+      label: placeholder.displayName,
+      detail: item?.ownerEmail || ''
+    };
+  }, [importableItems]);
 
   // Update placeholder decorations in Monaco editor
   const updatePlaceholderDecorations = useCallback(() => {
@@ -354,9 +328,7 @@ export default function IndicatorEditorModal({
         selectedPlaceholder.startOffset === placeholder.startOffset &&
         selectedPlaceholder.endOffset === placeholder.endOffset;
 
-      const baseClass = placeholder.type === 'indicator'
-        ? 'import-placeholder-indicator'
-        : 'import-placeholder-dataset';
+      const baseClass = 'import-placeholder-indicator';
       const className = isSelected ? `${baseClass}-selected` : baseClass;
 
       decorations.push({
@@ -367,9 +339,7 @@ export default function IndicatorEditorModal({
         options: {
           inlineClassName: className,
           hoverMessage: {
-            value: placeholder.type === 'indicator'
-              ? `**Indicator**: ${displayInfo.label}\n**From**: ${displayInfo.detail}`
-              : `**Dataset**: ${displayInfo.label}\n${displayInfo.detail}`
+            value: `**Indicator**: ${displayInfo.label}${displayInfo.detail ? `\n**From**: ${displayInfo.detail}` : ''}`
           },
           stickiness: monacoInstance.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges
         }
@@ -439,8 +409,8 @@ export default function IndicatorEditorModal({
     setTimeout(() => updatePlaceholderDecorations(), 100);
   }, [editorInstance, monacoInstance, updatePlaceholderDecorations]);
 
-  // Insert indicator placeholder at cursor
-  const insertIndicatorPlaceholder = useCallback((ind: ImportableIndicator) => {
+  // Insert indicator/column placeholder at cursor
+  const insertItemPlaceholder = useCallback((item: ImportableItem) => {
     if (!editorInstance || !monacoInstance) return;
 
     const selection = editorInstance.getSelection();
@@ -453,35 +423,10 @@ export default function IndicatorEditorModal({
       cursorPosition.lineNumber, cursorPosition.column
     );
 
-    // Insert visual placeholder
-    const placeholder = `◈IND:${ind.name}◈`;
-    editorInstance.executeEdits('insert-placeholder', [{
-      range: insertRange,
-      text: placeholder,
-      forceMoveMarkers: true
-    }]);
-    editorInstance.focus();
-
-    // Update decorations after a short delay
-    setTimeout(() => updatePlaceholderDecorations(), 100);
-  }, [editorInstance, updatePlaceholderDecorations]);
-
-  // Insert dataset placeholder at cursor
-  const insertDatasetPlaceholder = useCallback((ds: ImportableDataset) => {
-    if (!editorInstance || !monacoInstance) return;
-
-    const selection = editorInstance.getSelection();
-    if (!selection) return;
-
-    // Create a collapsed range at cursor position (insert, not replace)
-    const cursorPosition = selection.getPosition();
-    const insertRange = new monacoInstance.Range(
-      cursorPosition.lineNumber, cursorPosition.column,
-      cursorPosition.lineNumber, cursorPosition.column
-    );
-
-    // Insert visual placeholder
-    const placeholder = `◇DS:${ds.symbol}◇`;
+    // Insert visual placeholder - include column for group indicators
+    const placeholder = item.isGroupColumn
+      ? `◈IND:${item.indicatorName}:${item.columnName}◈`
+      : `◈IND:${item.indicatorName}◈`;
     editorInstance.executeEdits('insert-placeholder', [{
       range: insertRange,
       text: placeholder,
@@ -493,13 +438,9 @@ export default function IndicatorEditorModal({
     setTimeout(() => updatePlaceholderDecorations(), 100);
   }, [editorInstance, monacoInstance, updatePlaceholderDecorations]);
 
-  // Replace selected placeholder with a new indicator
-  const replaceWithIndicator = useCallback((ind: ImportableIndicator) => {
+  // Replace selected placeholder with a new item
+  const replaceWithItem = useCallback((item: ImportableItem) => {
     if (!selectedPlaceholder || !editorInstance || !monacoInstance) return;
-    if (selectedPlaceholder.type !== 'indicator') {
-      alert('Cannot replace: type mismatch');
-      return;
-    }
 
     const model = editorInstance.getModel();
     if (!model) return;
@@ -507,36 +448,9 @@ export default function IndicatorEditorModal({
     // Replace at placeholder position
     const startPos = model.getPositionAt(selectedPlaceholder.startOffset);
     const endPos = model.getPositionAt(selectedPlaceholder.endOffset);
-    const newPlaceholder = `◈IND:${ind.name}◈`;
-
-    editorInstance.executeEdits('replace-placeholder', [{
-      range: new monacoInstance.Range(
-        startPos.lineNumber, startPos.column,
-        endPos.lineNumber, endPos.column
-      ),
-      text: newPlaceholder,
-      forceMoveMarkers: true
-    }]);
-
-    setSelectedPlaceholder(null);
-    setTimeout(() => updatePlaceholderDecorations(), 100);
-  }, [selectedPlaceholder, editorInstance, monacoInstance, updatePlaceholderDecorations]);
-
-  // Replace selected placeholder with a new dataset
-  const replaceWithDataset = useCallback((ds: ImportableDataset) => {
-    if (!selectedPlaceholder || !editorInstance || !monacoInstance) return;
-    if (selectedPlaceholder.type !== 'dataset') {
-      alert('Cannot replace: type mismatch');
-      return;
-    }
-
-    const model = editorInstance.getModel();
-    if (!model) return;
-
-    // Replace at placeholder position
-    const startPos = model.getPositionAt(selectedPlaceholder.startOffset);
-    const endPos = model.getPositionAt(selectedPlaceholder.endOffset);
-    const newPlaceholder = `◇DS:${ds.symbol}◇`;
+    const newPlaceholder = item.isGroupColumn
+      ? `◈IND:${item.indicatorName}:${item.columnName}◈`
+      : `◈IND:${item.indicatorName}◈`;
 
     editorInstance.executeEdits('replace-placeholder', [{
       range: new monacoInstance.Range(
@@ -719,40 +633,65 @@ export default function IndicatorEditorModal({
     };
   }, [editorInstance, monacoInstance, selectedPlaceholder]);
 
-  // Fetch available indicators and datasets when modal opens (always refresh)
+  // Fetch available indicators when modal opens (always refresh)
   useEffect(() => {
     if (isOpen) {
       setLoadingImportData(true);
 
-      Promise.all([
-        fetch('/api/indicators').then(res => res.json()),
-        fetch('/api/datasets').then(res => res.json())
-      ]).then(([indicatorsData, datasetsData]) => {
-        if (indicatorsData.indicators) {
-          setAvailableIndicators(indicatorsData.indicators.map((ind: any) => ({
-            id: ind.id,
-            name: ind.name,
-            ownerEmail: ind.creatorEmail || 'me',
-            description: ind.description || '',
-            isOwner: ind.isOwner,
-            outputColumn: ind.outputColumn,
-          })));
-        }
-        if (datasetsData.datasets) {
-          setAvailableDatasets(datasetsData.datasets.map((ds: any) => ({
-            id: ds.id,
-            symbol: ds.symbol || ds.code,
-            name: ds.name,
-            dataSource: ds.dataSource,
-          })));
-        }
-      }).catch(err => {
-        console.error('Failed to load import data:', err);
-      }).finally(() => {
-        setLoadingImportData(false);
-      });
+      fetch('/api/indicators').then(res => res.json())
+        .then((indicatorsData) => {
+          if (indicatorsData.indicators) {
+            const indicators: ImportableIndicator[] = indicatorsData.indicators.map((ind: any) => ({
+              id: ind.id,
+              name: ind.name,
+              ownerEmail: ind.creatorEmail || 'me',
+              description: ind.description || '',
+              isOwner: ind.isOwner,
+              outputColumn: ind.outputColumn,
+              isGroup: ind.isGroup,
+              groupName: ind.groupName,
+              expectedOutputs: ind.expectedOutputs,
+            }));
+            setAvailableIndicators(indicators);
+
+            // Build flattened importable items (expand group indicators to columns)
+            const items: ImportableItem[] = [];
+            for (const ind of indicators) {
+              if (ind.isGroup && ind.expectedOutputs && ind.expectedOutputs.length > 0) {
+                // Group indicator - add each output column as separate item
+                for (const output of ind.expectedOutputs) {
+                  items.push({
+                    id: `${ind.id}:${output}`,
+                    indicatorName: ind.name,
+                    columnName: output,
+                    displayName: `${ind.name}:${output}`,
+                    ownerEmail: ind.ownerEmail,
+                    isOwner: ind.isOwner,
+                    isGroupColumn: true,
+                  });
+                }
+              } else {
+                // Single indicator - add as-is with 'value' column
+                items.push({
+                  id: ind.id,
+                  indicatorName: ind.name,
+                  columnName: 'value',
+                  displayName: ind.name,
+                  ownerEmail: ind.ownerEmail,
+                  isOwner: ind.isOwner,
+                  isGroupColumn: false,
+                });
+              }
+            }
+            setImportableItems(items);
+          }
+        }).catch(err => {
+          console.error('Failed to load import data:', err);
+        }).finally(() => {
+          setLoadingImportData(false);
+        });
     }
-  }, [isOpen, availableIndicators.length, availableDatasets.length]);
+  }, [isOpen]);
 
   // Load groups on mount (includes both custom and data source groups)
   useEffect(() => {
@@ -1519,12 +1458,12 @@ export default function IndicatorEditorModal({
             </div>
           </div>
 
-          {/* Right Panel - Import (Hierarchical: DS -> Indicators) */}
+          {/* Right Panel - Import */}
           <div className="w-64 flex-shrink-0 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 flex flex-col">
             {/* Panel Header */}
             <div className="p-2 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
               <div className="text-sm font-semibold dark:text-white">Import</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Select a dataset to see its columns</div>
+              <div className="text-xs text-gray-500 dark:text-gray-400">Insert columns or indicators</div>
             </div>
 
             {/* Search */}
@@ -1542,12 +1481,7 @@ export default function IndicatorEditorModal({
             {selectedPlaceholder && (
               <div className="p-2 border-b border-gray-200 dark:border-gray-700 bg-blue-50 dark:bg-blue-900/30 flex-shrink-0">
                 <div className="text-xs text-blue-700 dark:text-blue-300 mb-1">
-                  Selected: {(() => {
-                    const info = getPlaceholderDisplayInfo(selectedPlaceholder);
-                    return selectedPlaceholder.type === 'indicator'
-                      ? `${info.label}`
-                      : `DS: ${info.label}`;
-                  })()}
+                  Selected: {getPlaceholderDisplayInfo(selectedPlaceholder).label}
                 </div>
                 <div className="text-xs text-gray-500 dark:text-gray-400">
                   Click an item below to replace
@@ -1555,7 +1489,7 @@ export default function IndicatorEditorModal({
               </div>
             )}
 
-            {/* Hierarchical List */}
+            {/* Items List */}
             <div className="flex-1 overflow-y-auto p-2">
               {loadingImportData ? (
                 <div className="text-center text-gray-500 dark:text-gray-400 py-4">
@@ -1563,143 +1497,69 @@ export default function IndicatorEditorModal({
                 </div>
               ) : (
                 <>
-                  {/* Current Dataset (always expanded first) - dynamic, follows selection */}
-                  <div className="mb-2">
-                    <button
-                      type="button"
-                      onClick={() => setExpandedDataset(expandedDataset === null ? '__none__' : null)}
-                      className="w-full flex items-center gap-1 p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-sm font-medium"
-                    >
-                      <span className={`text-xs transition-transform ${expandedDataset === null ? 'rotate-90' : ''}`}>▶</span>
-                      <span className="text-green-600 dark:text-green-400">Current Dataset</span>
-                      <span className="text-xs text-gray-400">(dynamic)</span>
-                    </button>
-
-                    {/* Expanded: show base columns + indicators */}
-                    {expandedDataset === null && (
-                      <div className="ml-4 mt-1 space-y-0.5">
-                        {/* Base columns (OHLCV) */}
-                        <div className="text-xs text-gray-400 dark:text-gray-500 py-1">Base Columns</div>
-                        {BASE_COLUMNS
-                          .filter(col => !importSearchQuery || col.toLowerCase().includes(importSearchQuery.toLowerCase()))
-                          .map(col => (
-                            <div
-                              key={col}
-                              className="flex items-center justify-between p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-xs"
-                            >
-                              <span className="text-gray-600 dark:text-gray-300 font-mono">{col}</span>
-                              <button
-                                type="button"
-                                onClick={() => insertColumnPlaceholder(col)}
-                                className="px-1.5 py-0.5 text-[10px] rounded bg-blue-500 hover:bg-blue-600 text-white"
-                              >
-                                +
-                              </button>
-                            </div>
-                          ))}
-
-                        {/* Indicators */}
-                        {availableIndicators.length > 0 && (
-                          <>
-                            <div className="text-xs text-gray-400 dark:text-gray-500 py-1 mt-2">Indicators</div>
-                            {availableIndicators
-                              .filter(ind => !importSearchQuery || ind.name.toLowerCase().includes(importSearchQuery.toLowerCase()))
-                              .filter(ind => !indicator || ind.id !== indicator.id) // Exclude current indicator being edited
-                              .map(ind => (
-                                <div
-                                  key={ind.id}
-                                  className="flex items-center justify-between p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-xs"
-                                >
-                                  <div className="flex-1 truncate">
-                                    <span className="dark:text-white">{ind.name}</span>
-                                    {!ind.isOwner && (
-                                      <span className="text-[10px] text-gray-400 ml-1">({ind.ownerEmail})</span>
-                                    )}
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (selectedPlaceholder && selectedPlaceholder.type === 'indicator') {
-                                        replaceWithIndicator(ind);
-                                      } else {
-                                        insertIndicatorPlaceholder(ind);
-                                      }
-                                    }}
-                                    className={`px-1.5 py-0.5 text-[10px] rounded ${
-                                      selectedPlaceholder && selectedPlaceholder.type === 'indicator'
-                                        ? 'bg-orange-500 hover:bg-orange-600 text-white'
-                                        : 'bg-purple-500 hover:bg-purple-600 text-white'
-                                    }`}
-                                  >
-                                    {selectedPlaceholder && selectedPlaceholder.type === 'indicator' ? '⟲' : '+'}
-                                  </button>
-                                </div>
-                              ))}
-                          </>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Other Datasets - fixed references */}
-                  <div className="text-xs text-gray-400 dark:text-gray-500 py-1 mt-2 px-1">Fixed Dataset References</div>
-                  {availableDatasets
-                    .filter(ds => !importSearchQuery ||
-                      ds.symbol.toLowerCase().includes(importSearchQuery.toLowerCase()) ||
-                      ds.name.toLowerCase().includes(importSearchQuery.toLowerCase()))
-                    .map(ds => (
-                      <div key={ds.id} className="mb-1">
+                  {/* Base Columns (OHLCV) */}
+                  <div className="text-xs text-gray-400 dark:text-gray-500 py-1 font-medium">Base Columns</div>
+                  {BASE_COLUMNS
+                    .filter(col => !importSearchQuery || col.toLowerCase().includes(importSearchQuery.toLowerCase()))
+                    .map(col => (
+                      <div
+                        key={col}
+                        className="flex items-center justify-between p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-xs"
+                      >
+                        <span className="text-gray-600 dark:text-gray-300 font-mono">{col}</span>
                         <button
                           type="button"
-                          onClick={() => setExpandedDataset(expandedDataset === ds.id ? '__none__' : ds.id)}
-                          className="w-full flex items-center gap-1 p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-sm"
+                          onClick={() => insertColumnPlaceholder(col)}
+                          className="px-1.5 py-0.5 text-[10px] rounded bg-blue-500 hover:bg-blue-600 text-white"
                         >
-                          <span className={`text-xs transition-transform ${expandedDataset === ds.id ? 'rotate-90' : ''}`}>▶</span>
-                          <span className="text-green-600 dark:text-green-400 font-mono">{ds.symbol}</span>
-                          <span className="text-xs text-gray-400 truncate flex-1">{ds.name}</span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (selectedPlaceholder && selectedPlaceholder.type === 'dataset') {
-                                replaceWithDataset(ds);
-                              } else {
-                                insertDatasetPlaceholder(ds);
-                              }
-                            }}
-                            className={`px-1.5 py-0.5 text-[10px] rounded ${
-                              selectedPlaceholder && selectedPlaceholder.type === 'dataset'
-                                ? 'bg-orange-500 hover:bg-orange-600 text-white'
-                                : 'bg-green-500 hover:bg-green-600 text-white'
-                            }`}
-                          >
-                            {selectedPlaceholder && selectedPlaceholder.type === 'dataset' ? '⟲' : '+'}
-                          </button>
+                          +
                         </button>
-
-                        {/* Expanded dataset: show its columns */}
-                        {expandedDataset === ds.id && (
-                          <div className="ml-4 mt-1 space-y-0.5">
-                            <div className="text-xs text-gray-400 dark:text-gray-500 py-1">
-                              Columns (via import)
-                            </div>
-                            {BASE_COLUMNS.map(col => (
-                              <div
-                                key={col}
-                                className="flex items-center justify-between p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-xs"
-                              >
-                                <span className="text-gray-600 dark:text-gray-300 font-mono">{col}</span>
-                                <span className="text-gray-400 text-[10px]">[&apos;{col}&apos;]</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
                       </div>
                     ))}
 
-                  {availableDatasets.length === 0 && (
-                    <div className="text-xs text-gray-400 dark:text-gray-500 text-center py-2">
-                      No other datasets
+                  {/* Indicators (flattened - group indicators expanded to columns) */}
+                  {importableItems.length > 0 && (
+                    <>
+                      <div className="text-xs text-gray-400 dark:text-gray-500 py-1 mt-3 font-medium">Indicators</div>
+                      {importableItems
+                        .filter(item => !importSearchQuery || item.displayName.toLowerCase().includes(importSearchQuery.toLowerCase()))
+                        .filter(item => !indicator || !item.id.startsWith(indicator.id)) // Exclude current indicator being edited
+                        .map(item => (
+                          <div
+                            key={item.id}
+                            className="flex items-center justify-between p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-xs"
+                          >
+                            <div className="flex-1 truncate">
+                              <span className="dark:text-white">{item.displayName}</span>
+                              {!item.isOwner && (
+                                <span className="text-[10px] text-gray-400 ml-1">({item.ownerEmail})</span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (selectedPlaceholder) {
+                                  replaceWithItem(item);
+                                } else {
+                                  insertItemPlaceholder(item);
+                                }
+                              }}
+                              className={`px-1.5 py-0.5 text-[10px] rounded ${
+                                selectedPlaceholder
+                                  ? 'bg-orange-500 hover:bg-orange-600 text-white'
+                                  : 'bg-purple-500 hover:bg-purple-600 text-white'
+                              }`}
+                            >
+                              {selectedPlaceholder ? '⟲' : '+'}
+                            </button>
+                          </div>
+                        ))}
+                    </>
+                  )}
+
+                  {importableItems.length === 0 && (
+                    <div className="text-xs text-gray-400 dark:text-gray-500 text-center py-2 mt-3">
+                      No indicators available
                     </div>
                   )}
                 </>
