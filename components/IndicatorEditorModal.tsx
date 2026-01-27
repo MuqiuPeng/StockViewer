@@ -756,11 +756,16 @@ export default function IndicatorEditorModal({
     if (isOpen) {
       setLoadingImportData(true);
 
-      // Fetch indicators
-      const indicatorsPromise = fetch('/api/indicators').then(res => res.json())
-        .then((indicatorsData) => {
+      // Fetch both indicators and datasets in parallel
+      Promise.all([
+        fetch('/api/indicators').then(res => res.json()),
+        fetch('/api/datasets').then(res => res.json())
+      ])
+        .then(([indicatorsData, datasetsData]) => {
+          // Process indicators
+          let indicators: ImportableIndicator[] = [];
           if (indicatorsData.indicators) {
-            const indicators: ImportableIndicator[] = indicatorsData.indicators.map((ind: any) => ({
+            indicators = indicatorsData.indicators.map((ind: any) => ({
               id: ind.id,
               name: ind.name,
               ownerEmail: ind.creatorEmail || 'me',
@@ -804,13 +809,10 @@ export default function IndicatorEditorModal({
             }
             setImportableItems(items);
           }
-        });
 
-      // Fetch datasets for importing columns from other datasets
-      const datasetsPromise = fetch('/api/datasets').then(res => res.json())
-        .then((datasetsData) => {
-          if (datasetsData.datasets) {
-            // Build flattened dataset column items
+          // Process datasets - now we have indicators available
+          if (datasetsData?.datasets) {
+            // Build flattened dataset column items including all indicators
             const dsColumns: ImportableDatasetColumn[] = [];
             for (const ds of datasetsData.datasets) {
               // Add base columns for each dataset
@@ -822,12 +824,32 @@ export default function IndicatorEditorModal({
                   displayName: `${ds.code}@${col}`,
                 });
               }
+              // Add all indicators for each dataset
+              // Single indicators: use indicator name as column
+              // Group indicators: add each output column as name:output
+              for (const ind of indicators) {
+                if (ind.isGroup && ind.expectedOutputs && ind.expectedOutputs.length > 0) {
+                  for (const output of ind.expectedOutputs) {
+                    dsColumns.push({
+                      datasetSymbol: ds.code,
+                      datasetName: ds.name || ds.code,
+                      column: `${ind.name}:${output}`,
+                      displayName: `${ds.code}@${ind.name}:${output}`,
+                    });
+                  }
+                } else {
+                  dsColumns.push({
+                    datasetSymbol: ds.code,
+                    datasetName: ds.name || ds.code,
+                    column: ind.name,
+                    displayName: `${ds.code}@${ind.name}`,
+                  });
+                }
+              }
             }
             setAvailableDatasetColumns(dsColumns);
           }
-        });
-
-      Promise.all([indicatorsPromise, datasetsPromise])
+        })
         .catch(err => {
           console.error('Failed to load import data:', err);
         })
