@@ -1386,9 +1386,20 @@ export default function IndicatorEditorModal({
 
             {activeTab === 'text' ? (
               <>
+              {/* Editor toolbar with import toggle */}
+              <div className="flex justify-end mb-2">
+                <button
+                  type="button"
+                  onClick={() => setIsImportPanelOpen(!isImportPanelOpen)}
+                  className="px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700"
+                >
+                  {isImportPanelOpen ? '✕ Close Import Panel' : '📥 Import DS/Indicator'}
+                </button>
+              </div>
+
               <div className="flex gap-2">
                 {/* Editor Section */}
-                <div className={`relative ${isImportPanelOpen ? 'flex-1' : 'w-full'}`}>
+                <div className={`${isImportPanelOpen ? 'flex-1' : 'w-full'}`}>
                   <div className="border border-gray-300 dark:border-gray-600 rounded overflow-hidden">
                     <Editor
                       height="600px"
@@ -1425,15 +1436,6 @@ export default function IndicatorEditorModal({
                       loading={<div className="p-4 text-gray-500">Loading editor...</div>}
                     />
                   </div>
-
-                  {/* Toggle import panel button */}
-                  <button
-                    type="button"
-                    onClick={() => setIsImportPanelOpen(!isImportPanelOpen)}
-                    className="absolute right-2 top-2 px-2 py-1 bg-purple-600 text-white rounded text-xs hover:bg-purple-700 z-10"
-                  >
-                    {isImportPanelOpen ? 'Close Import' : 'Import DS/Ind'}
-                  </button>
                 </div>
 
                 {/* Import Panel */}
