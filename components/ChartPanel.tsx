@@ -1344,18 +1344,23 @@ export default function ChartPanel({
         <div
           ref={indicator1ContainerRef}
           className="w-full h-full indicator-chart-disabled"
-          style={{ position: 'relative', overscrollBehavior: 'contain', cursor: 'pointer' }}
+          style={{ position: 'relative', overscrollBehavior: 'contain' }}
           onClick={(e) => {
-            // Only open modal on direct click, not during drag/scroll
-            if (e.target === indicator1ContainerRef.current ||
-                indicator1ContainerRef.current?.contains(e.target as Node)) {
+            // Only open modal when clicking on the Y-axis area (right price scale, ~80px from right edge)
+            const container = indicator1ContainerRef.current;
+            if (!container) return;
+            const rect = container.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const priceScaleWidth = 80;
+            // Check if click is on the right price scale area
+            if (clickX >= rect.width - priceScaleWidth) {
               setActiveChart(1);
               setModalOpen(true);
             }
+            // Otherwise, let the click pass through for crosshair locking
           }}
-          title="Click to add constant lines"
         />
-        {/* Overlay to block scroll/drag events when keyboard nav is on, but allow clicks */}
+        {/* Overlay to block scroll/drag events when keyboard nav is on, but allow clicks on Y-axis */}
         {keyboardNavMode && (
           <div
             style={{
@@ -1365,11 +1370,17 @@ export default function ChartPanel({
               right: 0,
               bottom: 0,
               zIndex: 10,
-              cursor: 'pointer',
             }}
-            onClick={() => {
-              setActiveChart(1);
-              setModalOpen(true);
+            onClick={(e) => {
+              const container = indicator1ContainerRef.current;
+              if (!container) return;
+              const rect = container.getBoundingClientRect();
+              const clickX = e.clientX - rect.left;
+              const priceScaleWidth = 80;
+              if (clickX >= rect.width - priceScaleWidth) {
+                setActiveChart(1);
+                setModalOpen(true);
+              }
             }}
           />
         )}
@@ -1385,18 +1396,23 @@ export default function ChartPanel({
         <div
           ref={indicator2ContainerRef}
           className="w-full h-full indicator-chart-disabled"
-          style={{ position: 'relative', overscrollBehavior: 'contain', cursor: 'pointer' }}
+          style={{ position: 'relative', overscrollBehavior: 'contain' }}
           onClick={(e) => {
-            // Only open modal on direct click, not during drag/scroll
-            if (e.target === indicator2ContainerRef.current ||
-                indicator2ContainerRef.current?.contains(e.target as Node)) {
+            // Only open modal when clicking on the Y-axis area (right price scale, ~80px from right edge)
+            const container = indicator2ContainerRef.current;
+            if (!container) return;
+            const rect = container.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const priceScaleWidth = 80;
+            // Check if click is on the right price scale area
+            if (clickX >= rect.width - priceScaleWidth) {
               setActiveChart(2);
               setModalOpen(true);
             }
+            // Otherwise, let the click pass through for crosshair locking
           }}
-          title="Click to add constant lines"
         />
-        {/* Overlay to block scroll/drag events when keyboard nav is on, but allow clicks */}
+        {/* Overlay to block scroll/drag events when keyboard nav is on, but allow clicks on Y-axis */}
         {keyboardNavMode && (
           <div
             style={{
@@ -1406,11 +1422,17 @@ export default function ChartPanel({
               right: 0,
               bottom: 0,
               zIndex: 10,
-              cursor: 'pointer',
             }}
-            onClick={() => {
-              setActiveChart(2);
-              setModalOpen(true);
+            onClick={(e) => {
+              const container = indicator2ContainerRef.current;
+              if (!container) return;
+              const rect = container.getBoundingClientRect();
+              const clickX = e.clientX - rect.left;
+              const priceScaleWidth = 80;
+              if (clickX >= rect.width - priceScaleWidth) {
+                setActiveChart(2);
+                setModalOpen(true);
+              }
             }}
           />
         )}
