@@ -117,14 +117,14 @@ export async function PUT(
       }
     }
 
-    // Check for duplicate name if changing
+    // Check for duplicate name if changing (within user's own indicators)
     if (name && name !== indicator.name) {
-      const existing = await prisma.indicator.findUnique({
-        where: { name },
+      const existing = await prisma.indicator.findFirst({
+        where: { name, createdBy: userId },
       });
       if (existing) {
         return NextResponse.json(
-          { error: 'Duplicate name', message: `Indicator with name "${name}" already exists` },
+          { error: 'Duplicate name', message: `You already have an indicator named "${name}"` },
           { status: 400 }
         );
       }

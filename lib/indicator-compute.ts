@@ -660,12 +660,42 @@ function detectImportCalls(pythonCode: string): DetectedImports {
 /**
  * Build resource manifest for a user
  * This contains all indicators and datasets the user has access to
+ *
+ * Name resolution priority:
+ * 1. User's own indicators (createdBy === userId)
+ * 2. Subscribed indicators from others
  */
 async function buildResourceManifest(userId: string): Promise<ResourceManifest> {
   const indicatorsMap: Record<string, ResourceInfo> = {};
   const datasetsMap: Record<string, ResourceInfo> = {};
 
-  // Fetch all indicators the user has access to (subscribed + owned)
+  // First, load user's own indicators (highest priority)
+  const ownedIndicators = await prisma.indicator.findMany({
+    where: { createdBy: userId },
+    select: {
+      id: true,
+      name: true,
+      outputColumn: true,
+      isGroup: true,
+      expectedOutputs: true,
+      period: true,
+      createdBy: true,
+    },
+  });
+
+  for (const ind of ownedIndicators) {
+    indicatorsMap[ind.name] = {
+      id: ind.id,
+      name: ind.name,
+      isOwner: true,
+      outputColumn: ind.outputColumn,
+      isGroup: ind.isGroup,
+      expectedOutputs: ind.expectedOutputs.length > 0 ? ind.expectedOutputs : undefined,
+      period: ind.period,
+    };
+  }
+
+  // Then load subscribed indicators (lower priority - won't override user's own)
   const userIndicators = await prisma.userIndicator.findMany({
     where: { userId },
     include: {
@@ -685,37 +715,12 @@ async function buildResourceManifest(userId: string): Promise<ResourceManifest> 
 
   for (const ui of userIndicators) {
     const ind = ui.indicator;
-    indicatorsMap[ind.name] = {
-      id: ind.id,
-      name: ind.name,
-      isOwner: ind.createdBy === userId,
-      outputColumn: ind.outputColumn,
-      isGroup: ind.isGroup,
-      expectedOutputs: ind.expectedOutputs.length > 0 ? ind.expectedOutputs : undefined,
-      period: ind.period,
-    };
-  }
-
-  // Also include indicators the user created (even if not in UserIndicator collection)
-  const ownedIndicators = await prisma.indicator.findMany({
-    where: { createdBy: userId },
-    select: {
-      id: true,
-      name: true,
-      outputColumn: true,
-      isGroup: true,
-      expectedOutputs: true,
-      period: true,
-      createdBy: true,
-    },
-  });
-
-  for (const ind of ownedIndicators) {
+    // Only add if not already present (user's own indicators take priority)
     if (!indicatorsMap[ind.name]) {
       indicatorsMap[ind.name] = {
         id: ind.id,
         name: ind.name,
-        isOwner: true,
+        isOwner: ind.createdBy === userId,
         outputColumn: ind.outputColumn,
         isGroup: ind.isGroup,
         expectedOutputs: ind.expectedOutputs.length > 0 ? ind.expectedOutputs : undefined,

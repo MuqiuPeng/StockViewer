@@ -226,8 +226,9 @@ model Indicator {
   sharePosts      SharePost[]
   groupMessages   UserGroupMessage[]
 
-  @@unique([name]) // Globally unique names for shared indicators
+  @@unique([name, createdBy]) // Each user's indicators must have unique names
   @@index([createdBy])
+  @@index([name]) // For lookup by name
   @@index([category])
 }
 
