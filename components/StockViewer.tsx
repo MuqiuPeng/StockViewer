@@ -9,7 +9,7 @@ import DataPanel from './DataPanel';
 import SaveViewSettingModal from './SaveViewSettingModal';
 import { API_CONFIG } from '@/lib/env';
 import { getDataSourceConfig } from '@/lib/data-sources';
-import { Period, PERIODS, getPeriodLabel, getPeriodFullName, aggregateCandles, aggregateIndicators } from '@/lib/period-aggregation';
+import { Period, PERIODS, getPeriodLabel, getPeriodFullName, aggregateCandles, aggregateAllIndicators } from '@/lib/period-aggregation';
 import Link from 'next/link';
 
 interface ConstantLine {
@@ -173,14 +173,11 @@ export default function StockViewer() {
   }, [datasetData?.candles, selectedPeriod]);
 
   // Aggregate indicator data based on selected period
+  // Uses proper aggregation methods for base indicators (sum for volume, recalculate for change_pct, etc.)
   const aggregatedIndicators = useMemo(() => {
-    if (!datasetData?.indicators) return {};
-    const result: Record<string, { time: string; value: number | null }[]> = {};
-    for (const [key, data] of Object.entries(datasetData.indicators)) {
-      result[key] = aggregateIndicators(data, selectedPeriod);
-    }
-    return result;
-  }, [datasetData?.indicators, selectedPeriod]);
+    if (!datasetData?.indicators || !datasetData?.candles) return {};
+    return aggregateAllIndicators(datasetData.indicators, datasetData.candles, selectedPeriod);
+  }, [datasetData?.indicators, datasetData?.candles, selectedPeriod]);
 
   // Filter indicators to show only those matching the selected period
   // Base indicators (volume, turnover, etc.) are always shown
