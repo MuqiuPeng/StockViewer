@@ -132,11 +132,21 @@ export default function ChartPanel({
   // Use ref so callbacks can access current value without stale closure
   const crosshairLockedRef = useRef(false);
   const [crosshairLocked, setCrosshairLocked] = useState(false);
+  const lockedTimeRef = useRef<string | null>(null);
+  const lastCrosshairTimeRef = useRef<string | null>(null);
 
   // Toggle crosshair lock on click
   const toggleCrosshairLock = () => {
     const newLocked = !crosshairLockedRef.current;
     crosshairLockedRef.current = newLocked;
+
+    if (newLocked) {
+      // Store the current crosshair time when locking
+      lockedTimeRef.current = lastCrosshairTimeRef.current;
+    } else {
+      lockedTimeRef.current = null;
+    }
+
     setCrosshairLocked(newLocked);
   };
 
@@ -417,6 +427,11 @@ export default function ChartPanel({
     // Subscribe to crosshair move events on all charts
     // Synchronize crosshair across all three charts
     candlestickChart.subscribeCrosshairMove((param) => {
+      // Track the current crosshair time for locking
+      if (param.time) {
+        lastCrosshairTimeRef.current = param.time as string;
+      }
+
       if (onCrosshairMove) {
         onCrosshairMove(param.time as string | null);
       }
@@ -1104,6 +1119,36 @@ export default function ChartPanel({
       }
     });
   }, [constantLines2]);
+
+  // Maintain crosshair position when locked
+  useEffect(() => {
+    if (!crosshairLocked || !lockedTimeRef.current) return;
+    if (!candlestickChartRef.current) return;
+
+    const lockedTime = lockedTimeRef.current;
+    const candleChart = candlestickChartRef.current;
+    const candleSeries = candlestickSeriesRef.current;
+
+    // Find the candle data at the locked time
+    const candleData = candles.find(c => c.time === lockedTime);
+    if (!candleData || !candleSeries) return;
+
+    // Set crosshair on candlestick chart
+    candleChart.setCrosshairPosition(candleData.close, lockedTime, candleSeries);
+
+    // Set crosshair on indicator charts
+    const indicator1Chart = indicator1ChartRef.current;
+    const indicator2Chart = indicator2ChartRef.current;
+    const indicator1Series = Array.from(indicator1SeriesRef.current.values())[0];
+    const indicator2Series = Array.from(indicator2SeriesRef.current.values())[0];
+
+    if (indicator1Chart && indicator1Series) {
+      indicator1Chart.setCrosshairPosition(0, lockedTime, indicator1Series);
+    }
+    if (indicator2Chart && indicator2Series) {
+      indicator2Chart.setCrosshairPosition(0, lockedTime, indicator2Series);
+    }
+  }, [crosshairLocked, candles]);
 
   // Track previous keyboardNavMode to detect when it's just enabled
   const prevKeyboardNavModeRef = useRef(false);
