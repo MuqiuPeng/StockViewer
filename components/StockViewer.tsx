@@ -107,6 +107,11 @@ export default function StockViewer() {
   const keyboardNavDateRef = useRef<string | null>(null); // Store target date for keyboard nav
   const [isArrowKeyNav, setIsArrowKeyNav] = useState(false); // Track if navigation is from arrow keys
 
+  // Cache for period-aggregated data: Map<"datasetId_period", DatasetData>
+  // Limited to 20 entries to prevent memory bloat
+  const periodCacheRef = useRef<Map<string, DatasetData>>(new Map());
+  const MAX_CACHE_SIZE = 20;
+
   // View settings state
   const [viewSettings, setViewSettings] = useState<ViewSetting[]>([]);
   const [selectedViewSetting, setSelectedViewSetting] = useState<string>('');
@@ -572,6 +577,15 @@ export default function StockViewer() {
   useEffect(() => {
     if (!selectedDataset) return;
 
+    const cacheKey = `${selectedDataset}_${selectedPeriod}`;
+
+    // Check cache first
+    const cachedData = periodCacheRef.current.get(cacheKey);
+    if (cachedData) {
+      setDatasetData(cachedData);
+      return;
+    }
+
     const loadDatasetData = async () => {
       setLoading(true);
       setError(null);
@@ -587,6 +601,13 @@ export default function StockViewer() {
           return;
         }
 
+        // Store in cache (with size limit)
+        if (periodCacheRef.current.size >= MAX_CACHE_SIZE) {
+          // Remove oldest entry (first key in Map)
+          const firstKey = periodCacheRef.current.keys().next().value;
+          if (firstKey) periodCacheRef.current.delete(firstKey);
+        }
+        periodCacheRef.current.set(cacheKey, data);
         setDatasetData(data);
       } catch (err: any) {
         setError(`Failed to load dataset: ${err.message}`);
@@ -709,11 +730,21 @@ export default function StockViewer() {
   const reloadCurrentDataset = async () => {
     if (!selectedDataset) return;
 
+    // Clear all period caches for this dataset (data may have changed)
+    for (const key of periodCacheRef.current.keys()) {
+      if (key.startsWith(`${selectedDataset}_`)) {
+        periodCacheRef.current.delete(key);
+      }
+    }
+
     try {
       const res = await fetch(`/api/dataset/${encodeURIComponent(selectedDataset)}?period=${selectedPeriod}`);
       const updatedData = await res.json();
 
       if (!updatedData.error) {
+        // Update cache with new data
+        const cacheKey = `${selectedDataset}_${selectedPeriod}`;
+        periodCacheRef.current.set(cacheKey, updatedData);
         setDatasetData(updatedData);
       }
 
