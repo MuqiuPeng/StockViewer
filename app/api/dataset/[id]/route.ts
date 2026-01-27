@@ -6,6 +6,7 @@
  * by transforming Stock + StockPrice + IndicatorValue data to DatasetData format.
  *
  * Uses stockPriceId-based alignment and versioning for indicator values.
+ * Supports period aggregation (daily, weekly, monthly, quarterly).
  */
 
 import { NextResponse } from 'next/server';
@@ -13,6 +14,11 @@ import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
 
 export const runtime = 'nodejs';
+
+/**
+ * Period type for aggregation
+ */
+type Period = 'daily' | 'weekly' | 'monthly' | 'quarterly';
 
 /**
  * CandleData format expected by frontend
@@ -53,6 +59,205 @@ interface DatasetData {
   indicators: Record<string, IndicatorData[]>;
 }
 
+/**
+ * Aggregation method types for different indicators
+ */
+type AggregationMethod = 'last' | 'sum' | 'avg' | 'max' | 'min';
+
+/**
+ * Base indicators and their aggregation methods
+ */
+const BASE_INDICATOR_AGGREGATION: Record<string, AggregationMethod> = {
+  volume: 'sum',
+  turnover: 'sum',
+  turnover_rate: 'sum',
+  amplitude: 'max',
+  change_pct: 'last',
+  change_amount: 'last',
+};
+
+/**
+ * Get the period key for a given date and period type
+ */
+function getPeriodKey(dateStr: string, period: Period): string {
+  const date = new Date(dateStr);
+  const year = date.getFullYear();
+  const month = date.getMonth();
+
+  switch (period) {
+    case 'daily':
+      return dateStr;
+
+    case 'weekly': {
+      const d = new Date(date);
+      const dayOfWeek = d.getDay();
+      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      d.setDate(d.getDate() + diff);
+      return d.toISOString().split('T')[0];
+    }
+
+    case 'monthly':
+      return `${year}-${String(month + 1).padStart(2, '0')}-01`;
+
+    case 'quarterly': {
+      const quarter = Math.floor(month / 3);
+      const quarterMonth = quarter * 3 + 1;
+      return `${year}-${String(quarterMonth).padStart(2, '0')}-01`;
+    }
+
+    default:
+      return dateStr;
+  }
+}
+
+/**
+ * Aggregate daily candle data to a specified period
+ */
+function aggregateCandles(candles: CandleData[], period: Period): CandleData[] {
+  if (period === 'daily' || candles.length === 0) {
+    return candles;
+  }
+
+  const groups = new Map<string, CandleData[]>();
+
+  for (const candle of candles) {
+    const key = getPeriodKey(candle.time, period);
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key)!.push(candle);
+  }
+
+  const aggregated: CandleData[] = [];
+  for (const [periodStart, periodCandles] of groups) {
+    if (periodCandles.length === 0) continue;
+
+    periodCandles.sort((a, b) => a.time.localeCompare(b.time));
+
+    aggregated.push({
+      time: periodStart,
+      open: periodCandles[0].open,
+      high: Math.max(...periodCandles.map(c => c.high)),
+      low: Math.min(...periodCandles.map(c => c.low)),
+      close: periodCandles[periodCandles.length - 1].close,
+    });
+  }
+
+  aggregated.sort((a, b) => a.time.localeCompare(b.time));
+  return aggregated;
+}
+
+/**
+ * Aggregate indicator data to match a period
+ */
+function aggregateIndicators(
+  indicatorData: IndicatorData[],
+  period: Period,
+  method: AggregationMethod = 'last'
+): IndicatorData[] {
+  if (period === 'daily' || indicatorData.length === 0) {
+    return indicatorData;
+  }
+
+  const groups = new Map<string, IndicatorData[]>();
+
+  for (const data of indicatorData) {
+    const key = getPeriodKey(data.time, period);
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key)!.push(data);
+  }
+
+  const aggregated: IndicatorData[] = [];
+  for (const [periodStart, periodData] of groups) {
+    if (periodData.length === 0) continue;
+
+    periodData.sort((a, b) => a.time.localeCompare(b.time));
+
+    const values = periodData
+      .map(d => d.value)
+      .filter((v): v is number => v !== null);
+
+    let aggregatedValue: number | null = null;
+
+    if (values.length > 0) {
+      switch (method) {
+        case 'sum':
+          aggregatedValue = values.reduce((acc, v) => acc + v, 0);
+          break;
+        case 'avg':
+          aggregatedValue = values.reduce((acc, v) => acc + v, 0) / values.length;
+          break;
+        case 'max':
+          aggregatedValue = Math.max(...values);
+          break;
+        case 'min':
+          aggregatedValue = Math.min(...values);
+          break;
+        case 'last':
+        default:
+          for (let i = periodData.length - 1; i >= 0; i--) {
+            if (periodData[i].value !== null && periodData[i].value !== 0) {
+              aggregatedValue = periodData[i].value;
+              break;
+            }
+          }
+          break;
+      }
+    }
+
+    aggregated.push({
+      time: periodStart,
+      value: aggregatedValue,
+    });
+  }
+
+  aggregated.sort((a, b) => a.time.localeCompare(b.time));
+  return aggregated;
+}
+
+/**
+ * Aggregate all indicators with proper methods
+ */
+function aggregateAllIndicators(
+  indicators: Record<string, IndicatorData[]>,
+  candles: CandleData[],
+  period: Period
+): Record<string, IndicatorData[]> {
+  if (period === 'daily') {
+    return indicators;
+  }
+
+  const result: Record<string, IndicatorData[]> = {};
+  const aggregatedCandles = aggregateCandles(candles, period);
+
+  for (const [key, data] of Object.entries(indicators)) {
+    const method = BASE_INDICATOR_AGGREGATION[key] || 'last';
+
+    if (key === 'change_pct') {
+      result[key] = aggregatedCandles.map(c => ({
+        time: c.time,
+        value: c.open !== 0 ? ((c.close - c.open) / c.open) * 100 : null,
+      }));
+    } else if (key === 'change_amount') {
+      result[key] = aggregatedCandles.map(c => ({
+        time: c.time,
+        value: c.close - c.open,
+      }));
+    } else if (key === 'amplitude') {
+      result[key] = aggregatedCandles.map(c => ({
+        time: c.time,
+        value: c.open !== 0 ? ((c.high - c.low) / c.open) * 100 : null,
+      }));
+    } else {
+      result[key] = aggregateIndicators(data, period, method);
+    }
+  }
+
+  return result;
+}
+
 // GET /api/dataset/:id - Get full dataset data
 export async function GET(
   request: Request,
@@ -69,6 +274,7 @@ export async function GET(
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
     const limit = Math.min(parseInt(searchParams.get('limit') || '10000', 10), 50000);
+    const period = (searchParams.get('period') || 'daily') as Period;
 
     // Try to find stock by ID first, then by symbol/filename
     let stock = await prisma.stock.findUnique({
@@ -274,6 +480,10 @@ export async function GET(
       indicatorColumns.push('turnover_rate');
     }
 
+    // Apply period aggregation if not daily
+    const aggregatedCandles = aggregateCandles(candles, period);
+    const aggregatedIndicators = aggregateAllIndicators(indicators, candles, period);
+
     // Build response
     const baseColumns = ['date', 'open', 'high', 'low', 'close'];
     const allColumns = [...baseColumns, ...indicatorColumns];
@@ -285,14 +495,14 @@ export async function GET(
         filename: `${stock.symbol}_${stock.dataSource}`,
         columns: allColumns,
         indicators: indicatorColumns,
-        rowCount: candles.length,
+        rowCount: aggregatedCandles.length,
         dataSource: stock.dataSource,
         firstDate: stock.firstDate?.toISOString().split('T')[0],
         lastDate: stock.lastDate?.toISOString().split('T')[0],
         lastUpdate: stock.lastUpdate?.toISOString(),
       },
-      candles,
-      indicators,
+      candles: aggregatedCandles,
+      indicators: aggregatedIndicators,
     };
 
     return NextResponse.json(result);

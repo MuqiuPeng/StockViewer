@@ -9,7 +9,7 @@ import DataPanel from './DataPanel';
 import SaveViewSettingModal from './SaveViewSettingModal';
 import { API_CONFIG } from '@/lib/env';
 import { getDataSourceConfig } from '@/lib/data-sources';
-import { Period, PERIODS, getPeriodLabel, getPeriodFullName, aggregateCandles, aggregateAllIndicators } from '@/lib/period-aggregation';
+import { Period, PERIODS, getPeriodLabel, getPeriodFullName } from '@/lib/period-aggregation';
 import Link from 'next/link';
 
 interface ConstantLine {
@@ -166,18 +166,9 @@ export default function StockViewer() {
     return colorMap;
   }, [enabledIndicators1, enabledIndicators2]);
 
-  // Aggregate candle data based on selected period
-  const aggregatedCandles = useMemo(() => {
-    if (!datasetData?.candles) return [];
-    return aggregateCandles(datasetData.candles, selectedPeriod);
-  }, [datasetData?.candles, selectedPeriod]);
-
-  // Aggregate indicator data based on selected period
-  // Uses proper aggregation methods for base indicators (sum for volume, recalculate for change_pct, etc.)
-  const aggregatedIndicators = useMemo(() => {
-    if (!datasetData?.indicators || !datasetData?.candles) return {};
-    return aggregateAllIndicators(datasetData.indicators, datasetData.candles, selectedPeriod);
-  }, [datasetData?.indicators, datasetData?.candles, selectedPeriod]);
+  // Candles and indicators are now pre-aggregated by the API based on selectedPeriod
+  const candles = datasetData?.candles ?? [];
+  const indicators = datasetData?.indicators ?? {};
 
   // Filter indicators to show only those matching the selected period
   // Base indicators (volume, turnover, etc.) are always shown
@@ -577,7 +568,7 @@ export default function StockViewer() {
     }
   };
 
-  // Load dataset data when selection changes
+  // Load dataset data when selection or period changes
   useEffect(() => {
     if (!selectedDataset) return;
 
@@ -587,7 +578,7 @@ export default function StockViewer() {
       // Don't reset selectedCandleIndex - we want to preserve crosshair position
 
       try {
-        const res = await fetch(`/api/dataset/${encodeURIComponent(selectedDataset)}`);
+        const res = await fetch(`/api/dataset/${encodeURIComponent(selectedDataset)}?period=${selectedPeriod}`);
         const data = await res.json();
 
         if (data.error) {
@@ -606,7 +597,7 @@ export default function StockViewer() {
     };
 
     loadDatasetData();
-  }, [selectedDataset]);
+  }, [selectedDataset, selectedPeriod]);
 
   // Update keyboard nav date ref when crosshair moves in keyboard nav mode
   useEffect(() => {
@@ -1033,8 +1024,8 @@ export default function StockViewer() {
             />
             <div className="flex-1 min-h-0 overflow-hidden">
               <DataPanel
-                candles={aggregatedCandles}
-                indicators={aggregatedIndicators}
+                candles={candles}
+                indicators={indicators}
                 crosshairTime={crosshairTime}
                 colorMap={indicatorColorMap}
                 enabledIndicators1={enabledIndicators1}
@@ -1056,8 +1047,8 @@ export default function StockViewer() {
           {/* Right Panel - Chart */}
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden ml-4">
             <ChartPanel
-              candles={aggregatedCandles}
-              indicators={aggregatedIndicators}
+              candles={candles}
+              indicators={indicators}
               enabledIndicators1={enabledIndicators1}
               enabledIndicators2={enabledIndicators2}
               colorMap={indicatorColorMap}
