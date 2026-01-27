@@ -1382,21 +1382,22 @@ export default function IndicatorEditorModal({
                   Insert MyTT Template
                 </button>
               )}
+              {/* Import panel toggle - always visible in toolbar */}
+              <button
+                type="button"
+                onClick={() => setIsImportPanelOpen(!isImportPanelOpen)}
+                className={`ml-2 px-3 py-1 rounded ${
+                  isImportPanelOpen
+                    ? 'bg-red-500 hover:bg-red-600 text-white'
+                    : 'bg-purple-600 hover:bg-purple-700 text-white'
+                }`}
+              >
+                {isImportPanelOpen ? '✕ Close Import' : '📥 Import'}
+              </button>
             </div>
 
             {activeTab === 'text' ? (
               <>
-              {/* Editor toolbar with import toggle */}
-              <div className="flex justify-end mb-2">
-                <button
-                  type="button"
-                  onClick={() => setIsImportPanelOpen(!isImportPanelOpen)}
-                  className="px-3 py-1 bg-purple-600 text-white rounded text-sm hover:bg-purple-700"
-                >
-                  {isImportPanelOpen ? '✕ Close Import Panel' : '📥 Import DS/Indicator'}
-                </button>
-              </div>
-
               <div className="flex gap-2">
                 {/* Editor Section */}
                 <div className={`${isImportPanelOpen ? 'flex-1' : 'w-full'}`}>
