@@ -56,19 +56,26 @@ interface PlaceholderInfo {
   length: number;
 }
 
-// Placeholder format: ◈IND:name◈ and ◇DS:symbol◇
-// Visual placeholders are displayed as styled tags in the editor
+// Placeholder formats:
+// - ◈name◈ for base columns (OHLCV) -> data['name']
+// - ◈IND:name◈ for indicators -> data.import_('name')['value']
+// - ◇DS:symbol◇ for datasets -> data.import_('symbol', type='dataset')
 
 // Base columns that are always available
-const BASE_COLUMNS = ['open', 'high', 'low', 'close', 'volume', 'date'];
+const BASE_COLUMNS = ['open', 'high', 'low', 'close', 'volume'];
 
-// Transform visual placeholders to actual Python import code (before save/validate)
+// Transform visual placeholders to actual Python code (before save/validate)
 const transformPlaceholdersToCode = (code: string): string => {
   let result = code;
 
-  // Transform indicator placeholders: ◈IND:name◈ -> data.import_('name')
+  // Transform base column placeholders: ◈close◈ -> data['close']
+  for (const col of BASE_COLUMNS) {
+    result = result.replace(new RegExp(`◈${col}◈`, 'g'), `data['${col}']`);
+  }
+
+  // Transform indicator placeholders: ◈IND:name◈ -> data.import_('name')['value']
   result = result.replace(/◈IND:([^◈]+)◈/g, (_, name) => {
-    return `data.import_('${name}')`;
+    return `data.import_('${name}')['value']`;
   });
 
   // Transform dataset placeholders: ◇DS:symbol◇ -> data.import_('symbol', type='dataset')
@@ -79,9 +86,15 @@ const transformPlaceholdersToCode = (code: string): string => {
   return result;
 };
 
-// Transform Python import code to visual placeholders (when loading for editing)
+// Transform Python code to visual placeholders (when loading for editing)
 const transformCodeToPlaceholders = (code: string): string => {
   let result = code;
+
+  // Transform base column access: data['close'] -> ◈close◈
+  for (const col of BASE_COLUMNS) {
+    result = result.replace(new RegExp(`data\\['${col}'\\]`, 'g'), `◈${col}◈`);
+    result = result.replace(new RegExp(`data\\["${col}"\\]`, 'g'), `◈${col}◈`);
+  }
 
   // IMPORTANT: Match dataset imports FIRST (more specific pattern)
   // data.import_('symbol', type='dataset') -> ◇DS:symbol◇
@@ -90,14 +103,19 @@ const transformCodeToPlaceholders = (code: string): string => {
     (_, symbol) => `◇DS:${symbol}◇`
   );
 
-  // Handle user-specific imports: data.import_(user='email', indicator='name') -> ◈IND:name◈
+  // Handle user-specific imports: data.import_(user='email', indicator='name')['value'] -> ◈IND:name◈
   result = result.replace(
-    /data\.import_\(\s*user\s*=\s*['"][^'"]+['"]\s*,\s*indicator\s*=\s*['"]([^'"]+)['"]\s*\)/g,
+    /data\.import_\(\s*user\s*=\s*['"][^'"]+['"]\s*,\s*indicator\s*=\s*['"]([^'"]+)['"]\s*\)\s*\['value'\]/g,
     (_, name) => `◈IND:${name}◈`
   );
 
-  // THEN match indicator imports (less specific, catches remaining)
-  // data.import_('name') -> ◈IND:name◈
+  // Match indicator imports with ['value']: data.import_('name')['value'] -> ◈IND:name◈
+  result = result.replace(
+    /data\.import_\(\s*['"]([^'"]+)['"]\s*\)\s*\['value'\]/g,
+    (_, name) => `◈IND:${name}◈`
+  );
+
+  // Also match without ['value'] for backward compatibility
   result = result.replace(
     /data\.import_\(\s*['"]([^'"]+)['"]\s*\)/g,
     (_, name) => `◈IND:${name}◈`
@@ -172,13 +190,31 @@ const findPlaceholders = (code: string): PlaceholderInfo[] => {
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
     const line = lines[lineIdx];
 
+    // Find base column placeholders ◈close◈ (not ◈IND:...◈)
+    for (const col of BASE_COLUMNS) {
+      const colRegex = new RegExp(`◈${col}◈`, 'g');
+      let match;
+      while ((match = colRegex.exec(line)) !== null) {
+        placeholders.push({
+          type: 'indicator', // treat as indicator type for styling
+          id: col,
+          displayName: col,
+          startOffset: offset + match.index,
+          endOffset: offset + match.index + match[0].length,
+          lineNumber: lineIdx + 1,
+          column: match.index + 1,
+          length: match[0].length,
+        });
+      }
+    }
+
     // Find indicator placeholders ◈IND:name◈
     const indRegex = /◈IND:([^◈]+)◈/g;
     let match;
     while ((match = indRegex.exec(line)) !== null) {
       placeholders.push({
         type: 'indicator',
-        id: '', // ID is in the mapping, not needed here for display
+        id: '',
         displayName: match[1],
         startOffset: offset + match.index,
         endOffset: offset + match.index + match[0].length,
@@ -210,11 +246,12 @@ const findPlaceholders = (code: string): PlaceholderInfo[] => {
 };
 
 // Templates now show only the body (auto-wrapped when saving)
+// Use placeholders for columns: ◈close◈ instead of data['close']
 const CODE_TEMPLATE = `# Example: 20-day Simple Moving Average
-return data['close'].rolling(20).mean()`;
+return ◈close◈.rolling(20).mean()`;
 
 const MYTT_TEMPLATE = `# Example: MACD indicator group
-DIF, DEA, MACD_hist = MACD(data['close'].values, SHORT=12, LONG=26, M=9)
+DIF, DEA, MACD_hist = MACD(◈close◈.values, SHORT=12, LONG=26, M=9)
 
 return {
     'DIF': DIF,
@@ -372,6 +409,26 @@ export default function IndicatorEditorModal({
       setSelectedPlaceholder(null);
     }
   }, [editorInstance, monacoInstance, pythonCode]);
+
+  // Insert base column placeholder at cursor (e.g., ◈close◈)
+  const insertColumnPlaceholder = useCallback((col: string) => {
+    if (!editorInstance) return;
+
+    const selection = editorInstance.getSelection();
+    if (!selection) return;
+
+    // Insert visual placeholder
+    const placeholder = `◈${col}◈`;
+    editorInstance.executeEdits('insert-placeholder', [{
+      range: selection,
+      text: placeholder,
+      forceMoveMarkers: true
+    }]);
+    editorInstance.focus();
+
+    // Update decorations after a short delay
+    setTimeout(() => updatePlaceholderDecorations(), 100);
+  }, [editorInstance, updatePlaceholderDecorations]);
 
   // Insert indicator placeholder at cursor
   const insertIndicatorPlaceholder = useCallback((ind: ImportableIndicator) => {
@@ -1497,7 +1554,13 @@ export default function IndicatorEditorModal({
                               className="flex items-center justify-between p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-xs"
                             >
                               <span className="text-gray-600 dark:text-gray-300 font-mono">{col}</span>
-                              <span className="text-gray-400 text-[10px]">data[&apos;{col}&apos;]</span>
+                              <button
+                                type="button"
+                                onClick={() => insertColumnPlaceholder(col)}
+                                className="px-1.5 py-0.5 text-[10px] rounded bg-blue-500 hover:bg-blue-600 text-white"
+                              >
+                                +
+                              </button>
                             </div>
                           ))}
 

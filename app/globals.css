@@ -65,7 +65,7 @@ body {
 }
 
 /* Import placeholder decorations for Monaco editor - tag-like appearance */
-/* Format: ◈IND:name◈ for indicators, ◇DS:name◇ for datasets */
+/* Format: ◈col◈ for base columns, ◈IND:name◈ for indicators, ◇DS:symbol◇ for datasets */
 
 /* Indicator placeholder styling - purple tag */
 .import-placeholder-indicator {
