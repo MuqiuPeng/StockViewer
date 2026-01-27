@@ -524,7 +524,6 @@ export default function StockDashboard() {
       <IndicatorManager
         isOpen={isIndicatorManagerOpen}
         onClose={() => setIsIndicatorManagerOpen(false)}
-        onRefreshDataset={reloadCurrentDataset}
       />
 
       <StrategyManager

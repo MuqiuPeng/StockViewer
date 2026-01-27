@@ -1221,7 +1221,6 @@ export default function StockViewer() {
       <IndicatorManager
         isOpen={isIndicatorManagerOpen}
         onClose={() => setIsIndicatorManagerOpen(false)}
-        onRefreshDataset={reloadCurrentDataset}
       />
 
       <SaveViewSettingModal

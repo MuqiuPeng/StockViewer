@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import IndicatorEditorModal from './IndicatorEditorModal';
-import ApplyIndicatorModal from './ApplyIndicatorModal';
 
 interface Indicator {
   id: string;
@@ -22,18 +21,15 @@ interface Indicator {
 interface IndicatorManagerProps {
   isOpen: boolean;
   onClose: () => void;
-  onRefreshDataset?: () => void;
 }
 
-export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: IndicatorManagerProps) {
+export default function IndicatorManager({ isOpen, onClose }: IndicatorManagerProps) {
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isEditorOpen, setIsEditorOpen] = useState(false);
-  const [isApplyOpen, setIsApplyOpen] = useState(false);
   const [editingIndicator, setEditingIndicator] = useState<Indicator | null>(null);
   const [viewingIndicator, setViewingIndicator] = useState<Indicator | null>(null);
-  const [selectedIndicatorId, setSelectedIndicatorId] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -146,11 +142,6 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
     setIsEditorOpen(true);
   };
 
-  const handleApply = (indicatorId: string) => {
-    setSelectedIndicatorId(indicatorId);
-    setIsApplyOpen(true);
-  };
-
   const handleEditorClose = () => {
     setIsEditorOpen(false);
     setEditingIndicator(null);
@@ -162,11 +153,6 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
     setEditingIndicator(null);
     setViewingIndicator(null);
     loadIndicators();
-  };
-
-  const handleApplyClose = () => {
-    setIsApplyOpen(false);
-    setSelectedIndicatorId(null);
   };
 
   const formatOutputColumn = (indicator: Indicator): string => {
@@ -262,12 +248,6 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
                   <td className="border dark:border-gray-600 p-2 font-mono text-sm dark:text-gray-300">{formatOutputColumn(indicator)}</td>
                   <td className="border dark:border-gray-600 p-2">
                     <div className="flex gap-2">
-                      <button
-                        onClick={() => handleApply(indicator.id)}
-                        className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
-                      >
-                        Apply
-                      </button>
                       {indicator.isOwner ? (
                         <button
                           onClick={() => handleEdit(indicator)}
@@ -308,15 +288,6 @@ export default function IndicatorManager({ isOpen, onClose, onRefreshDataset }: 
           indicator={editingIndicator || viewingIndicator}
           readOnly={!!viewingIndicator}
         />
-
-        {selectedIndicatorId && (
-          <ApplyIndicatorModal
-            isOpen={isApplyOpen}
-            onClose={handleApplyClose}
-            indicatorId={selectedIndicatorId}
-            onSuccess={onRefreshDataset}
-          />
-        )}
       </div>
     </div>
   );
