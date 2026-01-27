@@ -247,7 +247,6 @@ export default function IndicatorEditorModal({
         selectedPlaceholder.startOffset === placeholder.startOffset &&
         selectedPlaceholder.endOffset === placeholder.endOffset;
 
-      // Use CSS to hide the raw text and show display name via ::before pseudo-element
       const baseClass = placeholder.type === 'indicator'
         ? 'import-placeholder-indicator'
         : 'import-placeholder-dataset';
@@ -260,12 +259,6 @@ export default function IndicatorEditorModal({
         ),
         options: {
           inlineClassName: className,
-          before: {
-            content: placeholder.type === 'indicator'
-              ? `📊 ${displayInfo.label}`
-              : `📁 ${displayInfo.label}`,
-            inlineClassName: `${baseClass}-label`
-          },
           hoverMessage: {
             value: placeholder.type === 'indicator'
               ? `**Indicator**: ${displayInfo.label}\n**From**: ${displayInfo.detail}`

@@ -622,8 +622,9 @@ async function saveIndicatorValues(
  * Returns the names of resources to preload
  */
 interface DetectedImport {
-  name: string;
+  name?: string;
   user?: string;  // User email if specified
+  id?: string;    // Direct ID for ID-based imports
 }
 
 interface DetectedImports {
@@ -698,6 +699,32 @@ function detectImportCalls(pythonCode: string): DetectedImports {
     if (!seenIndicators.has(key)) {
       seenIndicators.add(key);
       indicators.push({ name, user });
+    }
+  }
+
+  // Pattern 4: data.import_(indicator_id='id') - ID-based indicator import
+  const indicatorIdPattern = /data\.import_\s*\(\s*indicator_id\s*=\s*['"]([^'"]+)['"]\s*\)/g;
+
+  while ((match = indicatorIdPattern.exec(pythonCode)) !== null) {
+    const id = match[1];
+    const key = `id:${id}`;
+
+    if (!seenIndicators.has(key)) {
+      seenIndicators.add(key);
+      indicators.push({ id });
+    }
+  }
+
+  // Pattern 5: data.import_(dataset_id='id') - ID-based dataset import
+  const datasetIdPattern = /data\.import_\s*\(\s*dataset_id\s*=\s*['"]([^'"]+)['"]\s*\)/g;
+
+  while ((match = datasetIdPattern.exec(pythonCode)) !== null) {
+    const id = match[1];
+    const key = `id:${id}`;
+
+    if (!seenDatasets.has(key)) {
+      seenDatasets.add(key);
+      datasets.push({ id });
     }
   }
 
@@ -902,20 +929,30 @@ async function preloadIndicatorValues(
   const result: Record<string, Array<{ date: string; value?: number | null; groupValues?: Record<string, number | null> }>> = {};
 
   for (const imp of imports) {
-    // Build the manifest key based on whether user is specified
-    const manifestKey = imp.user ? `${imp.user}:${imp.name}` : imp.name;
-    const resourceInfo = manifest.indicators[manifestKey];
+    let resourceInfo: ResourceInfo | undefined;
+    let resultKey: string;
+
+    if (imp.id) {
+      // ID-based import: find resource by ID
+      resourceInfo = Object.values(manifest.indicators).find(info => info.id === imp.id);
+      resultKey = imp.id;  // Use ID as the key for Python to look up
+    } else {
+      // Name-based import: build the manifest key based on whether user is specified
+      const manifestKey = imp.user ? `${imp.user}:${imp.name}` : imp.name!;
+      resourceInfo = manifest.indicators[manifestKey];
+      resultKey = manifestKey;
+    }
 
     if (!resourceInfo) {
-      console.warn(`Indicator not found in manifest: ${manifestKey}`);
+      console.warn(`Indicator not found in manifest: ${imp.id || imp.name}`);
       continue;
     }
 
     // Use lazy compute to get or compute values
     const values = await getOrComputeIndicatorValues(resourceInfo.id, stockId, userId);
 
-    // Store in result with the manifest key for Python to look up
-    result[manifestKey] = values;
+    // Store in result with the key for Python to look up
+    result[resultKey] = values;
   }
 
   return result;
@@ -925,13 +962,27 @@ async function preloadIndicatorValues(
  * Preload dataset prices for import
  */
 async function preloadDatasetPrices(
-  datasetNames: string[],
+  imports: DetectedImport[],
   manifest: ResourceManifest
 ): Promise<Record<string, Record<string, any>[]>> {
   const result: Record<string, Record<string, any>[]> = {};
 
-  for (const name of datasetNames) {
-    const resourceInfo = manifest.datasets[name];
+  for (const imp of imports) {
+    let resourceInfo: ResourceInfo | undefined;
+    let resultKey: string;
+
+    if (imp.id) {
+      // ID-based import: find resource by ID
+      resourceInfo = Object.values(manifest.datasets).find(info => info.id === imp.id);
+      resultKey = imp.id;
+    } else if (imp.name) {
+      // Name-based import
+      resourceInfo = manifest.datasets[imp.name];
+      resultKey = imp.name;
+    } else {
+      continue;
+    }
+
     if (!resourceInfo || !resourceInfo.stockId) continue;
 
     // Load price data for this stock
@@ -940,7 +991,7 @@ async function preloadDatasetPrices(
       orderBy: { date: 'asc' },
     });
 
-    result[name] = prices.map(p => ({
+    result[resultKey] = prices.map(p => ({
       date: p.date.toISOString().split('T')[0],
       open: Number(p.open),
       high: Number(p.high),
@@ -1098,7 +1149,7 @@ export async function computeIndicator(
       resourceManifest
     );
     const preloadedDatasets = await preloadDatasetPrices(
-      detectedImports.datasets.map(d => d.name),
+      detectedImports.datasets,
       resourceManifest
     );
 

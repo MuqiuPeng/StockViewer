@@ -65,70 +65,50 @@ body {
 }
 
 /* Import placeholder decorations for Monaco editor - tag-like appearance */
-/* Hide the raw placeholder text ({{IND:id}}) */
-.import-placeholder-indicator,
-.import-placeholder-indicator-selected,
-.import-placeholder-dataset,
+/* Indicator placeholder styling */
+.import-placeholder-indicator {
+  background-color: rgba(139, 92, 246, 0.25);
+  color: rgb(109, 40, 217) !important;
+  border-radius: 4px;
+  cursor: pointer;
+  border-bottom: 2px solid rgba(139, 92, 246, 0.6);
+}
+
+.import-placeholder-indicator-selected {
+  background-color: rgba(139, 92, 246, 0.4);
+  color: rgb(109, 40, 217) !important;
+  border-radius: 4px;
+  cursor: pointer;
+  border-bottom: 2px solid rgba(139, 92, 246, 1);
+  outline: 1px solid rgba(139, 92, 246, 0.8);
+}
+
+/* Dataset placeholder styling */
+.import-placeholder-dataset {
+  background-color: rgba(34, 197, 94, 0.25);
+  color: rgb(22, 163, 74) !important;
+  border-radius: 4px;
+  cursor: pointer;
+  border-bottom: 2px solid rgba(34, 197, 94, 0.6);
+}
+
 .import-placeholder-dataset-selected {
-  font-size: 0 !important;
-  letter-spacing: -9999px;
-  color: transparent !important;
-}
-
-/* Indicator placeholder label (shown via ::before) */
-.import-placeholder-indicator-label {
-  background-color: rgba(139, 92, 246, 0.9);
-  color: white !important;
-  border-radius: 12px;
-  padding: 2px 8px;
+  background-color: rgba(34, 197, 94, 0.4);
+  color: rgb(22, 163, 74) !important;
+  border-radius: 4px;
   cursor: pointer;
-  font-weight: 500;
-  font-size: 12px !important;
-  letter-spacing: normal;
-  border: 1px solid rgba(139, 92, 246, 1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-  margin: 0 2px;
-  white-space: nowrap;
+  border-bottom: 2px solid rgba(34, 197, 94, 1);
+  outline: 1px solid rgba(34, 197, 94, 0.8);
 }
 
-.import-placeholder-indicator-label:hover {
-  background-color: rgba(139, 92, 246, 1);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+/* Dark mode adjustments */
+.vs-dark .import-placeholder-indicator,
+.vs-dark .import-placeholder-indicator-selected {
+  color: rgb(196, 181, 253) !important;
 }
 
-/* Dataset placeholder label */
-.import-placeholder-dataset-label {
-  background-color: rgba(34, 197, 94, 0.9);
-  color: white !important;
-  border-radius: 12px;
-  padding: 2px 8px;
-  cursor: pointer;
-  font-weight: 500;
-  font-size: 12px !important;
-  letter-spacing: normal;
-  border: 1px solid rgba(34, 197, 94, 1);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-  margin: 0 2px;
-  white-space: nowrap;
-}
-
-.import-placeholder-dataset-label:hover {
-  background-color: rgba(34, 197, 94, 1);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-/* Selected state styling for labels */
-.import-placeholder-indicator-selected + .import-placeholder-indicator-label,
-.import-placeholder-indicator-selected-label {
-  background-color: rgba(139, 92, 246, 1);
-  border: 2px solid rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.6), 0 2px 4px rgba(0, 0, 0, 0.2);
-}
-
-.import-placeholder-dataset-selected + .import-placeholder-dataset-label,
-.import-placeholder-dataset-selected-label {
-  background-color: rgba(34, 197, 94, 1);
-  border: 2px solid rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.6), 0 2px 4px rgba(0, 0, 0, 0.2);
+.vs-dark .import-placeholder-dataset,
+.vs-dark .import-placeholder-dataset-selected {
+  color: rgb(134, 239, 172) !important;
 }
 

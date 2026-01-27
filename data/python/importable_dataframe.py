@@ -106,6 +106,8 @@ class ImportableDataFrame:
         *,
         user: Optional[str] = None,
         indicator: Optional[str] = None,
+        indicator_id: Optional[str] = None,
+        dataset_id: Optional[str] = None,
         type: Optional[str] = None,
         columns: Optional[List[str]] = None
     ) -> pd.DataFrame:
@@ -116,6 +118,8 @@ class ImportableDataFrame:
             name: Name of the indicator or dataset to import (positional, for backward compat)
             user: Email of the user whose indicator to import (keyword-only)
             indicator: Name of the indicator to import (keyword-only, alternative to positional name)
+            indicator_id: ID of the indicator to import (keyword-only, for ID-based lookup)
+            dataset_id: ID of the dataset to import (keyword-only, for ID-based lookup)
             type: Optional type hint ('indicator' or 'dataset').
                   If not specified, indicators are checked first, then datasets.
             columns: Optional list of columns to return (for datasets).
@@ -138,17 +142,29 @@ class ImportableDataFrame:
             # Import another user's indicator by email
             bob_rsi = data.import_(user='bob@example.com', indicator='RSI')
 
+            # Import by indicator ID (used by placeholder system)
+            ind = data.import_(indicator_id='abc123-def456')
+
             # Import another dataset
             index = data.import_('000001', type='dataset')
             print(index['close'])  # Access the close prices
 
+            # Import by dataset ID
+            ds = data.import_(dataset_id='xyz789')
+
             # Import specific columns only
             spy = data.import_('SPY', type='dataset', columns=['close', 'volume'])
         """
+        # Handle ID-based lookups first
+        if indicator_id:
+            return self._import_by_id(indicator_id, 'indicator', columns)
+        if dataset_id:
+            return self._import_by_id(dataset_id, 'dataset', columns)
+
         # Resolve the indicator/resource name
         resource_name = indicator or name
         if not resource_name:
-            raise ValueError("Must provide either 'name' (positional) or 'indicator' (keyword) argument")
+            raise ValueError("Must provide either 'name' (positional), 'indicator' (keyword), 'indicator_id', or 'dataset_id' argument")
 
         # Check cache first
         cache_key = f"{type or 'auto'}:{user or ''}:{resource_name}"
@@ -184,6 +200,65 @@ class ImportableDataFrame:
             result = self._load_indicator(lookup_key, resource)
         else:
             result = self._load_dataset(lookup_key, resource)
+
+        # Cache the result
+        self._import_cache[cache_key] = result
+
+        # Apply column filter if specified
+        if columns:
+            available = [c for c in columns if c in result.columns]
+            return result[available]
+        return result
+
+    def _import_by_id(
+        self,
+        resource_id: str,
+        resource_type: str,
+        columns: Optional[List[str]] = None
+    ) -> pd.DataFrame:
+        """
+        Import a resource by its database ID.
+
+        Args:
+            resource_id: The database ID of the indicator or dataset
+            resource_type: 'indicator' or 'dataset'
+            columns: Optional list of columns to return
+
+        Returns:
+            DataFrame with the imported data
+        """
+        cache_key = f"id:{resource_type}:{resource_id}"
+        if cache_key in self._import_cache:
+            result = self._import_cache[cache_key]
+            if columns:
+                available = [c for c in columns if c in result.columns]
+                return result[available]
+            return result
+
+        # Look up resource by ID in manifest
+        manifest_section = self._manifest.get(f'{resource_type}s', {})
+
+        # Find resource by ID
+        resource = None
+        resource_key = None
+        for key, info in manifest_section.items():
+            if info.get('id') == resource_id:
+                resource = {**info, 'type': resource_type}
+                resource_key = key
+                break
+
+        if resource is None:
+            raise KeyError(
+                f"{resource_type.capitalize()} with ID '{resource_id}' not found in your accessible resources.\n"
+                f"Make sure you have subscribed to this {resource_type}."
+            )
+
+        # Load based on resource type
+        # For ID-based imports, preloaded data is keyed by ID, not name
+        if resource_type == 'indicator':
+            result = self._load_indicator(resource_id, resource)
+        else:
+            result = self._load_dataset(resource_id, resource)
 
         # Cache the result
         self._import_cache[cache_key] = result
