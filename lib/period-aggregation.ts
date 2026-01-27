@@ -161,18 +161,36 @@ export function aggregateIndicators(
 }
 
 /**
- * Get display label for a period
+ * Get short display label for a period
  */
 export function getPeriodLabel(period: Period): string {
   switch (period) {
     case 'daily':
-      return '日线';
+      return 'D';
     case 'weekly':
-      return '周线';
+      return 'W';
     case 'monthly':
-      return '月线';
+      return 'M';
     case 'quarterly':
-      return '季线';
+      return 'Q';
+    default:
+      return period;
+  }
+}
+
+/**
+ * Get full display name for a period (for tooltips)
+ */
+export function getPeriodFullName(period: Period): string {
+  switch (period) {
+    case 'daily':
+      return '日线 (Daily)';
+    case 'weekly':
+      return '周线 (Weekly)';
+    case 'monthly':
+      return '月线 (Monthly)';
+    case 'quarterly':
+      return '季线 (Quarterly)';
     default:
       return period;
   }

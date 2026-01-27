@@ -9,7 +9,7 @@ import DataPanel from './DataPanel';
 import SaveViewSettingModal from './SaveViewSettingModal';
 import { API_CONFIG } from '@/lib/env';
 import { getDataSourceConfig } from '@/lib/data-sources';
-import { Period, PERIODS, getPeriodLabel, aggregateCandles, aggregateIndicators } from '@/lib/period-aggregation';
+import { Period, PERIODS, getPeriodLabel, getPeriodFullName, aggregateCandles, aggregateIndicators } from '@/lib/period-aggregation';
 import Link from 'next/link';
 
 interface ConstantLine {
@@ -892,7 +892,7 @@ export default function StockViewer() {
                   ? 'bg-blue-600 text-white'
                   : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`}
-              title={getPeriodLabel(period)}
+              title={getPeriodFullName(period)}
             >
               {getPeriodLabel(period)}
             </button>
