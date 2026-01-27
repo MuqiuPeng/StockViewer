@@ -135,8 +135,33 @@ export default function ChartPanel({
   const lockedTimeRef = useRef<string | null>(null);
   const lastCrosshairTimeRef = useRef<string | null>(null);
 
-  // Toggle crosshair lock on click
-  const toggleCrosshairLock = () => {
+  // Track mouse position to distinguish click from drag
+  const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
+  const DRAG_THRESHOLD = 5; // pixels
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    // Check if this was a drag (mouse moved more than threshold)
+    if (mouseDownPosRef.current) {
+      const dx = Math.abs(e.clientX - mouseDownPosRef.current.x);
+      const dy = Math.abs(e.clientY - mouseDownPosRef.current.y);
+      if (dx > DRAG_THRESHOLD || dy > DRAG_THRESHOLD) {
+        // This was a drag, not a click - don't toggle lock
+        mouseDownPosRef.current = null;
+        return false;
+      }
+    }
+    mouseDownPosRef.current = null;
+    return true; // This was a real click
+  };
+
+  // Toggle crosshair lock on click (not drag)
+  const toggleCrosshairLock = (e: React.MouseEvent) => {
+    if (!handleClick(e)) return; // Was a drag, not a click
+
     const newLocked = !crosshairLockedRef.current;
     crosshairLockedRef.current = newLocked;
 
@@ -1422,9 +1447,10 @@ export default function ChartPanel({
           ref={candlestickContainerRef}
           className="w-full h-full"
           style={{ position: 'relative', overscrollBehavior: 'contain' }}
-          onClick={() => {
+          onMouseDown={handleMouseDown}
+          onClick={(e) => {
             if (!keyboardNavMode) {
-              toggleCrosshairLock();
+              toggleCrosshairLock(e);
             }
           }}
         />
@@ -1455,6 +1481,7 @@ export default function ChartPanel({
           ref={indicator1ContainerRef}
           className="w-full h-full indicator-chart-disabled"
           style={{ position: 'relative', overscrollBehavior: 'contain' }}
+          onMouseDown={handleMouseDown}
           onClick={(e) => {
             const container = indicator1ContainerRef.current;
             if (!container) return;
@@ -1463,11 +1490,13 @@ export default function ChartPanel({
             const priceScaleWidth = 80;
             // Click on Y-axis area -> open constant line modal
             if (clickX >= rect.width - priceScaleWidth) {
-              setActiveChart(1);
-              setModalOpen(true);
+              if (handleClick(e)) { // Only if real click, not drag
+                setActiveChart(1);
+                setModalOpen(true);
+              }
             } else if (!keyboardNavMode) {
               // Click on chart area -> toggle crosshair lock
-              toggleCrosshairLock();
+              toggleCrosshairLock(e);
             }
           }}
         />
@@ -1508,6 +1537,7 @@ export default function ChartPanel({
           ref={indicator2ContainerRef}
           className="w-full h-full indicator-chart-disabled"
           style={{ position: 'relative', overscrollBehavior: 'contain' }}
+          onMouseDown={handleMouseDown}
           onClick={(e) => {
             const container = indicator2ContainerRef.current;
             if (!container) return;
@@ -1516,11 +1546,13 @@ export default function ChartPanel({
             const priceScaleWidth = 80;
             // Click on Y-axis area -> open constant line modal
             if (clickX >= rect.width - priceScaleWidth) {
-              setActiveChart(2);
-              setModalOpen(true);
+              if (handleClick(e)) { // Only if real click, not drag
+                setActiveChart(2);
+                setModalOpen(true);
+              }
             } else if (!keyboardNavMode) {
               // Click on chart area -> toggle crosshair lock
-              toggleCrosshairLock();
+              toggleCrosshairLock(e);
             }
           }}
         />
