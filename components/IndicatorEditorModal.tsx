@@ -61,68 +61,46 @@ interface PlaceholderInfo {
 // This allows the visual placeholder to be short and look like a tag
 
 // Transform visual placeholders to actual Python import code (before save/validate)
-const transformPlaceholdersToCode = (code: string, idMap: Map<string, string>): string => {
+// Uses the existing import_() syntax: data.import_('name') or data.import_('symbol', type='dataset')
+const transformPlaceholdersToCode = (code: string): string => {
   let result = code;
-  // Transform indicator placeholders: ◈IND:name◈ -> data.import_(indicator_id='id')
-  result = result.replace(/◈IND:([^◈]+)◈/g, (match, name) => {
-    const id = idMap.get(`ind:${name}`);
-    if (id) {
-      return `data.import_(indicator_id='${id}')`;
-    }
-    return match; // Keep original if no mapping found
+
+  // Transform indicator placeholders: ◈IND:name◈ -> data.import_('name')
+  result = result.replace(/◈IND:([^◈]+)◈/g, (_, name) => {
+    return `data.import_('${name}')`;
   });
-  // Transform dataset placeholders: ◇DS:name◇ -> data.import_(dataset_id='id')
-  result = result.replace(/◇DS:([^◇]+)◇/g, (match, name) => {
-    const id = idMap.get(`ds:${name}`);
-    if (id) {
-      return `data.import_(dataset_id='${id}')`;
-    }
-    return match;
+
+  // Transform dataset placeholders: ◇DS:symbol◇ -> data.import_('symbol', type='dataset')
+  result = result.replace(/◇DS:([^◇]+)◇/g, (_, symbol) => {
+    return `data.import_('${symbol}', type='dataset')`;
   });
+
   return result;
 };
 
 // Transform Python import code to visual placeholders (when loading for editing)
-// Returns both the transformed code and a mapping of name->id
-const transformCodeToPlaceholders = (
-  code: string,
-  indicators: { id: string; name: string }[],
-  datasets: { id: string; symbol: string }[]
-): { code: string; idMap: Map<string, string> } => {
-  const idMap = new Map<string, string>();
+const transformCodeToPlaceholders = (code: string): string => {
   let result = code;
 
-  // Transform indicator imports
+  // Transform indicator imports: data.import_('name') -> ◈IND:name◈
   result = result.replace(
-    /data\.import_\(\s*indicator_id\s*=\s*['"]([^'"]+)['"]\s*\)/g,
-    (match, id) => {
-      const ind = indicators.find(i => i.id === id);
-      if (ind) {
-        idMap.set(`ind:${ind.name}`, id);
-        return `◈IND:${ind.name}◈`;
-      }
-      // Fallback: use ID as display name
-      idMap.set(`ind:${id}`, id);
-      return `◈IND:${id}◈`;
-    }
+    /data\.import_\(\s*['"]([^'"]+)['"]\s*\)/g,
+    (_, name) => `◈IND:${name}◈`
   );
 
-  // Transform dataset imports
+  // Transform dataset imports: data.import_('symbol', type='dataset') -> ◇DS:symbol◇
   result = result.replace(
-    /data\.import_\(\s*dataset_id\s*=\s*['"]([^'"]+)['"]\s*\)/g,
-    (match, id) => {
-      const ds = datasets.find(d => d.id === id);
-      if (ds) {
-        idMap.set(`ds:${ds.symbol}`, id);
-        return `◇DS:${ds.symbol}◇`;
-      }
-      // Fallback: use ID as display name
-      idMap.set(`ds:${id}`, id);
-      return `◇DS:${id}◇`;
-    }
+    /data\.import_\(\s*['"]([^'"]+)['"]\s*,\s*type\s*=\s*['"]dataset['"]\s*\)/g,
+    (_, symbol) => `◇DS:${symbol}◇`
   );
 
-  return { code: result, idMap };
+  // Also handle user-specific imports: data.import_(user='email', indicator='name') -> ◈IND:name◈
+  result = result.replace(
+    /data\.import_\(\s*user\s*=\s*['"][^'"]+['"]\s*,\s*indicator\s*=\s*['"]([^'"]+)['"]\s*\)/g,
+    (_, name) => `◈IND:${name}◈`
+  );
+
+  return result;
 };
 
 // Find all visual placeholders in code
@@ -262,8 +240,6 @@ export default function IndicatorEditorModal({
   // Import panel state (always visible)
   const [importPanelTab, setImportPanelTab] = useState<'indicator' | 'dataset'>('indicator');
   const [importSearchQuery, setImportSearchQuery] = useState('');
-  // ID mapping for placeholders: maps "ind:name" or "ds:name" to actual IDs
-  const [placeholderIdMap, setPlaceholderIdMap] = useState<Map<string, string>>(new Map());
   const [availableIndicators, setAvailableIndicators] = useState<ImportableIndicator[]>([]);
   const [availableDatasets, setAvailableDatasets] = useState<ImportableDataset[]>([]);
   const [loadingImportData, setLoadingImportData] = useState(false);
@@ -374,13 +350,6 @@ export default function IndicatorEditorModal({
     const selection = editorInstance.getSelection();
     if (!selection) return;
 
-    // Add to ID map
-    setPlaceholderIdMap(prev => {
-      const newMap = new Map(prev);
-      newMap.set(`ind:${ind.name}`, ind.id);
-      return newMap;
-    });
-
     // Insert visual placeholder
     const placeholder = `◈IND:${ind.name}◈`;
     editorInstance.executeEdits('insert-placeholder', [{
@@ -400,13 +369,6 @@ export default function IndicatorEditorModal({
 
     const selection = editorInstance.getSelection();
     if (!selection) return;
-
-    // Add to ID map
-    setPlaceholderIdMap(prev => {
-      const newMap = new Map(prev);
-      newMap.set(`ds:${ds.symbol}`, ds.id);
-      return newMap;
-    });
 
     // Insert visual placeholder
     const placeholder = `◇DS:${ds.symbol}◇`;
@@ -431,16 +393,6 @@ export default function IndicatorEditorModal({
 
     const model = editorInstance.getModel();
     if (!model) return;
-
-    // Remove old mapping if exists, add new one
-    setPlaceholderIdMap(prev => {
-      const newMap = new Map(prev);
-      // Remove old entry by displayName
-      newMap.delete(`ind:${selectedPlaceholder.displayName}`);
-      // Add new entry
-      newMap.set(`ind:${ind.name}`, ind.id);
-      return newMap;
-    });
 
     // Replace at placeholder position
     const startPos = model.getPositionAt(selectedPlaceholder.startOffset);
@@ -470,14 +422,6 @@ export default function IndicatorEditorModal({
 
     const model = editorInstance.getModel();
     if (!model) return;
-
-    // Remove old mapping if exists, add new one
-    setPlaceholderIdMap(prev => {
-      const newMap = new Map(prev);
-      newMap.delete(`ds:${selectedPlaceholder.displayName}`);
-      newMap.set(`ds:${ds.symbol}`, ds.id);
-      return newMap;
-    });
 
     // Replace at placeholder position
     const startPos = model.getPositionAt(selectedPlaceholder.startOffset);
@@ -620,7 +564,6 @@ export default function IndicatorEditorModal({
       setRawPythonCode(null);
       setExternalDatasets({});
       setPeriod('daily');
-      setPlaceholderIdMap(new Map());
     }
     setError(null);
     setValidationMessage(null);
@@ -630,19 +573,14 @@ export default function IndicatorEditorModal({
     setTempDatasetConfig(null);
   }, [indicator, isOpen]);
 
-  // Transform raw Python code to visual placeholders when available data is loaded
+  // Transform raw Python code to visual placeholders when loaded
   useEffect(() => {
-    if (rawPythonCode && availableIndicators.length > 0) {
-      const { code, idMap } = transformCodeToPlaceholders(
-        rawPythonCode,
-        availableIndicators.map(i => ({ id: i.id, name: i.name })),
-        availableDatasets.map(d => ({ id: d.id, symbol: d.symbol }))
-      );
+    if (rawPythonCode) {
+      const code = transformCodeToPlaceholders(rawPythonCode);
       setPythonCode(code);
-      setPlaceholderIdMap(idMap);
       setRawPythonCode(null); // Clear raw code after transformation
     }
-  }, [rawPythonCode, availableIndicators, availableDatasets]);
+  }, [rawPythonCode]);
 
   // Auto-fill output column or groupName from name
   useEffect(() => {
@@ -688,7 +626,7 @@ export default function IndicatorEditorModal({
       );
 
       // Transform placeholders to actual Python import code before validation
-      const codeToValidate = transformPlaceholdersToCode(pythonCode, placeholderIdMap);
+      const codeToValidate = transformPlaceholdersToCode(pythonCode);
 
       const requestBody: any = {
         pythonCode: codeToValidate,
@@ -754,7 +692,7 @@ export default function IndicatorEditorModal({
       const method = indicator ? 'PUT' : 'POST';
 
       // Transform placeholders to actual Python import code before saving
-      const codeToSave = transformPlaceholdersToCode(pythonCode, placeholderIdMap);
+      const codeToSave = transformPlaceholdersToCode(pythonCode);
 
       const requestBody: any = {
         name,
