@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Editor from '@monaco-editor/react';
 import { useTheme } from './ThemeProvider';
 
@@ -331,11 +331,40 @@ export default function IndicatorEditorModal({
   const [availableIndicators, setAvailableIndicators] = useState<ImportableIndicator[]>([]);
   const [importableItems, setImportableItems] = useState<ImportableItem[]>([]);
   const [availableDatasetColumns, setAvailableDatasetColumns] = useState<ImportableDatasetColumn[]>([]);
+  const [expandedDatasets, setExpandedDatasets] = useState<Set<string>>(new Set());
   const [loadingImportData, setLoadingImportData] = useState(false);
   const [selectedPlaceholder, setSelectedPlaceholder] = useState<PlaceholderInfo | null>(null);
   const [placeholderDecorations, setPlaceholderDecorations] = useState<string[]>([]);
   // Track if outputColumn was manually edited by user
   const [outputColumnManuallyEdited, setOutputColumnManuallyEdited] = useState(false);
+
+  // Group dataset columns by dataset symbol
+  const groupedDatasetColumns = useMemo(() => {
+    const groups: Record<string, { name: string; columns: ImportableDatasetColumn[] }> = {};
+    for (const dsCol of availableDatasetColumns) {
+      if (!groups[dsCol.datasetSymbol]) {
+        groups[dsCol.datasetSymbol] = {
+          name: dsCol.datasetName,
+          columns: []
+        };
+      }
+      groups[dsCol.datasetSymbol].columns.push(dsCol);
+    }
+    return groups;
+  }, [availableDatasetColumns]);
+
+  // Toggle dataset expansion
+  const toggleDatasetExpansion = useCallback((symbol: string) => {
+    setExpandedDatasets(prev => {
+      const next = new Set(prev);
+      if (next.has(symbol)) {
+        next.delete(symbol);
+      } else {
+        next.add(symbol);
+      }
+      return next;
+    });
+  }, []);
 
   // Get display info for a placeholder - uses embedded displayName
   const getPlaceholderDisplayInfo = useCallback((placeholder: PlaceholderInfo): { label: string; detail: string } => {
@@ -1678,37 +1707,64 @@ export default function IndicatorEditorModal({
                     </div>
                   )}
 
-                  {/* Dataset Columns (from other datasets) */}
-                  {availableDatasetColumns.length > 0 && (
+                  {/* Dataset Columns (from other datasets) - collapsible by dataset */}
+                  {Object.keys(groupedDatasetColumns).length > 0 && (
                     <>
                       <div className="text-xs text-gray-400 dark:text-gray-500 py-1 mt-3 font-medium">Other Datasets</div>
-                      {availableDatasetColumns
-                        .filter(dsCol => !importSearchQuery || dsCol.displayName.toLowerCase().includes(importSearchQuery.toLowerCase()))
-                        .map(dsCol => (
-                          <div
-                            key={dsCol.displayName}
-                            className="flex items-center justify-between p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-xs"
-                          >
-                            <div className="flex-1 truncate">
-                              <span className="dark:text-white font-mono text-[11px]">{dsCol.displayName}</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (selectedPlaceholder) {
-                                  replaceWithDatasetColumn(dsCol);
-                                } else {
-                                  insertDatasetColumnPlaceholder(dsCol);
-                                }
-                              }}
-                              className={`px-1.5 py-0.5 text-[10px] rounded ${
-                                selectedPlaceholder
-                                  ? 'bg-orange-500 hover:bg-orange-600 text-white'
-                                  : 'bg-green-500 hover:bg-green-600 text-white'
-                              }`}
+                      {Object.entries(groupedDatasetColumns)
+                        .filter(([symbol, group]) =>
+                          !importSearchQuery ||
+                          symbol.toLowerCase().includes(importSearchQuery.toLowerCase()) ||
+                          group.name.toLowerCase().includes(importSearchQuery.toLowerCase()) ||
+                          group.columns.some(col => col.column.toLowerCase().includes(importSearchQuery.toLowerCase()))
+                        )
+                        .map(([symbol, group]) => (
+                          <div key={symbol} className="mb-1">
+                            {/* Dataset header - clickable to expand/collapse */}
+                            <div
+                              className="flex items-center gap-1 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer text-xs"
+                              onClick={() => toggleDatasetExpansion(symbol)}
                             >
-                              {selectedPlaceholder ? '⟲' : '+'}
-                            </button>
+                              <span className="text-gray-400 dark:text-gray-500 w-3">
+                                {expandedDatasets.has(symbol) ? '▼' : '▶'}
+                              </span>
+                              <span className="dark:text-white font-medium">{symbol}</span>
+                              <span className="text-gray-400 dark:text-gray-500 text-[10px] truncate">
+                                {group.name !== symbol ? group.name : ''}
+                              </span>
+                            </div>
+                            {/* Columns - shown when expanded */}
+                            {expandedDatasets.has(symbol) && (
+                              <div className="ml-4 border-l border-gray-200 dark:border-gray-600 pl-2">
+                                {group.columns
+                                  .filter(dsCol => !importSearchQuery || dsCol.column.toLowerCase().includes(importSearchQuery.toLowerCase()))
+                                  .map(dsCol => (
+                                    <div
+                                      key={dsCol.displayName}
+                                      className="flex items-center justify-between p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-xs"
+                                    >
+                                      <span className="dark:text-gray-300 font-mono text-[11px]">{dsCol.column}</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (selectedPlaceholder) {
+                                            replaceWithDatasetColumn(dsCol);
+                                          } else {
+                                            insertDatasetColumnPlaceholder(dsCol);
+                                          }
+                                        }}
+                                        className={`px-1.5 py-0.5 text-[10px] rounded ${
+                                          selectedPlaceholder
+                                            ? 'bg-orange-500 hover:bg-orange-600 text-white'
+                                            : 'bg-green-500 hover:bg-green-600 text-white'
+                                        }`}
+                                      >
+                                        {selectedPlaceholder ? '⟲' : '+'}
+                                      </button>
+                                    </div>
+                                  ))}
+                              </div>
+                            )}
                           </div>
                         ))}
                     </>
