@@ -366,6 +366,30 @@ export default function IndicatorEditorModal({
     });
   }, []);
 
+  // Search function supporting & (AND) and | (OR) operators
+  // Operators must have spaces on both sides to be recognized
+  const matchesSearch = useCallback((target: string, query: string): boolean => {
+    if (!query.trim()) return true;
+
+    const targetLower = target.toLowerCase();
+    const queryLower = query.toLowerCase();
+
+    // Check for OR operator first (lower precedence)
+    if (queryLower.includes(' | ')) {
+      const orTerms = queryLower.split(' | ');
+      return orTerms.some(term => matchesSearch(target, term.trim()));
+    }
+
+    // Check for AND operator
+    if (queryLower.includes(' & ')) {
+      const andTerms = queryLower.split(' & ');
+      return andTerms.every(term => matchesSearch(target, term.trim()));
+    }
+
+    // Simple substring match
+    return targetLower.includes(queryLower.trim());
+  }, []);
+
   // Get display info for a placeholder - uses embedded displayName
   const getPlaceholderDisplayInfo = useCallback((placeholder: PlaceholderInfo): { label: string; detail: string } => {
     // Look up by display name in importable items
@@ -1666,7 +1690,7 @@ export default function IndicatorEditorModal({
                   {/* Base Columns (OHLCV) */}
                   <div className="text-xs text-gray-400 dark:text-gray-500 py-1 font-medium">Base Columns</div>
                   {BASE_COLUMNS
-                    .filter(col => !importSearchQuery || col.toLowerCase().includes(importSearchQuery.toLowerCase()))
+                    .filter(col => matchesSearch(col, importSearchQuery))
                     .map(col => (
                       <div
                         key={col}
@@ -1688,7 +1712,7 @@ export default function IndicatorEditorModal({
                     <>
                       <div className="text-xs text-gray-400 dark:text-gray-500 py-1 mt-3 font-medium">Indicators</div>
                       {importableItems
-                        .filter(item => !importSearchQuery || item.displayName.toLowerCase().includes(importSearchQuery.toLowerCase()))
+                        .filter(item => matchesSearch(item.displayName, importSearchQuery))
                         .filter(item => !indicator || !item.id.startsWith(indicator.id)) // Exclude current indicator being edited
                         .map(item => (
                           <div
@@ -1735,10 +1759,9 @@ export default function IndicatorEditorModal({
                       <div className="text-xs text-gray-400 dark:text-gray-500 py-1 mt-3 font-medium">Other Datasets</div>
                       {Object.entries(groupedDatasetColumns)
                         .filter(([symbol, group]) =>
-                          !importSearchQuery ||
-                          symbol.toLowerCase().includes(importSearchQuery.toLowerCase()) ||
-                          group.name.toLowerCase().includes(importSearchQuery.toLowerCase()) ||
-                          group.columns.some(col => col.column.toLowerCase().includes(importSearchQuery.toLowerCase()))
+                          matchesSearch(symbol, importSearchQuery) ||
+                          matchesSearch(group.name, importSearchQuery) ||
+                          group.columns.some(col => matchesSearch(col.column, importSearchQuery))
                         )
                         .map(([symbol, group]) => (
                           <div key={symbol} className="mb-1">
@@ -1759,7 +1782,7 @@ export default function IndicatorEditorModal({
                             {expandedDatasets.has(symbol) && (
                               <div className="ml-4 border-l border-gray-200 dark:border-gray-600 pl-2">
                                 {group.columns
-                                  .filter(dsCol => !importSearchQuery || dsCol.column.toLowerCase().includes(importSearchQuery.toLowerCase()))
+                                  .filter(dsCol => matchesSearch(dsCol.column, importSearchQuery))
                                   .map(dsCol => (
                                     <div
                                       key={dsCol.displayName}
