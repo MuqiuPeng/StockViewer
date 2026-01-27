@@ -330,7 +330,7 @@ class ImportableDataFrame:
             resource: Resource info from manifest
 
         Returns:
-            DataFrame with indicator values indexed by date
+            DataFrame with indicator values indexed by date, aligned to current data
         """
         if name not in self._preloaded_indicators:
             raise ValueError(
@@ -355,6 +355,12 @@ class ImportableDataFrame:
             else:
                 df.index = df.index.normalize()
 
+        # Align to current data's index to ensure same length
+        if hasattr(self._df, 'index') and len(self._df) > 0:
+            current_index = self._df.index
+            # Reindex to match current data, filling missing with NaN
+            df = df.reindex(current_index)
+
         return df
 
     def _load_dataset(
@@ -370,7 +376,7 @@ class ImportableDataFrame:
             resource: Resource info from manifest
 
         Returns:
-            DataFrame with OHLCV data indexed by date
+            DataFrame with OHLCV data indexed by date, aligned to current data
         """
         if name not in self._preloaded_datasets:
             raise ValueError(
@@ -393,6 +399,12 @@ class ImportableDataFrame:
                 df.index = pd.DatetimeIndex(df.index.date)
             else:
                 df.index = df.index.normalize()
+
+        # Align to current data's index to ensure same length
+        if hasattr(self._df, 'index') and len(self._df) > 0:
+            current_index = self._df.index
+            # Reindex to match current data, filling missing with NaN
+            df = df.reindex(current_index)
 
         return df
 
