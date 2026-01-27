@@ -214,6 +214,7 @@ model Indicator {
   externalDatasets Json?
   category         String?
   tags             String[]
+  period           String   @default("daily") // daily, weekly, monthly, quarterly
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

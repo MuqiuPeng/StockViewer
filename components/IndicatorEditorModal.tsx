@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { useTheme } from './ThemeProvider';
 
+type Period = 'daily' | 'weekly' | 'monthly' | 'quarterly';
+
 interface Indicator {
   id: string;
   name: string;
@@ -14,6 +16,7 @@ interface Indicator {
   groupName?: string;
   expectedOutputs?: string[];
   externalDatasets?: Record<string, { groupId: string; datasetName: string }>;
+  period?: Period;
 }
 
 interface IndicatorEditorModalProps {
@@ -82,6 +85,7 @@ export default function IndicatorEditorModal({
   const [expectedOutputs, setExpectedOutputs] = useState<string[]>(['']);
   const [pythonCode, setPythonCode] = useState('');
   const [externalDatasets, setExternalDatasets] = useState<Record<string, { groupId: string; datasetName: string }>>({});
+  const [period, setPeriod] = useState<Period>('daily');
   const [editingDataset, setEditingDataset] = useState<string | null>(null);
   const [tempDatasetConfig, setTempDatasetConfig] = useState<{ paramName: string; groupId: string; datasetName: string } | null>(null);
   const [groups, setGroups] = useState<any[]>([]);
@@ -135,6 +139,7 @@ export default function IndicatorEditorModal({
       setExpectedOutputs(indicator.expectedOutputs || ['']);
       setPythonCode(indicator.pythonCode);
       setExternalDatasets(indicator.externalDatasets || {});
+      setPeriod(indicator.period || 'daily');
     } else {
       setIndicatorType('custom');
       setName('');
@@ -144,6 +149,7 @@ export default function IndicatorEditorModal({
       setExpectedOutputs(['']);
       setPythonCode('');
       setExternalDatasets({});
+      setPeriod('daily');
     }
     setError(null);
     setValidationMessage(null);
@@ -263,6 +269,7 @@ export default function IndicatorEditorModal({
         name,
         description,
         pythonCode,
+        period,
       };
 
       if (indicatorType === 'mytt_group') {
@@ -671,6 +678,28 @@ export default function IndicatorEditorModal({
               disabled={isLoading || readOnly}
               required
             />
+          </div>
+
+          {/* Period Selector */}
+          <div className="mb-4">
+            <label htmlFor="period" className="block text-sm font-medium mb-2 dark:text-white">
+              Period
+            </label>
+            <select
+              id="period"
+              value={period}
+              onChange={(e) => setPeriod(e.target.value as Period)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              disabled={isLoading || readOnly}
+            >
+              <option value="daily">日线 (Daily)</option>
+              <option value="weekly">周线 (Weekly)</option>
+              <option value="monthly">月线 (Monthly)</option>
+              <option value="quarterly">季线 (Quarterly)</option>
+            </select>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Indicator will only be displayed when viewing data in this period
+            </p>
           </div>
 
           {/* External Datasets Selector */}

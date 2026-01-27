@@ -103,7 +103,7 @@ export async function PUT(
     const {
       name, description, pythonCode, outputColumn,
       isGroup, groupName, expectedOutputs, externalDatasets,
-      category, tags
+      category, tags, period
     } = body;
 
     // Validate Python code if provided
@@ -144,6 +144,7 @@ export async function PUT(
     if (externalDatasets !== undefined) updateData.externalDatasets = externalDatasets;
     if (category !== undefined) updateData.category = category;
     if (tags !== undefined) updateData.tags = tags;
+    if (period !== undefined) updateData.period = period;
 
     // Re-detect dependencies and handle versioning if code changed
     if (pythonCode !== undefined) {

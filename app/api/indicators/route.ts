@@ -46,6 +46,7 @@ export async function GET() {
       externalDatasets: ui.indicator.externalDatasets,
       category: ui.indicator.category,
       tags: ui.indicator.tags,
+      period: ui.indicator.period,
       createdAt: ui.indicator.createdAt.toISOString(),
       updatedAt: ui.indicator.updatedAt.toISOString(),
       isOwner: ui.indicator.createdBy === userId,
@@ -74,7 +75,7 @@ export async function POST(request: Request) {
     const {
       name, description, pythonCode, outputColumn,
       isGroup, groupName, expectedOutputs, externalDatasets,
-      category, tags
+      category, tags, period
     } = body;
 
     // Validate required fields
@@ -149,6 +150,7 @@ export async function POST(request: Request) {
         externalDatasets: externalDatasets || undefined,
         category: category || null,
         tags: tags || [],
+        period: period || 'daily',
       },
     });
 

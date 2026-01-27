@@ -9,6 +9,7 @@ import DataPanel from './DataPanel';
 import SaveViewSettingModal from './SaveViewSettingModal';
 import { API_CONFIG } from '@/lib/env';
 import { getDataSourceConfig } from '@/lib/data-sources';
+import { Period, PERIODS, getPeriodLabel, aggregateCandles, aggregateIndicators } from '@/lib/period-aggregation';
 import Link from 'next/link';
 
 interface ConstantLine {
@@ -92,6 +93,8 @@ export default function StockViewer() {
   const [isIndicatorManagerOpen, setIsIndicatorManagerOpen] = useState(false);
   const [definedIndicators, setDefinedIndicators] = useState<string[]>([]);
   const [indicatorGroups, setIndicatorGroups] = useState<Set<string>>(new Set());
+  const [selectedPeriod, setSelectedPeriod] = useState<Period>('daily');
+  const [indicatorPeriodMap, setIndicatorPeriodMap] = useState<Map<string, Period>>(new Map());
   const [crosshairTime, setCrosshairTime] = useState<string | null>(null);
   const [showAddToGroupModal, setShowAddToGroupModal] = useState(false);
   const [keyboardNavMode, setKeyboardNavMode] = useState(false);
@@ -162,6 +165,41 @@ export default function StockViewer() {
     }
     return colorMap;
   }, [enabledIndicators1, enabledIndicators2]);
+
+  // Aggregate candle data based on selected period
+  const aggregatedCandles = useMemo(() => {
+    if (!datasetData?.candles) return [];
+    return aggregateCandles(datasetData.candles, selectedPeriod);
+  }, [datasetData?.candles, selectedPeriod]);
+
+  // Aggregate indicator data based on selected period
+  const aggregatedIndicators = useMemo(() => {
+    if (!datasetData?.indicators) return {};
+    const result: Record<string, { time: string; value: number | null }[]> = {};
+    for (const [key, data] of Object.entries(datasetData.indicators)) {
+      result[key] = aggregateIndicators(data, selectedPeriod);
+    }
+    return result;
+  }, [datasetData?.indicators, selectedPeriod]);
+
+  // Filter indicators to show only those matching the selected period
+  // Base indicators (volume, turnover, etc.) are always shown
+  const periodFilteredIndicators = useMemo(() => {
+    if (!datasetData?.meta?.indicators) return [];
+    return datasetData.meta.indicators.filter((ind: string) => {
+      // Base indicators are always shown
+      if (BASE_INDICATORS.includes(ind)) return true;
+      // Check if this is a group indicator (format: groupName:outputName)
+      if (ind.includes(':')) {
+        const groupName = ind.split(':')[0];
+        const indPeriod = indicatorPeriodMap.get(groupName);
+        return !indPeriod || indPeriod === selectedPeriod;
+      }
+      // Single indicator
+      const indPeriod = indicatorPeriodMap.get(ind);
+      return !indPeriod || indPeriod === selectedPeriod;
+    });
+  }, [datasetData?.meta?.indicators, selectedPeriod, indicatorPeriodMap]);
 
   // Get available groups (custom groups + data sources)
   const availableGroups = useMemo(() => {
@@ -416,14 +454,21 @@ export default function StockViewer() {
           const outputColumns = data.indicators.map((ind: any) => ind.outputColumn);
           setDefinedIndicators(outputColumns);
 
-          // Track which indicators are groups
+          // Track which indicators are groups and their periods
           const groups = new Set<string>();
+          const periodMap = new Map<string, Period>();
           data.indicators.forEach((ind: any) => {
             if (ind.isGroup && ind.groupName) {
               groups.add(ind.groupName);
+              // For group indicators, set period for the group name
+              periodMap.set(ind.groupName, (ind.period as Period) || 'daily');
+            } else {
+              // For single indicators, set period for the output column
+              periodMap.set(ind.outputColumn, (ind.period as Period) || 'daily');
             }
           });
           setIndicatorGroups(groups);
+          setIndicatorPeriodMap(periodMap);
         }
       })
       .catch((err) => {
@@ -836,6 +881,24 @@ export default function StockViewer() {
           )}
         </div>
 
+        {/* Period Selector */}
+        <div className="flex items-center gap-1 border border-gray-300 dark:border-gray-600 rounded overflow-hidden">
+          {PERIODS.map((period) => (
+            <button
+              key={period}
+              onClick={() => setSelectedPeriod(period)}
+              className={`px-3 py-2 text-sm font-medium transition-colors ${
+                selectedPeriod === period
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`}
+              title={getPeriodLabel(period)}
+            >
+              {getPeriodLabel(period)}
+            </button>
+          ))}
+        </div>
+
         {/* Loading indicator */}
         {loading && (
           <span className="text-sm text-gray-600 dark:text-gray-300">
@@ -952,7 +1015,7 @@ export default function StockViewer() {
             style={{ width: leftPanelWidth }}
           >
             <IndicatorSelector
-              indicators={(datasetData.meta?.indicators || []).filter((ind: string) =>
+              indicators={periodFilteredIndicators.filter((ind: string) =>
                 isDefinedIndicator(ind)
               )}
               enabledIndicators={enabledIndicators1}
@@ -962,7 +1025,7 @@ export default function StockViewer() {
               colorMap={indicatorColorMap}
             />
             <IndicatorSelector
-              indicators={(datasetData.meta?.indicators || []).filter((ind: string) =>
+              indicators={periodFilteredIndicators.filter((ind: string) =>
                 isDefinedIndicator(ind)
               )}
               enabledIndicators={enabledIndicators2}
@@ -973,8 +1036,8 @@ export default function StockViewer() {
             />
             <div className="flex-1 min-h-0 overflow-hidden">
               <DataPanel
-                candles={datasetData.candles}
-                indicators={datasetData.indicators}
+                candles={aggregatedCandles}
+                indicators={aggregatedIndicators}
                 crosshairTime={crosshairTime}
                 colorMap={indicatorColorMap}
                 enabledIndicators1={enabledIndicators1}
@@ -996,8 +1059,8 @@ export default function StockViewer() {
           {/* Right Panel - Chart */}
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden ml-4">
             <ChartPanel
-              candles={datasetData.candles || []}
-              indicators={datasetData.indicators || {}}
+              candles={aggregatedCandles}
+              indicators={aggregatedIndicators}
               enabledIndicators1={enabledIndicators1}
               enabledIndicators2={enabledIndicators2}
               colorMap={indicatorColorMap}
