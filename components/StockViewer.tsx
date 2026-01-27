@@ -641,6 +641,79 @@ export default function StockViewer() {
     loadDatasetData();
   }, [selectedDataset, selectedPeriod]);
 
+  // Auto-compute enabled indicators when dataset changes and indicators don't have values
+  useEffect(() => {
+    if (!datasetData || !selectedDataset) return;
+
+    // Combine enabled indicators from both charts
+    const allEnabledIndicators = new Set([...enabledIndicators1, ...enabledIndicators2]);
+    if (allEnabledIndicators.size === 0) return;
+
+    // Find indicators that are enabled but don't have computed values
+    const indicatorsToCompute: { indicator: string; indicatorId: string }[] = [];
+
+    for (const indicator of allEnabledIndicators) {
+      // Skip base indicators - they always have values
+      if (BASE_INDICATORS.includes(indicator)) continue;
+
+      // Check if indicator has values
+      const indicatorData = datasetData.indicators[indicator];
+      const hasValues = indicatorData && indicatorData.length > 0 &&
+        indicatorData.some((d: any) => d.value !== 0 && d.value !== null);
+
+      if (!hasValues) {
+        const indicatorId = indicatorIdMap.get(indicator);
+        if (indicatorId) {
+          indicatorsToCompute.push({ indicator, indicatorId });
+        }
+      }
+    }
+
+    // If there are indicators to compute, trigger computation
+    if (indicatorsToCompute.length > 0) {
+      const computeIndicators = async () => {
+        const dataset = datasets.find(d => d.id === selectedDataset || `${d.code}_${d.dataSource}` === selectedDataset);
+        const stockId = dataset?.id;
+        if (!stockId) return;
+
+        // Compute each indicator
+        for (const { indicator, indicatorId } of indicatorsToCompute) {
+          setComputingIndicator(indicator);
+          try {
+            const res = await fetch(`/api/indicator-values?indicatorId=${indicatorId}&stockId=${stockId}&autoCompute=true`);
+            await res.json();
+          } catch (err) {
+            console.error('Failed to auto-compute indicator:', indicator, err);
+          }
+        }
+
+        setComputingIndicator(null);
+
+        // Reload dataset after all computations
+        // Clear cache first
+        for (const key of periodCacheRef.current.keys()) {
+          if (key.startsWith(`${selectedDataset}_`)) {
+            periodCacheRef.current.delete(key);
+          }
+        }
+
+        try {
+          const reloadRes = await fetch(`/api/dataset/${encodeURIComponent(selectedDataset)}?period=${selectedPeriod}`);
+          const reloadData = await reloadRes.json();
+          if (!reloadData.error) {
+            const cacheKey = `${selectedDataset}_${selectedPeriod}`;
+            periodCacheRef.current.set(cacheKey, reloadData);
+            setDatasetData(reloadData);
+          }
+        } catch (err) {
+          console.error('Failed to reload dataset after auto-compute:', err);
+        }
+      };
+
+      computeIndicators();
+    }
+  }, [datasetData, selectedDataset, enabledIndicators1, enabledIndicators2, indicatorIdMap, datasets, selectedPeriod]);
+
   // Update keyboard nav date ref when crosshair moves in keyboard nav mode
   useEffect(() => {
     if (keyboardNavMode && crosshairTime) {

@@ -314,6 +314,8 @@ export default function IndicatorEditorModal({
   const [placeholderDecorations, setPlaceholderDecorations] = useState<string[]>([]);
   // Expanded datasets in hierarchy (null = current dataset expanded by default)
   const [expandedDataset, setExpandedDataset] = useState<string | null>(null);
+  // Track if outputColumn was manually edited by user
+  const [outputColumnManuallyEdited, setOutputColumnManuallyEdited] = useState(false);
 
   // Get display info for a placeholder - uses embedded displayName
   const getPlaceholderDisplayInfo = useCallback((placeholder: PlaceholderInfo): { label: string; detail: string } => {
@@ -412,15 +414,22 @@ export default function IndicatorEditorModal({
 
   // Insert base column placeholder at cursor (e.g., ◈close◈)
   const insertColumnPlaceholder = useCallback((col: string) => {
-    if (!editorInstance) return;
+    if (!editorInstance || !monacoInstance) return;
 
     const selection = editorInstance.getSelection();
     if (!selection) return;
 
+    // Create a collapsed range at cursor position (insert, not replace)
+    const cursorPosition = selection.getPosition();
+    const insertRange = new monacoInstance.Range(
+      cursorPosition.lineNumber, cursorPosition.column,
+      cursorPosition.lineNumber, cursorPosition.column
+    );
+
     // Insert visual placeholder
     const placeholder = `◈${col}◈`;
     editorInstance.executeEdits('insert-placeholder', [{
-      range: selection,
+      range: insertRange,
       text: placeholder,
       forceMoveMarkers: true
     }]);
@@ -428,19 +437,26 @@ export default function IndicatorEditorModal({
 
     // Update decorations after a short delay
     setTimeout(() => updatePlaceholderDecorations(), 100);
-  }, [editorInstance, updatePlaceholderDecorations]);
+  }, [editorInstance, monacoInstance, updatePlaceholderDecorations]);
 
   // Insert indicator placeholder at cursor
   const insertIndicatorPlaceholder = useCallback((ind: ImportableIndicator) => {
-    if (!editorInstance) return;
+    if (!editorInstance || !monacoInstance) return;
 
     const selection = editorInstance.getSelection();
     if (!selection) return;
 
+    // Create a collapsed range at cursor position (insert, not replace)
+    const cursorPosition = selection.getPosition();
+    const insertRange = new monacoInstance.Range(
+      cursorPosition.lineNumber, cursorPosition.column,
+      cursorPosition.lineNumber, cursorPosition.column
+    );
+
     // Insert visual placeholder
     const placeholder = `◈IND:${ind.name}◈`;
     editorInstance.executeEdits('insert-placeholder', [{
-      range: selection,
+      range: insertRange,
       text: placeholder,
       forceMoveMarkers: true
     }]);
@@ -452,15 +468,22 @@ export default function IndicatorEditorModal({
 
   // Insert dataset placeholder at cursor
   const insertDatasetPlaceholder = useCallback((ds: ImportableDataset) => {
-    if (!editorInstance) return;
+    if (!editorInstance || !monacoInstance) return;
 
     const selection = editorInstance.getSelection();
     if (!selection) return;
 
+    // Create a collapsed range at cursor position (insert, not replace)
+    const cursorPosition = selection.getPosition();
+    const insertRange = new monacoInstance.Range(
+      cursorPosition.lineNumber, cursorPosition.column,
+      cursorPosition.lineNumber, cursorPosition.column
+    );
+
     // Insert visual placeholder
     const placeholder = `◇DS:${ds.symbol}◇`;
     editorInstance.executeEdits('insert-placeholder', [{
-      range: selection,
+      range: insertRange,
       text: placeholder,
       forceMoveMarkers: true
     }]);
@@ -468,7 +491,7 @@ export default function IndicatorEditorModal({
 
     // Update decorations after a short delay
     setTimeout(() => updatePlaceholderDecorations(), 100);
-  }, [editorInstance, updatePlaceholderDecorations]);
+  }, [editorInstance, monacoInstance, updatePlaceholderDecorations]);
 
   // Replace selected placeholder with a new indicator
   const replaceWithIndicator = useCallback((ind: ImportableIndicator) => {
@@ -696,9 +719,9 @@ export default function IndicatorEditorModal({
     };
   }, [editorInstance, monacoInstance, selectedPlaceholder]);
 
-  // Fetch available indicators and datasets when modal opens
+  // Fetch available indicators and datasets when modal opens (always refresh)
   useEffect(() => {
-    if (isOpen && availableIndicators.length === 0 && availableDatasets.length === 0) {
+    if (isOpen) {
       setLoadingImportData(true);
 
       Promise.all([
@@ -778,6 +801,8 @@ export default function IndicatorEditorModal({
     setIsValidating(false);
     setEditingDataset(null);
     setTempDatasetConfig(null);
+    // Reset manual edit tracking - for existing indicators, consider outputColumn as manually set
+    setOutputColumnManuallyEdited(!!indicator);
   }, [indicator, isOpen]);
 
   // Transform raw Python code to visual placeholders and extract body when loaded
@@ -792,17 +817,23 @@ export default function IndicatorEditorModal({
     }
   }, [rawPythonCode]);
 
-  // Auto-fill output column or groupName from name
+  // Auto-fill output column or groupName from name (sync until user manually edits)
   useEffect(() => {
-    if (!indicator && name) {
+    if (name) {
       const normalized = name.replace(/\s+/g, '_');
-      if (indicatorType === 'mytt_group' && !groupName) {
-        setGroupName(normalized);
-      } else if (indicatorType === 'custom' && !outputColumn) {
-        setOutputColumn(normalized);
+      if (indicatorType === 'mytt_group') {
+        // For group indicators, always sync groupName with name
+        if (!indicator || !outputColumnManuallyEdited) {
+          setGroupName(normalized);
+        }
+      } else if (indicatorType === 'custom') {
+        // For custom indicators, sync outputColumn with name until user manually edits
+        if (!outputColumnManuallyEdited) {
+          setOutputColumn(normalized);
+        }
       }
     }
-  }, [name, indicator, outputColumn, groupName, indicatorType]);
+  }, [name, indicatorType, outputColumnManuallyEdited]);
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1364,7 +1395,10 @@ export default function IndicatorEditorModal({
                 <input
                   type="text"
                   value={outputColumn}
-                  onChange={(e) => setOutputColumn(e.target.value)}
+                  onChange={(e) => {
+                    setOutputColumn(e.target.value);
+                    setOutputColumnManuallyEdited(true); // Mark as manually edited
+                  }}
                   className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
                   placeholder="Auto from name"
                   disabled={isLoading || readOnly}
@@ -1529,7 +1563,7 @@ export default function IndicatorEditorModal({
                 </div>
               ) : (
                 <>
-                  {/* Current Dataset (always expanded first) */}
+                  {/* Current Dataset (always expanded first) - dynamic, follows selection */}
                   <div className="mb-2">
                     <button
                       type="button"
@@ -1538,7 +1572,7 @@ export default function IndicatorEditorModal({
                     >
                       <span className={`text-xs transition-transform ${expandedDataset === null ? 'rotate-90' : ''}`}>▶</span>
                       <span className="text-green-600 dark:text-green-400">Current Dataset</span>
-                      <span className="text-xs text-gray-400">(default)</span>
+                      <span className="text-xs text-gray-400">(dynamic)</span>
                     </button>
 
                     {/* Expanded: show base columns + indicators */}
@@ -1570,6 +1604,7 @@ export default function IndicatorEditorModal({
                             <div className="text-xs text-gray-400 dark:text-gray-500 py-1 mt-2">Indicators</div>
                             {availableIndicators
                               .filter(ind => !importSearchQuery || ind.name.toLowerCase().includes(importSearchQuery.toLowerCase()))
+                              .filter(ind => !indicator || ind.id !== indicator.id) // Exclude current indicator being edited
                               .map(ind => (
                                 <div
                                   key={ind.id}
@@ -1606,7 +1641,8 @@ export default function IndicatorEditorModal({
                     )}
                   </div>
 
-                  {/* Other Datasets */}
+                  {/* Other Datasets - fixed references */}
+                  <div className="text-xs text-gray-400 dark:text-gray-500 py-1 mt-2 px-1">Fixed Dataset References</div>
                   {availableDatasets
                     .filter(ds => !importSearchQuery ||
                       ds.symbol.toLowerCase().includes(importSearchQuery.toLowerCase()) ||
