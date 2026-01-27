@@ -25,6 +25,7 @@ interface ViewSetting {
   enabledIndicators2: string[];
   constantLines1: ConstantLine[];
   constantLines2: ConstantLine[];
+  period?: Period;
 }
 
 interface DatasetInfo {
@@ -491,6 +492,9 @@ export default function StockViewer() {
       setEnabledIndicators2(new Set(setting.enabledIndicators2));
       setConstantLines1(setting.constantLines1 || []);
       setConstantLines2(setting.constantLines2 || []);
+      if (setting.period) {
+        setSelectedPeriod(setting.period);
+      }
     }
   }, [selectedViewSetting, viewSettings]);
 
@@ -539,6 +543,7 @@ export default function StockViewer() {
       enabledIndicators2: Array.from(enabledIndicators2),
       constantLines1,
       constantLines2,
+      period: selectedPeriod,
     };
 
     if (existingId) {

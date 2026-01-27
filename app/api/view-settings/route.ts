@@ -36,6 +36,7 @@ export async function GET() {
       enabledIndicators2: uvs.viewSetting.enabledIndicators2,
       constantLines1: uvs.viewSetting.constantLines1,
       constantLines2: uvs.viewSetting.constantLines2,
+      period: uvs.viewSetting.period,
       createdAt: uvs.viewSetting.createdAt.toISOString(),
       updatedAt: uvs.viewSetting.updatedAt.toISOString(),
       isOwner: uvs.viewSetting.createdBy === userId,
@@ -61,7 +62,7 @@ export async function POST(request: Request) {
     const { userId } = authResult;
 
     const body = await request.json();
-    const { name, enabledIndicators1, enabledIndicators2, constantLines1, constantLines2 } = body;
+    const { name, enabledIndicators1, enabledIndicators2, constantLines1, constantLines2, period } = body;
 
     if (!name || typeof name !== 'string' || !name.trim()) {
       return NextResponse.json(
@@ -90,6 +91,7 @@ export async function POST(request: Request) {
         enabledIndicators2: enabledIndicators2 || [],
         constantLines1: constantLines1 || [],
         constantLines2: constantLines2 || [],
+        period: period || 'daily',
       },
     });
 
@@ -126,7 +128,7 @@ export async function PUT(request: Request) {
     const { userId } = authResult;
 
     const body = await request.json();
-    const { id, name, enabledIndicators1, enabledIndicators2, constantLines1, constantLines2 } = body;
+    const { id, name, enabledIndicators1, enabledIndicators2, constantLines1, constantLines2, period } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -174,6 +176,7 @@ export async function PUT(request: Request) {
     if (enabledIndicators2 !== undefined) updateData.enabledIndicators2 = enabledIndicators2;
     if (constantLines1 !== undefined) updateData.constantLines1 = constantLines1;
     if (constantLines2 !== undefined) updateData.constantLines2 = constantLines2;
+    if (period !== undefined) updateData.period = period;
 
     const updated = await prisma.viewSetting.update({
       where: { id },

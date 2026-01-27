@@ -420,6 +420,7 @@ model ViewSetting {
   enabledIndicators2 String[]
   constantLines1     Json
   constantLines2     Json
+  period             String   @default("daily") // daily, weekly, monthly, quarterly
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

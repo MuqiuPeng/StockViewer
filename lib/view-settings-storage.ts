@@ -18,6 +18,7 @@ export interface ViewSetting {
   enabledIndicators2: string[];
   constantLines1: ConstantLine[];
   constantLines2: ConstantLine[];
+  period?: string; // daily, weekly, monthly, quarterly
   createdAt: string;
   updatedAt?: string;
 }
