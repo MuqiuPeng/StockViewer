@@ -56,25 +56,76 @@ interface PlaceholderInfo {
   length: number;
 }
 
-// Transform placeholders to actual Python import code (before save/validate)
-// {{IND:id|name}} -> data.import_(indicator_id='id')
-// {{DS:id|name}} -> data.import_(dataset_id='id')
-const transformPlaceholdersToCode = (code: string): string => {
-  return code
-    .replace(/\{\{IND:([^|]+)\|[^}]+\}\}/g, (_, id) => `data.import_(indicator_id='${id}')`)
-    .replace(/\{\{DS:([^|]+)\|[^}]+\}\}/g, (_, id) => `data.import_(dataset_id='${id}')`);
+// Placeholder format: ◈IND:name◈ and ◇DS:name◇
+// The ID is stored in a mapping, not in the placeholder itself
+// This allows the visual placeholder to be short and look like a tag
+
+// Transform visual placeholders to actual Python import code (before save/validate)
+const transformPlaceholdersToCode = (code: string, idMap: Map<string, string>): string => {
+  let result = code;
+  // Transform indicator placeholders: ◈IND:name◈ -> data.import_(indicator_id='id')
+  result = result.replace(/◈IND:([^◈]+)◈/g, (match, name) => {
+    const id = idMap.get(`ind:${name}`);
+    if (id) {
+      return `data.import_(indicator_id='${id}')`;
+    }
+    return match; // Keep original if no mapping found
+  });
+  // Transform dataset placeholders: ◇DS:name◇ -> data.import_(dataset_id='id')
+  result = result.replace(/◇DS:([^◇]+)◇/g, (match, name) => {
+    const id = idMap.get(`ds:${name}`);
+    if (id) {
+      return `data.import_(dataset_id='${id}')`;
+    }
+    return match;
+  });
+  return result;
 };
 
-// Transform Python import code to placeholders (when loading for editing)
-// Note: When loading, we only have the ID, so displayName will be set to ID temporarily
-// and resolved later when availableIndicators/availableDatasets are loaded
-const transformCodeToPlaceholders = (code: string): string => {
-  return code
-    .replace(/data\.import_\(\s*indicator_id\s*=\s*['"]([^'"]+)['"]\s*\)/g, (_, id) => `{{IND:${id}|${id}}}`)
-    .replace(/data\.import_\(\s*dataset_id\s*=\s*['"]([^'"]+)['"]\s*\)/g, (_, id) => `{{DS:${id}|${id}}}`);
+// Transform Python import code to visual placeholders (when loading for editing)
+// Returns both the transformed code and a mapping of name->id
+const transformCodeToPlaceholders = (
+  code: string,
+  indicators: { id: string; name: string }[],
+  datasets: { id: string; symbol: string }[]
+): { code: string; idMap: Map<string, string> } => {
+  const idMap = new Map<string, string>();
+  let result = code;
+
+  // Transform indicator imports
+  result = result.replace(
+    /data\.import_\(\s*indicator_id\s*=\s*['"]([^'"]+)['"]\s*\)/g,
+    (match, id) => {
+      const ind = indicators.find(i => i.id === id);
+      if (ind) {
+        idMap.set(`ind:${ind.name}`, id);
+        return `◈IND:${ind.name}◈`;
+      }
+      // Fallback: use ID as display name
+      idMap.set(`ind:${id}`, id);
+      return `◈IND:${id}◈`;
+    }
+  );
+
+  // Transform dataset imports
+  result = result.replace(
+    /data\.import_\(\s*dataset_id\s*=\s*['"]([^'"]+)['"]\s*\)/g,
+    (match, id) => {
+      const ds = datasets.find(d => d.id === id);
+      if (ds) {
+        idMap.set(`ds:${ds.symbol}`, id);
+        return `◇DS:${ds.symbol}◇`;
+      }
+      // Fallback: use ID as display name
+      idMap.set(`ds:${id}`, id);
+      return `◇DS:${id}◇`;
+    }
+  );
+
+  return { code: result, idMap };
 };
 
-// Find all placeholders in code
+// Find all visual placeholders in code
 const findPlaceholders = (code: string): PlaceholderInfo[] => {
   const placeholders: PlaceholderInfo[] = [];
   const lines = code.split('\n');
@@ -83,14 +134,14 @@ const findPlaceholders = (code: string): PlaceholderInfo[] => {
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
     const line = lines[lineIdx];
 
-    // Find indicator placeholders {{IND:id|name}}
-    const indRegex = /\{\{IND:([^|]+)\|([^}]+)\}\}/g;
+    // Find indicator placeholders ◈IND:name◈
+    const indRegex = /◈IND:([^◈]+)◈/g;
     let match;
     while ((match = indRegex.exec(line)) !== null) {
       placeholders.push({
         type: 'indicator',
-        id: match[1],
-        displayName: match[2],
+        id: '', // ID is in the mapping, not needed here for display
+        displayName: match[1],
         startOffset: offset + match.index,
         endOffset: offset + match.index + match[0].length,
         lineNumber: lineIdx + 1,
@@ -99,13 +150,13 @@ const findPlaceholders = (code: string): PlaceholderInfo[] => {
       });
     }
 
-    // Find dataset placeholders {{DS:id|name}}
-    const dsRegex = /\{\{DS:([^|]+)\|([^}]+)\}\}/g;
+    // Find dataset placeholders ◇DS:name◇
+    const dsRegex = /◇DS:([^◇]+)◇/g;
     while ((match = dsRegex.exec(line)) !== null) {
       placeholders.push({
         type: 'dataset',
-        id: match[1],
-        displayName: match[2],
+        id: '',
+        displayName: match[1],
         startOffset: offset + match.index,
         endOffset: offset + match.index + match[0].length,
         lineNumber: lineIdx + 1,
@@ -211,37 +262,30 @@ export default function IndicatorEditorModal({
   // Import panel state (always visible)
   const [importPanelTab, setImportPanelTab] = useState<'indicator' | 'dataset'>('indicator');
   const [importSearchQuery, setImportSearchQuery] = useState('');
+  // ID mapping for placeholders: maps "ind:name" or "ds:name" to actual IDs
+  const [placeholderIdMap, setPlaceholderIdMap] = useState<Map<string, string>>(new Map());
   const [availableIndicators, setAvailableIndicators] = useState<ImportableIndicator[]>([]);
   const [availableDatasets, setAvailableDatasets] = useState<ImportableDataset[]>([]);
   const [loadingImportData, setLoadingImportData] = useState(false);
   const [selectedPlaceholder, setSelectedPlaceholder] = useState<PlaceholderInfo | null>(null);
   const [placeholderDecorations, setPlaceholderDecorations] = useState<string[]>([]);
 
-  // Get display info for a placeholder - uses embedded displayName or falls back to lookup
+  // Get display info for a placeholder - uses embedded displayName
   const getPlaceholderDisplayInfo = useCallback((placeholder: PlaceholderInfo): { label: string; detail: string } => {
-    // Use embedded displayName if it's not just the ID
-    if (placeholder.displayName && placeholder.displayName !== placeholder.id) {
-      if (placeholder.type === 'indicator') {
-        const ind = availableIndicators.find(i => i.id === placeholder.id);
-        return { label: placeholder.displayName, detail: ind?.ownerEmail || '' };
-      } else {
-        const ds = availableDatasets.find(d => d.id === placeholder.id);
-        return { label: placeholder.displayName, detail: ds?.name || '' };
-      }
-    }
-    // Fall back to lookup by ID
     if (placeholder.type === 'indicator') {
-      const ind = availableIndicators.find(i => i.id === placeholder.id);
-      if (ind) {
-        return { label: ind.name, detail: ind.ownerEmail };
-      }
-      return { label: placeholder.displayName || placeholder.id, detail: 'Unknown indicator' };
+      // Look up by display name in available indicators
+      const ind = availableIndicators.find(i => i.name === placeholder.displayName);
+      return {
+        label: placeholder.displayName,
+        detail: ind?.ownerEmail || ''
+      };
     } else {
-      const ds = availableDatasets.find(d => d.id === placeholder.id);
-      if (ds) {
-        return { label: ds.symbol, detail: ds.name };
-      }
-      return { label: placeholder.displayName || placeholder.id, detail: 'Unknown dataset' };
+      // Look up by display name (symbol) in available datasets
+      const ds = availableDatasets.find(d => d.symbol === placeholder.displayName);
+      return {
+        label: placeholder.displayName,
+        detail: ds?.name || ''
+      };
     }
   }, [availableIndicators, availableDatasets]);
 
@@ -323,13 +367,22 @@ export default function IndicatorEditorModal({
     }
   }, [editorInstance, monacoInstance, pythonCode]);
 
-  // Insert placeholder at cursor
-  const insertPlaceholderAtCursor = useCallback((placeholder: string) => {
+  // Insert indicator placeholder at cursor
+  const insertIndicatorPlaceholder = useCallback((ind: ImportableIndicator) => {
     if (!editorInstance) return;
 
     const selection = editorInstance.getSelection();
     if (!selection) return;
 
+    // Add to ID map
+    setPlaceholderIdMap(prev => {
+      const newMap = new Map(prev);
+      newMap.set(`ind:${ind.name}`, ind.id);
+      return newMap;
+    });
+
+    // Insert visual placeholder
+    const placeholder = `◈IND:${ind.name}◈`;
     editorInstance.executeEdits('insert-placeholder', [{
       range: selection,
       text: placeholder,
@@ -341,29 +394,95 @@ export default function IndicatorEditorModal({
     setTimeout(() => updatePlaceholderDecorations(), 100);
   }, [editorInstance, updatePlaceholderDecorations]);
 
-  // Replace selected placeholder
-  const replaceSelectedPlaceholder = useCallback((newItem: ImportableIndicator | ImportableDataset) => {
+  // Insert dataset placeholder at cursor
+  const insertDatasetPlaceholder = useCallback((ds: ImportableDataset) => {
+    if (!editorInstance) return;
+
+    const selection = editorInstance.getSelection();
+    if (!selection) return;
+
+    // Add to ID map
+    setPlaceholderIdMap(prev => {
+      const newMap = new Map(prev);
+      newMap.set(`ds:${ds.symbol}`, ds.id);
+      return newMap;
+    });
+
+    // Insert visual placeholder
+    const placeholder = `◇DS:${ds.symbol}◇`;
+    editorInstance.executeEdits('insert-placeholder', [{
+      range: selection,
+      text: placeholder,
+      forceMoveMarkers: true
+    }]);
+    editorInstance.focus();
+
+    // Update decorations after a short delay
+    setTimeout(() => updatePlaceholderDecorations(), 100);
+  }, [editorInstance, updatePlaceholderDecorations]);
+
+  // Replace selected placeholder with a new indicator
+  const replaceWithIndicator = useCallback((ind: ImportableIndicator) => {
     if (!selectedPlaceholder || !editorInstance || !monacoInstance) return;
-
-    const model = editorInstance.getModel();
-    if (!model) return;
-
-    // Build new placeholder based on type (using ID and display name)
-    let newPlaceholder: string;
-    if (selectedPlaceholder.type === 'indicator' && 'ownerEmail' in newItem) {
-      const ind = newItem as ImportableIndicator;
-      newPlaceholder = `{{IND:${ind.id}|${ind.name}}}`;
-    } else if (selectedPlaceholder.type === 'dataset' && 'symbol' in newItem) {
-      const ds = newItem as ImportableDataset;
-      newPlaceholder = `{{DS:${ds.id}|${ds.symbol}}}`;
-    } else {
+    if (selectedPlaceholder.type !== 'indicator') {
       alert('Cannot replace: type mismatch');
       return;
     }
 
+    const model = editorInstance.getModel();
+    if (!model) return;
+
+    // Remove old mapping if exists, add new one
+    setPlaceholderIdMap(prev => {
+      const newMap = new Map(prev);
+      // Remove old entry by displayName
+      newMap.delete(`ind:${selectedPlaceholder.displayName}`);
+      // Add new entry
+      newMap.set(`ind:${ind.name}`, ind.id);
+      return newMap;
+    });
+
     // Replace at placeholder position
     const startPos = model.getPositionAt(selectedPlaceholder.startOffset);
     const endPos = model.getPositionAt(selectedPlaceholder.endOffset);
+    const newPlaceholder = `◈IND:${ind.name}◈`;
+
+    editorInstance.executeEdits('replace-placeholder', [{
+      range: new monacoInstance.Range(
+        startPos.lineNumber, startPos.column,
+        endPos.lineNumber, endPos.column
+      ),
+      text: newPlaceholder,
+      forceMoveMarkers: true
+    }]);
+
+    setSelectedPlaceholder(null);
+    setTimeout(() => updatePlaceholderDecorations(), 100);
+  }, [selectedPlaceholder, editorInstance, monacoInstance, updatePlaceholderDecorations]);
+
+  // Replace selected placeholder with a new dataset
+  const replaceWithDataset = useCallback((ds: ImportableDataset) => {
+    if (!selectedPlaceholder || !editorInstance || !monacoInstance) return;
+    if (selectedPlaceholder.type !== 'dataset') {
+      alert('Cannot replace: type mismatch');
+      return;
+    }
+
+    const model = editorInstance.getModel();
+    if (!model) return;
+
+    // Remove old mapping if exists, add new one
+    setPlaceholderIdMap(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(`ds:${selectedPlaceholder.displayName}`);
+      newMap.set(`ds:${ds.symbol}`, ds.id);
+      return newMap;
+    });
+
+    // Replace at placeholder position
+    const startPos = model.getPositionAt(selectedPlaceholder.startOffset);
+    const endPos = model.getPositionAt(selectedPlaceholder.endOffset);
+    const newPlaceholder = `◇DS:${ds.symbol}◇`;
 
     editorInstance.executeEdits('replace-placeholder', [{
       range: new monacoInstance.Range(
@@ -461,39 +580,6 @@ export default function IndicatorEditorModal({
     }
   }, [isOpen, availableIndicators.length, availableDatasets.length]);
 
-  // Resolve placeholder display names when available indicators/datasets are loaded
-  // This updates placeholders like {{IND:id|id}} to {{IND:id|ActualName}}
-  useEffect(() => {
-    if (pythonCode && (availableIndicators.length > 0 || availableDatasets.length > 0)) {
-      let updatedCode = pythonCode;
-      let hasChanges = false;
-
-      // Update indicator placeholders where displayName equals ID
-      for (const ind of availableIndicators) {
-        const oldPattern = `{{IND:${ind.id}|${ind.id}}}`;
-        const newPattern = `{{IND:${ind.id}|${ind.name}}}`;
-        if (updatedCode.includes(oldPattern)) {
-          updatedCode = updatedCode.replace(new RegExp(oldPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), newPattern);
-          hasChanges = true;
-        }
-      }
-
-      // Update dataset placeholders where displayName equals ID
-      for (const ds of availableDatasets) {
-        const oldPattern = `{{DS:${ds.id}|${ds.id}}}`;
-        const newPattern = `{{DS:${ds.id}|${ds.symbol}}}`;
-        if (updatedCode.includes(oldPattern)) {
-          updatedCode = updatedCode.replace(new RegExp(oldPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), newPattern);
-          hasChanges = true;
-        }
-      }
-
-      if (hasChanges) {
-        setPythonCode(updatedCode);
-      }
-    }
-  }, [availableIndicators, availableDatasets]);
-
   // Load groups on mount (includes both custom and data source groups)
   useEffect(() => {
     if (isOpen) {
@@ -508,6 +594,9 @@ export default function IndicatorEditorModal({
     }
   }, [isOpen]);
 
+  // Track the raw Python code before transformation (for when indicators aren't loaded yet)
+  const [rawPythonCode, setRawPythonCode] = useState<string | null>(null);
+
   useEffect(() => {
     if (indicator) {
       setIndicatorType(indicator.isGroup ? 'mytt_group' : 'custom');
@@ -516,8 +605,8 @@ export default function IndicatorEditorModal({
       setOutputColumn(indicator.outputColumn);
       setGroupName(indicator.groupName || '');
       setExpectedOutputs(indicator.expectedOutputs || ['']);
-      // Transform import statements to placeholders for visual editing
-      setPythonCode(transformCodeToPlaceholders(indicator.pythonCode));
+      // Store raw code - will be transformed when available data is loaded
+      setRawPythonCode(indicator.pythonCode);
       setExternalDatasets(indicator.externalDatasets || {});
       setPeriod(indicator.period || 'daily');
     } else {
@@ -528,8 +617,10 @@ export default function IndicatorEditorModal({
       setGroupName('');
       setExpectedOutputs(['']);
       setPythonCode('');
+      setRawPythonCode(null);
       setExternalDatasets({});
       setPeriod('daily');
+      setPlaceholderIdMap(new Map());
     }
     setError(null);
     setValidationMessage(null);
@@ -538,6 +629,20 @@ export default function IndicatorEditorModal({
     setEditingDataset(null);
     setTempDatasetConfig(null);
   }, [indicator, isOpen]);
+
+  // Transform raw Python code to visual placeholders when available data is loaded
+  useEffect(() => {
+    if (rawPythonCode && availableIndicators.length > 0) {
+      const { code, idMap } = transformCodeToPlaceholders(
+        rawPythonCode,
+        availableIndicators.map(i => ({ id: i.id, name: i.name })),
+        availableDatasets.map(d => ({ id: d.id, symbol: d.symbol }))
+      );
+      setPythonCode(code);
+      setPlaceholderIdMap(idMap);
+      setRawPythonCode(null); // Clear raw code after transformation
+    }
+  }, [rawPythonCode, availableIndicators, availableDatasets]);
 
   // Auto-fill output column or groupName from name
   useEffect(() => {
@@ -583,7 +688,7 @@ export default function IndicatorEditorModal({
       );
 
       // Transform placeholders to actual Python import code before validation
-      const codeToValidate = transformPlaceholdersToCode(pythonCode);
+      const codeToValidate = transformPlaceholdersToCode(pythonCode, placeholderIdMap);
 
       const requestBody: any = {
         pythonCode: codeToValidate,
@@ -649,7 +754,7 @@ export default function IndicatorEditorModal({
       const method = indicator ? 'PUT' : 'POST';
 
       // Transform placeholders to actual Python import code before saving
-      const codeToSave = transformPlaceholdersToCode(pythonCode);
+      const codeToSave = transformPlaceholdersToCode(pythonCode, placeholderIdMap);
 
       const requestBody: any = {
         name,
@@ -1331,9 +1436,9 @@ export default function IndicatorEditorModal({
                                     type="button"
                                     onClick={() => {
                                       if (selectedPlaceholder && selectedPlaceholder.type === 'indicator') {
-                                        replaceSelectedPlaceholder(ind);
+                                        replaceWithIndicator(ind);
                                       } else {
-                                        insertPlaceholderAtCursor(`{{IND:${ind.id}|${ind.name}}}`);
+                                        insertIndicatorPlaceholder(ind);
                                       }
                                     }}
                                     className={`px-2 py-0.5 text-xs rounded ${
@@ -1371,9 +1476,9 @@ export default function IndicatorEditorModal({
                                     type="button"
                                     onClick={() => {
                                       if (selectedPlaceholder && selectedPlaceholder.type === 'indicator') {
-                                        replaceSelectedPlaceholder(ind);
+                                        replaceWithIndicator(ind);
                                       } else {
-                                        insertPlaceholderAtCursor(`{{IND:${ind.id}|${ind.name}}}`);
+                                        insertIndicatorPlaceholder(ind);
                                       }
                                     }}
                                     className={`px-2 py-0.5 text-xs rounded ${
@@ -1413,9 +1518,9 @@ export default function IndicatorEditorModal({
                                   type="button"
                                   onClick={() => {
                                     if (selectedPlaceholder && selectedPlaceholder.type === 'dataset') {
-                                      replaceSelectedPlaceholder(ds);
+                                      replaceWithDataset(ds);
                                     } else {
-                                      insertPlaceholderAtCursor(`{{DS:${ds.id}|${ds.symbol}}}`);
+                                      insertDatasetPlaceholder(ds);
                                     }
                                   }}
                                   className={`px-2 py-0.5 text-xs rounded ${

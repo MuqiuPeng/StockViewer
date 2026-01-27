@@ -65,43 +65,53 @@ body {
 }
 
 /* Import placeholder decorations for Monaco editor - tag-like appearance */
+/* Format: ◈IND:name◈ for indicators, ◇DS:name◇ for datasets */
+
 /* Indicator placeholder styling - purple tag */
 .import-placeholder-indicator {
-  background-color: rgba(139, 92, 246, 0.9) !important;
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.95), rgba(109, 40, 217, 0.95)) !important;
   color: white !important;
   border-radius: 4px;
-  padding: 0 2px;
+  padding: 1px 3px;
   cursor: pointer;
-  font-weight: 500;
+  font-weight: 600;
+  font-size: 0.95em;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.2);
 }
 
 .import-placeholder-indicator-selected {
-  background-color: rgba(109, 40, 217, 1) !important;
+  background: linear-gradient(135deg, rgba(109, 40, 217, 1), rgba(79, 20, 187, 1)) !important;
   color: white !important;
   border-radius: 4px;
-  padding: 0 2px;
+  padding: 1px 3px;
   cursor: pointer;
-  font-weight: 500;
-  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.5);
+  font-weight: 600;
+  font-size: 0.95em;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.2);
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.6);
 }
 
 /* Dataset placeholder styling - green tag */
 .import-placeholder-dataset {
-  background-color: rgba(34, 197, 94, 0.9) !important;
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.95), rgba(22, 163, 74, 0.95)) !important;
   color: white !important;
   border-radius: 4px;
-  padding: 0 2px;
+  padding: 1px 3px;
   cursor: pointer;
-  font-weight: 500;
+  font-weight: 600;
+  font-size: 0.95em;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.2);
 }
 
 .import-placeholder-dataset-selected {
-  background-color: rgba(22, 163, 74, 1) !important;
+  background: linear-gradient(135deg, rgba(22, 163, 74, 1), rgba(12, 133, 54, 1)) !important;
   color: white !important;
   border-radius: 4px;
-  padding: 0 2px;
+  padding: 1px 3px;
   cursor: pointer;
-  font-weight: 500;
-  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.5);
+  font-weight: 600;
+  font-size: 0.95em;
+  text-shadow: 0 1px 1px rgba(0,0,0,0.2);
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.6);
 }
 
