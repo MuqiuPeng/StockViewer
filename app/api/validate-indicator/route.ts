@@ -5,29 +5,40 @@ import { prisma } from '@/lib/prisma';
 import { detectDependencies } from '@/lib/detect-dependencies';
 import { getApiStorage } from '@/lib/api-auth';
 
-// Detect data.import_() calls in Python code
-function detectImportCalls(pythonCode: string): { indicatorIds: string[]; datasetIds: string[] } {
-  const indicatorIds: string[] = [];
-  const datasetIds: string[] = [];
+// Detect data.import_() calls in Python code (name-based)
+function detectImportCalls(pythonCode: string): { indicatorNames: string[]; datasetSymbols: string[] } {
+  const indicatorNames: string[] = [];
+  const datasetSymbols: string[] = [];
 
-  // Pattern for indicator_id='...'
-  const indicatorIdPattern = /data\.import_\s*\(\s*indicator_id\s*=\s*['"]([^'"]+)['"]\s*\)/g;
+  // First, detect dataset imports: data.import_('symbol', type='dataset')
+  const datasetPattern = /data\.import_\s*\(\s*['"]([^'"]+)['"]\s*,\s*type\s*=\s*['"]dataset['"]\s*\)/g;
   let match;
-  while ((match = indicatorIdPattern.exec(pythonCode)) !== null) {
-    if (!indicatorIds.includes(match[1])) {
-      indicatorIds.push(match[1]);
+  while ((match = datasetPattern.exec(pythonCode)) !== null) {
+    if (!datasetSymbols.includes(match[1])) {
+      datasetSymbols.push(match[1]);
     }
   }
 
-  // Pattern for dataset_id='...'
-  const datasetIdPattern = /data\.import_\s*\(\s*dataset_id\s*=\s*['"]([^'"]+)['"]\s*\)/g;
-  while ((match = datasetIdPattern.exec(pythonCode)) !== null) {
-    if (!datasetIds.includes(match[1])) {
-      datasetIds.push(match[1]);
+  // Then detect indicator imports: data.import_('name') (without type='dataset')
+  // We need to exclude dataset patterns already matched
+  const indicatorPattern = /data\.import_\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+  while ((match = indicatorPattern.exec(pythonCode)) !== null) {
+    const name = match[1];
+    // Only add if it's not already detected as a dataset
+    if (!indicatorNames.includes(name) && !datasetSymbols.includes(name)) {
+      indicatorNames.push(name);
     }
   }
 
-  return { indicatorIds, datasetIds };
+  // Also handle user-specific imports: data.import_(user='email', indicator='name')
+  const userIndicatorPattern = /data\.import_\s*\(\s*user\s*=\s*['"][^'"]+['"]\s*,\s*indicator\s*=\s*['"]([^'"]+)['"]\s*\)/g;
+  while ((match = userIndicatorPattern.exec(pythonCode)) !== null) {
+    if (!indicatorNames.includes(match[1])) {
+      indicatorNames.push(match[1]);
+    }
+  }
+
+  return { indicatorNames, datasetSymbols };
 }
 
 // Build resource manifest for validation
@@ -151,20 +162,20 @@ export async function POST(request: Request) {
     let preloadedDatasets: Record<string, Record<string, any>[]> | undefined;
 
     // Detect import calls in the code
-    const { indicatorIds, datasetIds } = detectImportCalls(pythonCode);
+    const { indicatorNames, datasetSymbols } = detectImportCalls(pythonCode);
 
-    if (userId && (indicatorIds.length > 0 || datasetIds.length > 0)) {
+    if (userId && (indicatorNames.length > 0 || datasetSymbols.length > 0)) {
       resourceManifest = await buildValidationManifest(userId);
 
       // Preload mock data for imported indicators (using sample dates)
-      if (indicatorIds.length > 0) {
+      if (indicatorNames.length > 0) {
         preloadedIndicators = {};
-        for (const id of indicatorIds) {
-          // Find the indicator in manifest by ID
-          const indInfo = Object.values(resourceManifest.indicators).find(i => i.id === id);
+        for (const name of indicatorNames) {
+          // Find the indicator in manifest by name
+          const indInfo = resourceManifest.indicators[name];
           if (indInfo) {
-            // Provide mock indicator values for validation
-            preloadedIndicators[id] = sampleData.map((d, i) => ({
+            // Provide mock indicator values for validation (keyed by name)
+            preloadedIndicators[name] = sampleData.map((d, i) => ({
               date: d.date.split('T')[0],
               value: 100 + i * 0.5,
             }));
@@ -173,13 +184,13 @@ export async function POST(request: Request) {
       }
 
       // Preload mock data for imported datasets
-      if (datasetIds.length > 0) {
+      if (datasetSymbols.length > 0) {
         preloadedDatasets = {};
-        for (const id of datasetIds) {
-          const dsInfo = Object.values(resourceManifest.datasets).find(d => d.id === id);
+        for (const symbol of datasetSymbols) {
+          const dsInfo = resourceManifest.datasets[symbol];
           if (dsInfo) {
-            // Provide mock dataset values for validation
-            preloadedDatasets[id] = sampleData.map(d => ({
+            // Provide mock dataset values for validation (keyed by symbol)
+            preloadedDatasets[symbol] = sampleData.map(d => ({
               ...d,
               date: d.date.split('T')[0],
             }));

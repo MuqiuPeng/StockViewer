@@ -702,31 +702,6 @@ function detectImportCalls(pythonCode: string): DetectedImports {
     }
   }
 
-  // Pattern 4: data.import_(indicator_id='id') - ID-based indicator import
-  const indicatorIdPattern = /data\.import_\s*\(\s*indicator_id\s*=\s*['"]([^'"]+)['"]\s*\)/g;
-
-  while ((match = indicatorIdPattern.exec(pythonCode)) !== null) {
-    const id = match[1];
-    const key = `id:${id}`;
-
-    if (!seenIndicators.has(key)) {
-      seenIndicators.add(key);
-      indicators.push({ id });
-    }
-  }
-
-  // Pattern 5: data.import_(dataset_id='id') - ID-based dataset import
-  const datasetIdPattern = /data\.import_\s*\(\s*dataset_id\s*=\s*['"]([^'"]+)['"]\s*\)/g;
-
-  while ((match = datasetIdPattern.exec(pythonCode)) !== null) {
-    const id = match[1];
-    const key = `id:${id}`;
-
-    if (!seenDatasets.has(key)) {
-      seenDatasets.add(key);
-      datasets.push({ id });
-    }
-  }
 
   return { indicators, datasets };
 }
