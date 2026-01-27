@@ -11,6 +11,21 @@ import { Prisma } from '@prisma/client';
 import { executePythonIndicator, PythonExecutionResult } from './python-executor';
 
 /**
+ * Period type for indicators
+ */
+export type IndicatorPeriod = 'daily' | 'weekly' | 'monthly' | 'quarterly';
+
+/**
+ * Period hierarchy (lower number = shorter period)
+ */
+const PERIOD_RANK: Record<IndicatorPeriod, number> = {
+  daily: 0,
+  weekly: 1,
+  monthly: 2,
+  quarterly: 3,
+};
+
+/**
  * Indicator metadata for computation
  */
 export interface IndicatorMeta {
@@ -27,6 +42,7 @@ export interface IndicatorMeta {
   expectedOutputs?: string[];
   externalDatasets?: Record<string, { groupId: string; datasetName: string }>;
   createdBy: string;
+  period: IndicatorPeriod;
 }
 
 /**
@@ -85,17 +101,20 @@ export async function loadIndicator(indicatorId: string): Promise<IndicatorMeta 
     expectedOutputs: indicator.expectedOutputs.length > 0 ? indicator.expectedOutputs : undefined,
     externalDatasets: indicator.externalDatasets as Record<string, { groupId: string; datasetName: string }> | undefined,
     createdBy: indicator.createdBy,
+    period: (indicator.period as IndicatorPeriod) || 'daily',
   };
 }
 
 /**
  * Get cached indicator values for a stock (using stockPriceId for alignment)
  * Returns values only for the current indicator version
+ * Values are keyed by the indicator's period key (not daily date)
  */
 export async function getCachedIndicatorValues(
   indicatorId: string,
   stockId: string,
-  version: number
+  version: number,
+  indicatorPeriod: IndicatorPeriod = 'daily'
 ): Promise<Map<string, IndicatorValueData>> {
   const valueMap = new Map<string, IndicatorValueData>();
 
@@ -117,8 +136,11 @@ export async function getCachedIndicatorValues(
   });
 
   for (const v of values) {
-    const dateKey = v.stockPrice.date.toISOString().split('T')[0];
-    valueMap.set(dateKey, {
+    // Key by period key, not daily date
+    // For daily indicators, this is the same as the date
+    // For weekly/monthly/quarterly, this is the period start date
+    const periodKey = getPeriodKey(v.stockPrice.date, indicatorPeriod);
+    valueMap.set(periodKey, {
       stockPriceId: v.stockPriceId,
       date: v.stockPrice.date,
       value: v.value ? Number(v.value) : null,
@@ -144,6 +166,156 @@ export async function isIndicatorComputed(
   });
 
   return record !== null && record.version === version;
+}
+
+/**
+ * Get the period key for a date (used for grouping)
+ */
+function getPeriodKey(date: Date, period: IndicatorPeriod): string {
+  const year = date.getFullYear();
+  const month = date.getMonth(); // 0-11
+  const dateStr = date.toISOString().split('T')[0];
+
+  switch (period) {
+    case 'daily':
+      return dateStr;
+
+    case 'weekly': {
+      // Get ISO week start (Monday)
+      const d = new Date(date);
+      const dayOfWeek = d.getDay();
+      const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+      d.setDate(d.getDate() + diff);
+      return d.toISOString().split('T')[0];
+    }
+
+    case 'monthly':
+      return `${year}-${String(month + 1).padStart(2, '0')}-01`;
+
+    case 'quarterly': {
+      const quarter = Math.floor(month / 3);
+      const quarterMonth = quarter * 3 + 1;
+      return `${year}-${String(quarterMonth).padStart(2, '0')}-01`;
+    }
+
+    default:
+      return dateStr;
+  }
+}
+
+/**
+ * Aggregate daily prices to a longer period
+ */
+interface AggregatedPrice {
+  periodKey: string;
+  date: Date; // Last date in the period (used as anchor)
+  stockPriceId: string; // Last stockPriceId in the period
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  turnover?: number | null;
+  amplitude?: number | null;
+  changePct?: number | null;
+  changeAmount?: number | null;
+  turnoverRate?: number | null;
+  dailyDates: string[]; // All daily dates in this period (for dependency lookup)
+}
+
+function aggregatePricesToPeriod(
+  prices: Array<{
+    id: string;
+    date: Date;
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: bigint;
+    turnover?: number | null;
+    amplitude?: number | null;
+    changePct?: number | null;
+    changeAmount?: number | null;
+    turnoverRate?: number | null;
+  }>,
+  period: IndicatorPeriod
+): AggregatedPrice[] {
+  if (period === 'daily') {
+    // No aggregation needed
+    return prices.map(p => ({
+      periodKey: p.date.toISOString().split('T')[0],
+      date: p.date,
+      stockPriceId: p.id,
+      open: p.open,
+      high: p.high,
+      low: p.low,
+      close: p.close,
+      volume: Number(p.volume),
+      turnover: p.turnover,
+      amplitude: p.amplitude,
+      changePct: p.changePct,
+      changeAmount: p.changeAmount,
+      turnoverRate: p.turnoverRate,
+      dailyDates: [p.date.toISOString().split('T')[0]],
+    }));
+  }
+
+  // Group by period
+  const groups = new Map<string, typeof prices>();
+  for (const price of prices) {
+    const key = getPeriodKey(price.date, period);
+    if (!groups.has(key)) {
+      groups.set(key, []);
+    }
+    groups.get(key)!.push(price);
+  }
+
+  // Aggregate each group
+  const result: AggregatedPrice[] = [];
+  for (const [periodKey, periodPrices] of groups) {
+    if (periodPrices.length === 0) continue;
+
+    // Sort by date
+    periodPrices.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    const first = periodPrices[0];
+    const last = periodPrices[periodPrices.length - 1];
+
+    // Aggregate OHLC
+    const aggregated: AggregatedPrice = {
+      periodKey,
+      date: last.date, // Use last date as anchor
+      stockPriceId: last.id, // Use last stockPriceId as anchor
+      open: first.open,
+      high: Math.max(...periodPrices.map(p => p.high)),
+      low: Math.min(...periodPrices.map(p => p.low)),
+      close: last.close,
+      volume: periodPrices.reduce((sum, p) => sum + Number(p.volume), 0),
+      dailyDates: periodPrices.map(p => p.date.toISOString().split('T')[0]),
+    };
+
+    // Sum turnover and turnover_rate
+    if (periodPrices.some(p => p.turnover != null)) {
+      aggregated.turnover = periodPrices.reduce((sum, p) => sum + (p.turnover || 0), 0);
+    }
+    if (periodPrices.some(p => p.turnoverRate != null)) {
+      aggregated.turnoverRate = periodPrices.reduce((sum, p) => sum + (p.turnoverRate || 0), 0);
+    }
+
+    // Recalculate amplitude and change from aggregated OHLC
+    if (aggregated.open !== 0) {
+      aggregated.amplitude = ((aggregated.high - aggregated.low) / aggregated.open) * 100;
+      aggregated.changePct = ((aggregated.close - aggregated.open) / aggregated.open) * 100;
+    }
+    aggregated.changeAmount = aggregated.close - aggregated.open;
+
+    result.push(aggregated);
+  }
+
+  // Sort by date
+  result.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  return result;
 }
 
 /**
@@ -202,6 +374,141 @@ function buildDataRecords(
     }
 
     return { stockPriceId: price.id, data: record };
+  });
+}
+
+/**
+ * Build data records with period-aware dependency handling
+ *
+ * Cross-period dependency rules:
+ * - If dependency period > indicator period (e.g., weekly dep for daily indicator):
+ *   Expand: repeat the longer period value for each shorter period record
+ * - If dependency period < indicator period (e.g., daily dep for weekly indicator):
+ *   Collect: gather all shorter period values into an array for each longer period record
+ */
+function buildDataRecordsWithPeriod(
+  aggregatedPrices: AggregatedPrice[],
+  indicatorPeriod: IndicatorPeriod,
+  dependencies: Array<{
+    indicator: IndicatorMeta;
+    values: Map<string, IndicatorValueData>;
+  }>,
+  dailyPrices: Array<{ date: Date }> // Original daily prices for period key lookup
+): Array<{ stockPriceId: string; data: Record<string, any> }> {
+  // Build a map of daily date -> period key for each period type
+  const dailyToPeriodKey = new Map<IndicatorPeriod, Map<string, string>>();
+  for (const period of ['daily', 'weekly', 'monthly', 'quarterly'] as IndicatorPeriod[]) {
+    const map = new Map<string, string>();
+    for (const price of dailyPrices) {
+      const dailyKey = price.date.toISOString().split('T')[0];
+      map.set(dailyKey, getPeriodKey(price.date, period));
+    }
+    dailyToPeriodKey.set(period, map);
+  }
+
+  return aggregatedPrices.map(price => {
+    const record: Record<string, any> = {
+      date: price.periodKey,
+      open: price.open,
+      high: price.high,
+      low: price.low,
+      close: price.close,
+      volume: price.volume,
+    };
+
+    // Add optional price fields
+    if (price.turnover != null) record.turnover = price.turnover;
+    if (price.amplitude != null) record.amplitude = price.amplitude;
+    if (price.changePct != null) record.change_pct = price.changePct;
+    if (price.changeAmount != null) record.change_amount = price.changeAmount;
+    if (price.turnoverRate != null) record.turnover_rate = price.turnoverRate;
+
+    // Add dependency values with period-aware handling
+    for (const { indicator: depIndicator, values: depValues } of dependencies) {
+      const depPeriod = depIndicator.period;
+      const depRank = PERIOD_RANK[depPeriod];
+      const currentRank = PERIOD_RANK[indicatorPeriod];
+
+      if (depRank === currentRank) {
+        // Same period - direct lookup
+        const value = depValues.get(price.periodKey);
+        if (value) {
+          if (value.groupValues) {
+            for (const [key, val] of Object.entries(value.groupValues)) {
+              record[`${depIndicator.outputColumn}:${key}`] = val;
+            }
+          } else {
+            record[depIndicator.outputColumn] = value.value;
+          }
+        }
+      } else if (depRank > currentRank) {
+        // Dependency has longer period (e.g., weekly dep for daily indicator)
+        // Find the longer period key for this shorter period record
+        // Use the first daily date in this period to find the longer period key
+        const firstDailyDate = price.dailyDates[0];
+        const periodKeyMap = dailyToPeriodKey.get(depPeriod);
+        const depPeriodKey = periodKeyMap?.get(firstDailyDate);
+
+        if (depPeriodKey) {
+          const value = depValues.get(depPeriodKey);
+          if (value) {
+            if (value.groupValues) {
+              for (const [key, val] of Object.entries(value.groupValues)) {
+                record[`${depIndicator.outputColumn}:${key}`] = val;
+              }
+            } else {
+              record[depIndicator.outputColumn] = value.value;
+            }
+          }
+        }
+      } else {
+        // Dependency has shorter period (e.g., daily dep for weekly indicator)
+        // Collect all shorter period values into an array
+        const values: (number | null)[] = [];
+        const groupValuesArrays: Record<string, (number | null)[]> = {};
+
+        // Get all daily dates in this period and collect their values
+        for (const dailyDate of price.dailyDates) {
+          const value = depValues.get(dailyDate);
+          if (value) {
+            if (value.groupValues) {
+              // Group indicator - collect each output into separate arrays
+              for (const [key, val] of Object.entries(value.groupValues)) {
+                if (!groupValuesArrays[key]) {
+                  groupValuesArrays[key] = [];
+                }
+                groupValuesArrays[key].push(val);
+              }
+            } else {
+              values.push(value.value ?? null);
+            }
+          } else {
+            // No value for this date - push null
+            if (depIndicator.isGroup && depIndicator.expectedOutputs) {
+              for (const key of depIndicator.expectedOutputs) {
+                if (!groupValuesArrays[key]) {
+                  groupValuesArrays[key] = [];
+                }
+                groupValuesArrays[key].push(null);
+              }
+            } else {
+              values.push(null);
+            }
+          }
+        }
+
+        // Add as array
+        if (depIndicator.isGroup) {
+          for (const [key, arr] of Object.entries(groupValuesArrays)) {
+            record[`${depIndicator.outputColumn}:${key}`] = arr;
+          }
+        } else {
+          record[depIndicator.outputColumn] = values;
+        }
+      }
+    }
+
+    return { stockPriceId: price.stockPriceId, data: record };
   });
 }
 
@@ -350,7 +657,7 @@ export async function computeIndicator(
     if (!forceRecompute) {
       const alreadyComputed = await isIndicatorComputed(indicatorId, stockId, indicator.version);
       if (alreadyComputed) {
-        const existingValues = await getCachedIndicatorValues(indicatorId, stockId, indicator.version);
+        const existingValues = await getCachedIndicatorValues(indicatorId, stockId, indicator.version, indicator.period);
         return {
           success: true,
           stockId,
@@ -397,19 +704,31 @@ export async function computeIndicator(
       turnoverRate: p.turnoverRate ? Number(p.turnoverRate) : null,
     }));
 
-    // Load dependent indicator values
-    const existingIndicators = new Map<string, Map<string, IndicatorValueData>>();
+    // Aggregate prices based on indicator's period
+    const aggregatedPrices = aggregatePricesToPeriod(pricesWithNumbers, indicator.period);
+
+    // Load dependent indicator values with period information
+    const dependencies: Array<{
+      indicator: IndicatorMeta;
+      values: Map<string, IndicatorValueData>;
+    }> = [];
 
     for (const depId of indicator.dependencies) {
       const depIndicator = await loadIndicator(depId);
       if (depIndicator) {
-        const depValues = await getCachedIndicatorValues(depId, stockId, depIndicator.version);
-        existingIndicators.set(depIndicator.outputColumn, depValues);
+        // Get cached values - keyed by dependency's period
+        const depValues = await getCachedIndicatorValues(depId, stockId, depIndicator.version, depIndicator.period);
+        dependencies.push({ indicator: depIndicator, values: depValues });
       }
     }
 
-    // Build data records for Python
-    const priceRecords = buildDataRecords(pricesWithNumbers, existingIndicators);
+    // Build data records with period-aware dependency handling
+    const priceRecords = buildDataRecordsWithPeriod(
+      aggregatedPrices,
+      indicator.period,
+      dependencies,
+      pricesWithNumbers.map(p => ({ date: p.date }))
+    );
     const dataRecords = priceRecords.map(pr => pr.data);
 
     // Execute Python indicator
@@ -431,8 +750,8 @@ export async function computeIndicator(
       };
     }
 
-    // Validate output length matches input length
-    const expectedLength = prices.length;
+    // Validate output length matches aggregated input length (not daily length)
+    const expectedLength = aggregatedPrices.length;
 
     // Validate and save results
     if (indicator.isGroup) {
@@ -635,7 +954,7 @@ export async function getIndicatorValues(
   }
 
   // Try to load cached values with current version
-  const cachedValues = await getCachedIndicatorValues(indicatorId, stockId, indicator.version);
+  const cachedValues = await getCachedIndicatorValues(indicatorId, stockId, indicator.version, indicator.period as IndicatorPeriod);
 
   if (cachedValues.size > 0) {
     let values = Array.from(cachedValues.values());
@@ -662,7 +981,7 @@ export async function getIndicatorValues(
     }
 
     // Load the newly computed values
-    const newValues = await getCachedIndicatorValues(indicatorId, stockId, indicator.version);
+    const newValues = await getCachedIndicatorValues(indicatorId, stockId, indicator.version, indicator.period as IndicatorPeriod);
 
     let values = Array.from(newValues.values());
 
