@@ -699,6 +699,21 @@ export default function StockViewer() {
     return indicatorData.some(d => d.value !== 0 && d.value !== null);
   };
 
+  // Set of indicators that have been computed (have actual values)
+  const computedIndicators = useMemo(() => {
+    if (!datasetData) return new Set<string>();
+    const computed = new Set<string>();
+    // Add base indicators
+    BASE_INDICATORS.forEach(ind => computed.add(ind));
+    // Check each indicator
+    Object.keys(datasetData.indicators).forEach(ind => {
+      if (hasIndicatorValues(ind)) {
+        computed.add(ind);
+      }
+    });
+    return computed;
+  }, [datasetData]);
+
   // Handle indicator toggle with lazy computation
   const handleToggleIndicator = async (
     indicator: string,
@@ -1151,6 +1166,7 @@ export default function StockViewer() {
               title="Indicator Chart 1"
               defaultCollapsed={true}
               colorMap={indicatorColorMap}
+              computedIndicators={computedIndicators}
             />
             <IndicatorSelector
               indicators={periodFilteredIndicators.filter((ind: string) =>
@@ -1161,6 +1177,7 @@ export default function StockViewer() {
               title="Indicator Chart 2"
               defaultCollapsed={true}
               colorMap={indicatorColorMap}
+              computedIndicators={computedIndicators}
             />
             <div className="flex-1 min-h-0 overflow-hidden">
               <DataPanel

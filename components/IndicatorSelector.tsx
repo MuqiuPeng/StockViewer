@@ -9,6 +9,7 @@ interface IndicatorSelectorProps {
   title?: string;
   defaultCollapsed?: boolean;
   colorMap?: Map<string, string>;
+  computedIndicators?: Set<string>;  // Indicators that have computed values
 }
 
 export default function IndicatorSelector({
@@ -18,6 +19,7 @@ export default function IndicatorSelector({
   title = 'Indicators',
   defaultCollapsed = false,
   colorMap,
+  computedIndicators,
 }: IndicatorSelectorProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [isCollapsed, setIsCollapsed] = useState(defaultCollapsed);
@@ -84,17 +86,27 @@ export default function IndicatorSelector({
             {filteredIndicators.length === 0 ? (
               <p className="text-sm text-gray-500 dark:text-gray-400">No indicators match your search</p>
             ) : (
-              filteredIndicators.map((indicator) => (
-                <label key={indicator} className="flex items-center mb-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={enabledIndicators.has(indicator)}
-                    onChange={() => onToggle(indicator)}
-                    className="mr-2"
-                  />
-                  <span className="text-sm dark:text-white">{indicator}</span>
-                </label>
-              ))
+              filteredIndicators.map((indicator) => {
+                const isComputed = !computedIndicators || computedIndicators.has(indicator);
+                return (
+                  <label key={indicator} className="flex items-center mb-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={enabledIndicators.has(indicator)}
+                      onChange={() => onToggle(indicator)}
+                      className="mr-2"
+                    />
+                    <span className={`text-sm ${
+                      isComputed
+                        ? 'dark:text-white text-gray-900'
+                        : 'text-gray-400 dark:text-gray-500 italic'
+                    }`}>
+                      {indicator}
+                      {!isComputed && <span className="ml-1 text-xs">(pending)</span>}
+                    </span>
+                  </label>
+                );
+              })
             )}
           </div>
         </div>

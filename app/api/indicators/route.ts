@@ -22,10 +22,18 @@ export async function GET() {
     }
     const { userId } = authResult;
 
-    // Get user's indicator collection with indicator details
+    // Get user's indicator collection with indicator details and creator info
     const userIndicators = await prisma.userIndicator.findMany({
       where: { userId },
-      include: { indicator: true },
+      include: {
+        indicator: {
+          include: {
+            creator: {
+              select: { email: true }
+            }
+          }
+        }
+      },
       orderBy: { indicator: { name: 'asc' } },
     });
 
@@ -50,6 +58,7 @@ export async function GET() {
       createdAt: ui.indicator.createdAt.toISOString(),
       updatedAt: ui.indicator.updatedAt.toISOString(),
       isOwner: ui.indicator.createdBy === userId,
+      creatorEmail: ui.indicator.creator?.email || null,
     }));
 
     return NextResponse.json({ indicators });
