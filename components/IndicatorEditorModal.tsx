@@ -51,8 +51,16 @@ interface ImportableItem {
   isGroupColumn: boolean; // Whether this is a column from a group indicator
 }
 
+// Dataset column item for import panel
+interface ImportableDatasetColumn {
+  datasetSymbol: string;  // e.g., "000002"
+  datasetName: string;    // e.g., "000002 沪深300"
+  column: string;         // e.g., "close"
+  displayName: string;    // e.g., "000002@close"
+}
+
 interface PlaceholderInfo {
-  type: 'indicator';
+  type: 'indicator' | 'dataset';
   id: string;
   displayName: string;  // Display name shown in tag
   // Position in editor
@@ -67,6 +75,7 @@ interface PlaceholderInfo {
 // - ◈name◈ for base columns (OHLCV) -> data['name']
 // - ◈IND:name◈ for single indicators -> data.import_('name')['value']
 // - ◈IND:name:column◈ for group indicator columns -> data.import_('name')['column']
+// - ◈DS:symbol@column◈ for dataset columns -> data.import_('symbol', type='dataset')['column']
 
 // Base columns that are always available
 const BASE_COLUMNS = ['open', 'high', 'low', 'close', 'volume'];
@@ -79,6 +88,11 @@ const transformPlaceholdersToCode = (code: string): string => {
   for (const col of BASE_COLUMNS) {
     result = result.replace(new RegExp(`◈${col}◈`, 'g'), `data['${col}']`);
   }
+
+  // Transform dataset column placeholders: ◈DS:symbol@column◈ -> data.import_('symbol', type='dataset')['column']
+  result = result.replace(/◈DS:([^@◈]+)@([^◈]+)◈/g, (_, symbol, column) => {
+    return `data.import_('${symbol}', type='dataset')['${column}']`;
+  });
 
   // Transform group indicator column placeholders: ◈IND:name:column◈ -> data.import_('name')['column']
   result = result.replace(/◈IND:([^:◈]+):([^◈]+)◈/g, (_, name, column) => {
@@ -102,6 +116,12 @@ const transformCodeToPlaceholders = (code: string): string => {
     result = result.replace(new RegExp(`data\\['${col}'\\]`, 'g'), `◈${col}◈`);
     result = result.replace(new RegExp(`data\\["${col}"\\]`, 'g'), `◈${col}◈`);
   }
+
+  // Transform dataset imports: data.import_('symbol', type='dataset')['column'] -> ◈DS:symbol@column◈
+  result = result.replace(
+    /data\.import_\(\s*['"]([^'"]+)['"]\s*,\s*type\s*=\s*['"]dataset['"]\s*\)\s*\['([^']+)'\]/g,
+    (_, symbol, column) => `◈DS:${symbol}@${column}◈`
+  );
 
   // Handle user-specific imports: data.import_(user='email', indicator='name')['column'] -> ◈IND:name:column◈
   result = result.replace(
@@ -210,17 +230,33 @@ const findPlaceholders = (code: string): PlaceholderInfo[] => {
 
     // Find indicator placeholders ◈IND:name◈ or ◈IND:name:column◈
     const indRegex = /◈IND:([^◈]+)◈/g;
-    let match;
-    while ((match = indRegex.exec(line)) !== null) {
+    let indMatch;
+    while ((indMatch = indRegex.exec(line)) !== null) {
       placeholders.push({
         type: 'indicator',
         id: '',
-        displayName: match[1],
-        startOffset: offset + match.index,
-        endOffset: offset + match.index + match[0].length,
+        displayName: indMatch[1],
+        startOffset: offset + indMatch.index,
+        endOffset: offset + indMatch.index + indMatch[0].length,
         lineNumber: lineIdx + 1,
-        column: match.index + 1,
-        length: match[0].length,
+        column: indMatch.index + 1,
+        length: indMatch[0].length,
+      });
+    }
+
+    // Find dataset placeholders ◈DS:symbol@column◈
+    const dsRegex = /◈DS:([^@◈]+)@([^◈]+)◈/g;
+    let dsMatch;
+    while ((dsMatch = dsRegex.exec(line)) !== null) {
+      placeholders.push({
+        type: 'dataset',
+        id: dsMatch[1], // symbol
+        displayName: `${dsMatch[1]}@${dsMatch[2]}`, // symbol@column
+        startOffset: offset + dsMatch.index,
+        endOffset: offset + dsMatch.index + dsMatch[0].length,
+        lineNumber: lineIdx + 1,
+        column: dsMatch.index + 1,
+        length: dsMatch[0].length,
       });
     }
 
@@ -294,6 +330,7 @@ export default function IndicatorEditorModal({
   const [importSearchQuery, setImportSearchQuery] = useState('');
   const [availableIndicators, setAvailableIndicators] = useState<ImportableIndicator[]>([]);
   const [importableItems, setImportableItems] = useState<ImportableItem[]>([]);
+  const [availableDatasetColumns, setAvailableDatasetColumns] = useState<ImportableDatasetColumn[]>([]);
   const [loadingImportData, setLoadingImportData] = useState(false);
   const [selectedPlaceholder, setSelectedPlaceholder] = useState<PlaceholderInfo | null>(null);
   const [placeholderDecorations, setPlaceholderDecorations] = useState<string[]>([]);
@@ -438,7 +475,7 @@ export default function IndicatorEditorModal({
     setTimeout(() => updatePlaceholderDecorations(), 100);
   }, [editorInstance, monacoInstance, updatePlaceholderDecorations]);
 
-  // Replace selected placeholder with a new item
+  // Replace selected placeholder with a new item (indicator)
   const replaceWithItem = useCallback((item: ImportableItem) => {
     if (!selectedPlaceholder || !editorInstance || !monacoInstance) return;
 
@@ -451,6 +488,58 @@ export default function IndicatorEditorModal({
     const newPlaceholder = item.isGroupColumn
       ? `◈IND:${item.indicatorName}:${item.columnName}◈`
       : `◈IND:${item.indicatorName}◈`;
+
+    editorInstance.executeEdits('replace-placeholder', [{
+      range: new monacoInstance.Range(
+        startPos.lineNumber, startPos.column,
+        endPos.lineNumber, endPos.column
+      ),
+      text: newPlaceholder,
+      forceMoveMarkers: true
+    }]);
+
+    setSelectedPlaceholder(null);
+    setTimeout(() => updatePlaceholderDecorations(), 100);
+  }, [selectedPlaceholder, editorInstance, monacoInstance, updatePlaceholderDecorations]);
+
+  // Insert a dataset column placeholder at cursor position
+  const insertDatasetColumnPlaceholder = useCallback((dsCol: ImportableDatasetColumn) => {
+    if (!editorInstance || !monacoInstance) return;
+
+    const selection = editorInstance.getSelection();
+    if (!selection) return;
+
+    // Create a collapsed range at cursor position (insert, not replace)
+    const cursorPosition = selection.getPosition();
+    const insertRange = new monacoInstance.Range(
+      cursorPosition.lineNumber, cursorPosition.column,
+      cursorPosition.lineNumber, cursorPosition.column
+    );
+
+    // Insert visual placeholder: ◈DS:symbol@column◈
+    const placeholder = `◈DS:${dsCol.datasetSymbol}@${dsCol.column}◈`;
+    editorInstance.executeEdits('insert-placeholder', [{
+      range: insertRange,
+      text: placeholder,
+      forceMoveMarkers: true
+    }]);
+    editorInstance.focus();
+
+    // Update decorations after a short delay
+    setTimeout(() => updatePlaceholderDecorations(), 100);
+  }, [editorInstance, monacoInstance, updatePlaceholderDecorations]);
+
+  // Replace selected placeholder with a dataset column
+  const replaceWithDatasetColumn = useCallback((dsCol: ImportableDatasetColumn) => {
+    if (!selectedPlaceholder || !editorInstance || !monacoInstance) return;
+
+    const model = editorInstance.getModel();
+    if (!model) return;
+
+    // Replace at placeholder position
+    const startPos = model.getPositionAt(selectedPlaceholder.startOffset);
+    const endPos = model.getPositionAt(selectedPlaceholder.endOffset);
+    const newPlaceholder = `◈DS:${dsCol.datasetSymbol}@${dsCol.column}◈`;
 
     editorInstance.executeEdits('replace-placeholder', [{
       range: new monacoInstance.Range(
@@ -633,12 +722,13 @@ export default function IndicatorEditorModal({
     };
   }, [editorInstance, monacoInstance, selectedPlaceholder]);
 
-  // Fetch available indicators when modal opens (always refresh)
+  // Fetch available indicators and datasets when modal opens (always refresh)
   useEffect(() => {
     if (isOpen) {
       setLoadingImportData(true);
 
-      fetch('/api/indicators').then(res => res.json())
+      // Fetch indicators
+      const indicatorsPromise = fetch('/api/indicators').then(res => res.json())
         .then((indicatorsData) => {
           if (indicatorsData.indicators) {
             const indicators: ImportableIndicator[] = indicatorsData.indicators.map((ind: any) => ({
@@ -685,9 +775,34 @@ export default function IndicatorEditorModal({
             }
             setImportableItems(items);
           }
-        }).catch(err => {
+        });
+
+      // Fetch datasets for importing columns from other datasets
+      const datasetsPromise = fetch('/api/datasets').then(res => res.json())
+        .then((datasetsData) => {
+          if (datasetsData.datasets) {
+            // Build flattened dataset column items
+            const dsColumns: ImportableDatasetColumn[] = [];
+            for (const ds of datasetsData.datasets) {
+              // Add base columns for each dataset
+              for (const col of BASE_COLUMNS) {
+                dsColumns.push({
+                  datasetSymbol: ds.symbol,
+                  datasetName: ds.name || ds.symbol,
+                  column: col,
+                  displayName: `${ds.symbol}@${col}`,
+                });
+              }
+            }
+            setAvailableDatasetColumns(dsColumns);
+          }
+        });
+
+      Promise.all([indicatorsPromise, datasetsPromise])
+        .catch(err => {
           console.error('Failed to load import data:', err);
-        }).finally(() => {
+        })
+        .finally(() => {
           setLoadingImportData(false);
         });
     }
@@ -1561,6 +1676,42 @@ export default function IndicatorEditorModal({
                     <div className="text-xs text-gray-400 dark:text-gray-500 text-center py-2 mt-3">
                       No indicators available
                     </div>
+                  )}
+
+                  {/* Dataset Columns (from other datasets) */}
+                  {availableDatasetColumns.length > 0 && (
+                    <>
+                      <div className="text-xs text-gray-400 dark:text-gray-500 py-1 mt-3 font-medium">Other Datasets</div>
+                      {availableDatasetColumns
+                        .filter(dsCol => !importSearchQuery || dsCol.displayName.toLowerCase().includes(importSearchQuery.toLowerCase()))
+                        .map(dsCol => (
+                          <div
+                            key={dsCol.displayName}
+                            className="flex items-center justify-between p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-xs"
+                          >
+                            <div className="flex-1 truncate">
+                              <span className="dark:text-white font-mono text-[11px]">{dsCol.displayName}</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (selectedPlaceholder) {
+                                  replaceWithDatasetColumn(dsCol);
+                                } else {
+                                  insertDatasetColumnPlaceholder(dsCol);
+                                }
+                              }}
+                              className={`px-1.5 py-0.5 text-[10px] rounded ${
+                                selectedPlaceholder
+                                  ? 'bg-orange-500 hover:bg-orange-600 text-white'
+                                  : 'bg-green-500 hover:bg-green-600 text-white'
+                              }`}
+                            >
+                              {selectedPlaceholder ? '⟲' : '+'}
+                            </button>
+                          </div>
+                        ))}
+                    </>
                   )}
                 </>
               )}
