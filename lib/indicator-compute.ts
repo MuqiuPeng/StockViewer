@@ -443,23 +443,37 @@ function buildDataRecordsWithPeriod(
         }
       } else if (depRank > currentRank) {
         // Dependency has longer period (e.g., weekly dep for daily indicator)
-        // Find the longer period key for this shorter period record
-        // Use the first daily date in this period to find the longer period key
+        // IMPORTANT: We should only use COMPLETED period data to avoid look-ahead bias
+        // Find the most recent completed long period (the one BEFORE the current period)
         const firstDailyDate = price.dailyDates[0];
         const periodKeyMap = dailyToPeriodKey.get(depPeriod);
-        const depPeriodKey = periodKeyMap?.get(firstDailyDate);
+        const currentDepPeriodKey = periodKeyMap?.get(firstDailyDate);
 
-        if (depPeriodKey) {
-          const value = depValues.get(depPeriodKey);
-          if (value) {
-            if (value.groupValues) {
-              for (const [key, val] of Object.entries(value.groupValues)) {
-                record[`${depIndicator.outputColumn}:${key}`] = val;
+        if (currentDepPeriodKey) {
+          // Find the most recent period key that is BEFORE the current period
+          // (i.e., the last completed period)
+          let previousPeriodKey: string | undefined;
+          for (const periodKey of depValues.keys()) {
+            if (periodKey < currentDepPeriodKey) {
+              if (!previousPeriodKey || periodKey > previousPeriodKey) {
+                previousPeriodKey = periodKey;
               }
-            } else {
-              record[depIndicator.outputColumn] = value.value;
             }
           }
+
+          if (previousPeriodKey) {
+            const value = depValues.get(previousPeriodKey);
+            if (value) {
+              if (value.groupValues) {
+                for (const [key, val] of Object.entries(value.groupValues)) {
+                  record[`${depIndicator.outputColumn}:${key}`] = val;
+                }
+              } else {
+                record[depIndicator.outputColumn] = value.value;
+              }
+            }
+          }
+          // If no previous period exists, the dependency value will be undefined/missing
         }
       } else {
         // Dependency has shorter period (e.g., daily dep for weekly indicator)
