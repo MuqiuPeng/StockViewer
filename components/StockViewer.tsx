@@ -766,6 +766,45 @@ export default function StockViewer() {
     }
   };
 
+  // Handle indicator deletion - remove from enabled and refresh
+  const handleIndicatorDelete = async (indicatorName: string) => {
+    // Remove from enabled indicators
+    setEnabledIndicators1(prev => {
+      const next = new Set(prev);
+      next.delete(indicatorName);
+      return next;
+    });
+    setEnabledIndicators2(prev => {
+      const next = new Set(prev);
+      next.delete(indicatorName);
+      return next;
+    });
+
+    // Reload indicators list
+    await loadIndicators();
+
+    // Clear cache and reload dataset data if we have a selected dataset
+    if (selectedDataset) {
+      for (const key of periodCacheRef.current.keys()) {
+        if (key.startsWith(selectedDataset)) {
+          periodCacheRef.current.delete(key);
+        }
+      }
+
+      try {
+        const res = await fetch(`/api/dataset/${encodeURIComponent(selectedDataset)}?period=${selectedPeriod}`);
+        const data = await res.json();
+        if (!data.error) {
+          const cacheKey = `${selectedDataset}_${selectedPeriod}`;
+          periodCacheRef.current.set(cacheKey, data);
+          setDatasetData(data);
+        }
+      } catch (err) {
+        console.error('Failed to reload dataset after indicator deletion:', err);
+      }
+    }
+  };
+
   // Update keyboard nav date ref when crosshair moves in keyboard nav mode
   useEffect(() => {
     if (keyboardNavMode && crosshairTime) {
@@ -1364,6 +1403,7 @@ export default function StockViewer() {
         isOpen={isIndicatorManagerOpen}
         onClose={() => setIsIndicatorManagerOpen(false)}
         onIndicatorUpdate={handleIndicatorUpdate}
+        onIndicatorDelete={handleIndicatorDelete}
       />
 
       <SaveViewSettingModal

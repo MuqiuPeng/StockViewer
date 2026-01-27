@@ -22,9 +22,10 @@ interface IndicatorManagerProps {
   isOpen: boolean;
   onClose: () => void;
   onIndicatorUpdate?: (indicatorName: string, indicatorId: string) => void;
+  onIndicatorDelete?: (indicatorName: string) => void;
 }
 
-export default function IndicatorManager({ isOpen, onClose, onIndicatorUpdate }: IndicatorManagerProps) {
+export default function IndicatorManager({ isOpen, onClose, onIndicatorUpdate, onIndicatorDelete }: IndicatorManagerProps) {
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -126,6 +127,11 @@ export default function IndicatorManager({ isOpen, onClose, onIndicatorUpdate }:
       }
 
       await loadIndicators();
+
+      // Notify parent that indicator was deleted
+      if (onIndicatorDelete) {
+        onIndicatorDelete(name);
+      }
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Operation failed');
     }
