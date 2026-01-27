@@ -111,50 +111,11 @@ class ImportableDataFrame:
         type: Optional[str] = None,
         columns: Optional[List[str]] = None
     ) -> pd.DataFrame:
-        """
-        Import a subscribed indicator or dataset.
+        """Import a subscribed indicator or dataset."""
+        import sys
+        print(f"DEBUG [import_]: Called with name={name}, indicator={indicator}, type={type}", file=sys.stderr)
+        print(f"DEBUG [import_]: self._df length={len(self._df)}", file=sys.stderr)
 
-        Args:
-            name: Name of the indicator or dataset to import (positional, for backward compat)
-            user: Email of the user whose indicator to import (keyword-only)
-            indicator: Name of the indicator to import (keyword-only, alternative to positional name)
-            indicator_id: ID of the indicator to import (keyword-only, for ID-based lookup)
-            dataset_id: ID of the dataset to import (keyword-only, for ID-based lookup)
-            type: Optional type hint ('indicator' or 'dataset').
-                  If not specified, indicators are checked first, then datasets.
-            columns: Optional list of columns to return (for datasets).
-                     If None, all columns are returned.
-
-        Returns:
-            DataFrame with the imported data, indexed by date.
-            For indicators: contains 'value' column (or multiple for group indicators).
-            For datasets: contains all OHLCV columns.
-
-        Raises:
-            KeyError: If resource is not found in user's accessible resources
-            ValueError: If resource data is not preloaded
-
-        Example:
-            # Import my own indicator
-            rsi = data.import_('RSI')
-            print(rsi['value'])  # Access the indicator values
-
-            # Import another user's indicator by email
-            bob_rsi = data.import_(user='bob@example.com', indicator='RSI')
-
-            # Import by indicator ID (used by placeholder system)
-            ind = data.import_(indicator_id='abc123-def456')
-
-            # Import another dataset
-            index = data.import_('000001', type='dataset')
-            print(index['close'])  # Access the close prices
-
-            # Import by dataset ID
-            ds = data.import_(dataset_id='xyz789')
-
-            # Import specific columns only
-            spy = data.import_('SPY', type='dataset', columns=['close', 'volume'])
-        """
         # Handle ID-based lookups first
         if indicator_id:
             return self._import_by_id(indicator_id, 'indicator', columns)
@@ -374,20 +335,33 @@ class ImportableDataFrame:
             df_date_strs = df.index.strftime('%Y-%m-%d') if hasattr(df.index, 'strftime') else df.index.astype(str)
             current_date_strs = current_index.strftime('%Y-%m-%d') if hasattr(current_index, 'strftime') else current_index.astype(str)
 
-            # Create a mapping from date string to value
-            df['_date_str'] = df_date_strs
-            df_indexed = df.set_index('_date_str')
+            print(f"DEBUG [_load_indicator]: df_date_strs sample: {list(df_date_strs[:3])}", file=sys.stderr)
+            print(f"DEBUG [_load_indicator]: current_date_strs sample: {list(current_date_strs[:3])}", file=sys.stderr)
+
+            # Create mapping DataFrame with string dates as index
+            df_with_str = df.copy()
+            df_with_str['_date_str'] = list(df_date_strs)
+            df_indexed = df_with_str.set_index('_date_str')
+
+            # Create target index from current data's date strings
+            target_dates = list(current_date_strs)
 
             # Reindex using date strings
-            df_aligned = df_indexed.reindex(current_date_strs)
+            df_aligned = df_indexed.reindex(target_dates)
 
             # Restore the original index from current data
             df_aligned.index = current_index
 
             print(f"DEBUG [_load_indicator]: After alignment, len: {len(df_aligned)}", file=sys.stderr)
+            print(f"DEBUG [_load_indicator]: df_aligned.index len: {len(df_aligned.index)}", file=sys.stderr)
             if 'value' in df_aligned.columns:
                 non_nan = df_aligned['value'].notna().sum()
                 print(f"DEBUG [_load_indicator]: Non-NaN values in 'value': {non_nan}", file=sys.stderr)
+                print(f"DEBUG [_load_indicator]: value column len: {len(df_aligned['value'])}", file=sys.stderr)
+
+            # Validate length
+            if len(df_aligned) != len(current_index):
+                print(f"ERROR [_load_indicator]: Alignment failed! df_aligned={len(df_aligned)}, expected={len(current_index)}", file=sys.stderr)
 
             return df_aligned
 
