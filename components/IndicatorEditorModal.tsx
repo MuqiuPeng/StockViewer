@@ -787,10 +787,10 @@ export default function IndicatorEditorModal({
               // Add base columns for each dataset
               for (const col of BASE_COLUMNS) {
                 dsColumns.push({
-                  datasetSymbol: ds.symbol,
-                  datasetName: ds.name || ds.symbol,
+                  datasetSymbol: ds.code,
+                  datasetName: ds.name || ds.code,
                   column: col,
-                  displayName: `${ds.symbol}@${col}`,
+                  displayName: `${ds.code}@${col}`,
                 });
               }
             }
