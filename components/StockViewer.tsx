@@ -710,7 +710,7 @@ export default function StockViewer() {
     if (!selectedDataset) return;
 
     try {
-      const res = await fetch(`/api/dataset/${encodeURIComponent(selectedDataset)}`);
+      const res = await fetch(`/api/dataset/${encodeURIComponent(selectedDataset)}?period=${selectedPeriod}`);
       const updatedData = await res.json();
 
       if (!updatedData.error) {
