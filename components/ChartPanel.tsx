@@ -128,6 +128,18 @@ export default function ChartPanel({
   const [modalOpen, setModalOpen] = useState<boolean>(false);
   const [activeChart, setActiveChart] = useState<1 | 2>(1);
 
+  // Crosshair lock state - when locked, crosshair stays at the locked position
+  // Use ref so callbacks can access current value without stale closure
+  const crosshairLockedRef = useRef(false);
+  const [crosshairLocked, setCrosshairLocked] = useState(false);
+
+  // Toggle crosshair lock on click
+  const toggleCrosshairLock = () => {
+    const newLocked = !crosshairLockedRef.current;
+    crosshairLockedRef.current = newLocked;
+    setCrosshairLocked(newLocked);
+  };
+
   // Use props if provided, otherwise use internal state
   const constantLines1 = propConstantLines1 ?? internalConstantLines1;
   const constantLines2 = propConstantLines2 ?? internalConstantLines2;
@@ -1317,7 +1329,27 @@ export default function ChartPanel({
           ref={candlestickContainerRef}
           className="w-full h-full"
           style={{ position: 'relative', overscrollBehavior: 'contain' }}
+          onClick={() => {
+            if (!keyboardNavMode) {
+              toggleCrosshairLock();
+            }
+          }}
         />
+        {/* Overlay to block mouse events when crosshair is locked (but allow click to unlock) */}
+        {crosshairLocked && !keyboardNavMode && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 10,
+              cursor: 'pointer',
+            }}
+            onClick={toggleCrosshairLock}
+          />
+        )}
         {/* Overlay to block mouse events when keyboard nav is on */}
         {keyboardNavMode && (
           <div
@@ -1346,21 +1378,50 @@ export default function ChartPanel({
           className="w-full h-full indicator-chart-disabled"
           style={{ position: 'relative', overscrollBehavior: 'contain' }}
           onClick={(e) => {
-            // Only open modal when clicking on the Y-axis area (right price scale, ~80px from right edge)
             const container = indicator1ContainerRef.current;
             if (!container) return;
             const rect = container.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
             const priceScaleWidth = 80;
-            // Check if click is on the right price scale area
+            // Click on Y-axis area -> open constant line modal
             if (clickX >= rect.width - priceScaleWidth) {
               setActiveChart(1);
               setModalOpen(true);
+            } else if (!keyboardNavMode) {
+              // Click on chart area -> toggle crosshair lock
+              toggleCrosshairLock();
             }
-            // Otherwise, let the click pass through for crosshair locking
           }}
         />
-        {/* Overlay to block scroll/drag events when keyboard nav is on, but allow clicks on Y-axis */}
+        {/* Overlay to block mouse events when crosshair is locked */}
+        {crosshairLocked && !keyboardNavMode && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 10,
+              cursor: 'pointer',
+            }}
+            onClick={(e) => {
+              const container = indicator1ContainerRef.current;
+              if (!container) return;
+              const rect = container.getBoundingClientRect();
+              const clickX = e.clientX - rect.left;
+              const priceScaleWidth = 80;
+              // Click on Y-axis -> open modal, else unlock crosshair
+              if (clickX >= rect.width - priceScaleWidth) {
+                setActiveChart(1);
+                setModalOpen(true);
+              } else {
+                toggleCrosshairLock();
+              }
+            }}
+          />
+        )}
+        {/* Overlay to block scroll/drag events when keyboard nav is on */}
         {keyboardNavMode && (
           <div
             style={{
@@ -1398,21 +1459,50 @@ export default function ChartPanel({
           className="w-full h-full indicator-chart-disabled"
           style={{ position: 'relative', overscrollBehavior: 'contain' }}
           onClick={(e) => {
-            // Only open modal when clicking on the Y-axis area (right price scale, ~80px from right edge)
             const container = indicator2ContainerRef.current;
             if (!container) return;
             const rect = container.getBoundingClientRect();
             const clickX = e.clientX - rect.left;
             const priceScaleWidth = 80;
-            // Check if click is on the right price scale area
+            // Click on Y-axis area -> open constant line modal
             if (clickX >= rect.width - priceScaleWidth) {
               setActiveChart(2);
               setModalOpen(true);
+            } else if (!keyboardNavMode) {
+              // Click on chart area -> toggle crosshair lock
+              toggleCrosshairLock();
             }
-            // Otherwise, let the click pass through for crosshair locking
           }}
         />
-        {/* Overlay to block scroll/drag events when keyboard nav is on, but allow clicks on Y-axis */}
+        {/* Overlay to block mouse events when crosshair is locked */}
+        {crosshairLocked && !keyboardNavMode && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              zIndex: 10,
+              cursor: 'pointer',
+            }}
+            onClick={(e) => {
+              const container = indicator2ContainerRef.current;
+              if (!container) return;
+              const rect = container.getBoundingClientRect();
+              const clickX = e.clientX - rect.left;
+              const priceScaleWidth = 80;
+              // Click on Y-axis -> open modal, else unlock crosshair
+              if (clickX >= rect.width - priceScaleWidth) {
+                setActiveChart(2);
+                setModalOpen(true);
+              } else {
+                toggleCrosshairLock();
+              }
+            }}
+          />
+        )}
+        {/* Overlay to block scroll/drag events when keyboard nav is on */}
         {keyboardNavMode && (
           <div
             style={{
