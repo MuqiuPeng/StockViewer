@@ -113,7 +113,7 @@ class ImportableDataFrame:
     ) -> pd.DataFrame:
         """Import a subscribed indicator or dataset."""
         import sys
-        print(f"DEBUG [import_]: Called with name={name}, indicator={indicator}, type={type}", file=sys.stderr)
+        print(f"DEBUG [import_] VERSION_2024_01_28_A: Called with name={name}, indicator={indicator}, type={type}", file=sys.stderr)
         print(f"DEBUG [import_]: self._df length={len(self._df)}", file=sys.stderr)
 
         # Handle ID-based lookups first
