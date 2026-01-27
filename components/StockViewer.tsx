@@ -120,6 +120,11 @@ export default function StockViewer() {
   const [constantLines2, setConstantLines2] = useState<ConstantLine[]>([]);
   const [isSaveViewSettingModalOpen, setIsSaveViewSettingModalOpen] = useState(false);
 
+  // Lazy compute state for indicators
+  const [computingIndicator, setComputingIndicator] = useState<string | null>(null);
+  // Map of indicator outputColumn to indicator ID for lazy compute
+  const [indicatorIdMap, setIndicatorIdMap] = useState<Map<string, string>>(new Map());
+
   // Resizable panel state
   const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
     // Load from localStorage on initial render
@@ -451,18 +456,29 @@ export default function StockViewer() {
           // Track which indicators are groups and their periods
           const groups = new Set<string>();
           const periodMap = new Map<string, Period>();
+          const idMap = new Map<string, string>();
+
           data.indicators.forEach((ind: any) => {
             if (ind.isGroup && ind.groupName) {
               groups.add(ind.groupName);
               // For group indicators, set period for the group name
               periodMap.set(ind.groupName, (ind.period as Period) || 'daily');
+              // Map group output columns to indicator ID
+              if (ind.expectedOutputs) {
+                ind.expectedOutputs.forEach((output: string) => {
+                  idMap.set(`${ind.groupName}:${output}`, ind.id);
+                });
+              }
             } else {
               // For single indicators, set period for the output column
               periodMap.set(ind.outputColumn, (ind.period as Period) || 'daily');
+              // Map output column to indicator ID
+              idMap.set(ind.outputColumn, ind.id);
             }
           });
           setIndicatorGroups(groups);
           setIndicatorPeriodMap(periodMap);
+          setIndicatorIdMap(idMap);
         }
       })
       .catch((err) => {
@@ -668,28 +684,101 @@ export default function StockViewer() {
     }
   }, [datasetData, keyboardNavMode]);
 
-  const handleToggleIndicator1 = (indicator: string) => {
-    setEnabledIndicators1((prev) => {
-      const next = new Set(prev);
-      if (next.has(indicator)) {
+  // Check if an indicator has computed values
+  const hasIndicatorValues = (indicator: string): boolean => {
+    if (!datasetData) return false;
+
+    // Base indicators always have values
+    if (BASE_INDICATORS.includes(indicator)) return true;
+
+    // Check if indicator data exists and has non-zero values
+    const indicatorData = datasetData.indicators[indicator];
+    if (!indicatorData || indicatorData.length === 0) return false;
+
+    // Check if at least some values are non-zero (0 is used as placeholder for missing)
+    return indicatorData.some(d => d.value !== 0 && d.value !== null);
+  };
+
+  // Handle indicator toggle with lazy computation
+  const handleToggleIndicator = async (
+    indicator: string,
+    setEnabledIndicators: React.Dispatch<React.SetStateAction<Set<string>>>
+  ) => {
+    // If disabling, just toggle
+    setEnabledIndicators((prev) => {
+      if (prev.has(indicator)) {
+        const next = new Set(prev);
         next.delete(indicator);
-      } else {
-        next.add(indicator);
+        return next;
       }
+      return prev;
+    });
+
+    // If already enabled, we're done (we handled disabling above)
+    if (enabledIndicators1.has(indicator) || enabledIndicators2.has(indicator)) {
+      return;
+    }
+
+    // If enabling and indicator has no computed values, trigger lazy compute
+    if (!hasIndicatorValues(indicator)) {
+      const indicatorId = indicatorIdMap.get(indicator);
+
+      if (indicatorId && selectedDataset) {
+        // Find stock ID from datasets
+        const dataset = datasets.find(d => d.id === selectedDataset || `${d.code}_${d.dataSource}` === selectedDataset);
+        const stockId = dataset?.id;
+
+        if (stockId) {
+          // Show loading state
+          setComputingIndicator(indicator);
+
+          try {
+            // Trigger lazy compute via API
+            const res = await fetch(`/api/indicator-values?indicatorId=${indicatorId}&stockId=${stockId}&autoCompute=true`);
+            const data = await res.json();
+
+            if (!data.error) {
+              // Inline reload logic to avoid dependency on function defined later
+              // Clear cache for this dataset
+              for (const key of periodCacheRef.current.keys()) {
+                if (key.startsWith(`${selectedDataset}_`)) {
+                  periodCacheRef.current.delete(key);
+                }
+              }
+
+              // Reload dataset
+              const reloadRes = await fetch(`/api/dataset/${encodeURIComponent(selectedDataset)}?period=${selectedPeriod}`);
+              const reloadData = await reloadRes.json();
+
+              if (!reloadData.error) {
+                const cacheKey = `${selectedDataset}_${selectedPeriod}`;
+                periodCacheRef.current.set(cacheKey, reloadData);
+                setDatasetData(reloadData);
+              }
+            }
+          } catch (err) {
+            console.error('Failed to compute indicator:', err);
+          } finally {
+            setComputingIndicator(null);
+          }
+        }
+      }
+    }
+
+    // Now enable the indicator
+    setEnabledIndicators((prev) => {
+      const next = new Set(prev);
+      next.add(indicator);
       return next;
     });
   };
 
+  const handleToggleIndicator1 = (indicator: string) => {
+    handleToggleIndicator(indicator, setEnabledIndicators1);
+  };
+
   const handleToggleIndicator2 = (indicator: string) => {
-    setEnabledIndicators2((prev) => {
-      const next = new Set(prev);
-      if (next.has(indicator)) {
-        next.delete(indicator);
-      } else {
-        next.add(indicator);
-      }
-      return next;
-    });
+    handleToggleIndicator(indicator, setEnabledIndicators2);
   };
 
   // Helper function to check if an indicator column should be shown
@@ -830,7 +919,22 @@ export default function StockViewer() {
   };
 
   return (
-    <div className="stock-dashboard p-4 h-full flex flex-col overflow-hidden">
+    <div className="stock-dashboard p-4 h-full flex flex-col overflow-hidden relative">
+      {/* Computing indicator overlay */}
+      {computingIndicator && (
+        <div className="absolute inset-0 bg-black/50 z-50 flex items-center justify-center">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 shadow-xl flex flex-col items-center gap-4">
+            <div className="animate-spin rounded-full h-10 w-10 border-4 border-blue-500 border-t-transparent"></div>
+            <div className="text-lg font-medium dark:text-white">
+              Computing {computingIndicator}...
+            </div>
+            <div className="text-sm text-gray-500 dark:text-gray-400">
+              This may take a moment
+            </div>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-400 rounded">
           {error}

@@ -13,6 +13,7 @@ export interface ResourceInfo {
   id: string;
   name: string;
   isOwner: boolean;
+  creatorEmail?: string;  // For user='email' lookup
   // For indicators
   outputColumn?: string;
   isGroup?: boolean;

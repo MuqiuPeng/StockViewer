@@ -18,8 +18,11 @@ class ImportableDataFrame:
 
     Example:
         def calculate(data):
-            # Import another indicator (for the same stock)
+            # Import my own indicator
             rsi = data.import_('RSI')
+
+            # Import another user's indicator by email
+            bob_rsi = data.import_(user='bob@example.com', indicator='RSI')
 
             # Import a different dataset (e.g., index data)
             index = data.import_('000001', type='dataset')
@@ -99,15 +102,20 @@ class ImportableDataFrame:
 
     def import_(
         self,
-        name: str,
+        name: Optional[str] = None,
+        *,
+        user: Optional[str] = None,
+        indicator: Optional[str] = None,
         type: Optional[str] = None,
         columns: Optional[List[str]] = None
     ) -> pd.DataFrame:
         """
-        Import a subscribed indicator or dataset by name.
+        Import a subscribed indicator or dataset.
 
         Args:
-            name: Name of the indicator or dataset to import
+            name: Name of the indicator or dataset to import (positional, for backward compat)
+            user: Email of the user whose indicator to import (keyword-only)
+            indicator: Name of the indicator to import (keyword-only, alternative to positional name)
             type: Optional type hint ('indicator' or 'dataset').
                   If not specified, indicators are checked first, then datasets.
             columns: Optional list of columns to return (for datasets).
@@ -123,9 +131,12 @@ class ImportableDataFrame:
             ValueError: If resource data is not preloaded
 
         Example:
-            # Import indicator (for same stock being calculated)
+            # Import my own indicator
             rsi = data.import_('RSI')
             print(rsi['value'])  # Access the indicator values
+
+            # Import another user's indicator by email
+            bob_rsi = data.import_(user='bob@example.com', indicator='RSI')
 
             # Import another dataset
             index = data.import_('000001', type='dataset')
@@ -134,8 +145,13 @@ class ImportableDataFrame:
             # Import specific columns only
             spy = data.import_('SPY', type='dataset', columns=['close', 'volume'])
         """
+        # Resolve the indicator/resource name
+        resource_name = indicator or name
+        if not resource_name:
+            raise ValueError("Must provide either 'name' (positional) or 'indicator' (keyword) argument")
+
         # Check cache first
-        cache_key = f"{type or 'auto'}:{name}"
+        cache_key = f"{type or 'auto'}:{user or ''}:{resource_name}"
         if cache_key in self._import_cache:
             result = self._import_cache[cache_key]
             if columns:
@@ -144,23 +160,30 @@ class ImportableDataFrame:
             return result
 
         # Resolve name to resource
-        resource = self._resolve_resource(name, type)
+        resource = self._resolve_resource(resource_name, type, user)
 
         if resource is None:
+            if user:
+                raise KeyError(
+                    f"Indicator '{resource_name}' from user '{user}' not found in your accessible resources.\n"
+                    f"Make sure you have subscribed to this indicator."
+                )
             available_ind = list(self._manifest.get('indicators', {}).keys())
             available_ds = list(self._manifest.get('datasets', {}).keys())
             raise KeyError(
-                f"Resource '{name}' not found in your accessible resources.\n"
+                f"Resource '{resource_name}' not found in your accessible resources.\n"
                 f"Available indicators: {available_ind[:10]}{'...' if len(available_ind) > 10 else ''}\n"
                 f"Available datasets: {available_ds[:10]}{'...' if len(available_ds) > 10 else ''}"
             )
 
         # Load based on resource type
         resource_type = resource.get('type', 'indicator')
+        # Use the key from resource if available (for user-specific lookups)
+        lookup_key = resource.get('_key') or resource_name
         if resource_type == 'indicator':
-            result = self._load_indicator(name, resource)
+            result = self._load_indicator(lookup_key, resource)
         else:
-            result = self._load_dataset(name, resource)
+            result = self._load_dataset(lookup_key, resource)
 
         # Cache the result
         self._import_cache[cache_key] = result
@@ -174,20 +197,34 @@ class ImportableDataFrame:
     def _resolve_resource(
         self,
         name: str,
-        type_hint: Optional[str] = None
+        type_hint: Optional[str] = None,
+        user_email: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """
-        Resolve a name to a resource, using type hint if provided.
+        Resolve a name to a resource, using type hint and user email if provided.
 
         Args:
             name: Resource name to resolve
             type_hint: Optional type hint ('indicator' or 'dataset')
+            user_email: Optional user email to find specific user's indicator
 
         Returns:
             Resource info dict with 'type' key, or None if not found
         """
         indicators = self._manifest.get('indicators', {})
         datasets = self._manifest.get('datasets', {})
+
+        if user_email:
+            # Look for indicator by user email + name
+            # Manifest keys for user-specific indicators are "{email}:{name}"
+            user_key = f"{user_email}:{name}"
+            if user_key in indicators:
+                return {**indicators[user_key], 'type': 'indicator'}
+            # Also check if any indicator matches by creatorEmail field
+            for key, info in indicators.items():
+                if info.get('creatorEmail') == user_email and info.get('name') == name:
+                    return {**info, 'type': 'indicator', '_key': key}
+            return None
 
         if type_hint == 'indicator':
             if name in indicators:

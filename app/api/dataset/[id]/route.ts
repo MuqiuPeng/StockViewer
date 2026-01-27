@@ -437,6 +437,21 @@ export async function GET(
       });
     }
 
+    // Build list of ALL user indicators (computed or not) for the selector
+    // This includes both name-based (single) and group-based indicators
+    const allIndicatorNames: string[] = [];
+    for (const ind of allIndicators) {
+      if (ind.isGroup && ind.expectedOutputs && ind.expectedOutputs.length > 0) {
+        // Group indicator - add each output column
+        for (const output of ind.expectedOutputs) {
+          allIndicatorNames.push(`${ind.groupName}:${output}`);
+        }
+      } else {
+        // Single indicator
+        allIndicatorNames.push(ind.outputColumn);
+      }
+    }
+
     // Add volume and other price-derived indicators
     const volumeData: IndicatorData[] = prices.map(p => ({
       time: p.date.toISOString().split('T')[0],
@@ -486,7 +501,9 @@ export async function GET(
 
     // Build response
     const baseColumns = ['date', 'open', 'high', 'low', 'close'];
-    const allColumns = [...baseColumns, ...indicatorColumns];
+    // Combine computed indicators with all available indicators for columns
+    const allIndicatorColumnsSet = new Set([...indicatorColumns, ...allIndicatorNames]);
+    const allColumns = [...baseColumns, ...allIndicatorColumnsSet];
 
     const result: DatasetData = {
       meta: {
@@ -494,7 +511,9 @@ export async function GET(
         code: stock.symbol,
         filename: `${stock.symbol}_${stock.dataSource}`,
         columns: allColumns,
-        indicators: indicatorColumns,
+        // Return ALL indicators (computed and not computed) for the selector
+        // The frontend will show all of them and trigger lazy compute on toggle
+        indicators: [...new Set([...indicatorColumns, ...allIndicatorNames])],
         rowCount: aggregatedCandles.length,
         dataSource: stock.dataSource,
         firstDate: stock.firstDate?.toISOString().split('T')[0],

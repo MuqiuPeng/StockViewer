@@ -64,3 +64,32 @@ body {
   animation: slide-in 0.3s ease-out;
 }
 
+/* Import placeholder decorations for Monaco editor */
+.import-placeholder-indicator {
+  background-color: rgba(139, 92, 246, 0.3);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.import-placeholder-indicator-selected {
+  background-color: rgba(139, 92, 246, 0.5);
+  border-radius: 4px;
+  cursor: pointer;
+  outline: 2px solid rgba(139, 92, 246, 0.8);
+  outline-offset: 1px;
+}
+
+.import-placeholder-dataset {
+  background-color: rgba(34, 197, 94, 0.3);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.import-placeholder-dataset-selected {
+  background-color: rgba(34, 197, 94, 0.5);
+  border-radius: 4px;
+  cursor: pointer;
+  outline: 2px solid rgba(34, 197, 94, 0.8);
+  outline-offset: 1px;
+}
+

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
 import { useTheme } from './ThemeProvider';
 
@@ -26,6 +26,110 @@ interface IndicatorEditorModalProps {
   indicator?: Indicator | null;
   readOnly?: boolean;
 }
+
+// Import panel interfaces
+interface ImportableIndicator {
+  id: string;
+  name: string;
+  ownerEmail: string;
+  description: string;
+  isOwner: boolean;
+  outputColumn: string;
+}
+
+interface ImportableDataset {
+  id: string;
+  symbol: string;
+  name: string;
+  dataSource: string;
+}
+
+interface PlaceholderInfo {
+  type: 'indicator' | 'dataset';
+  // For indicators
+  userEmail?: string;
+  indicatorName?: string;
+  // For datasets
+  symbol?: string;
+  // Position in editor
+  startOffset: number;
+  endOffset: number;
+  lineNumber: number;
+  column: number;
+  length: number;
+}
+
+// Transform placeholders to actual Python import code (before save)
+const transformPlaceholdersToCode = (code: string): string => {
+  return code
+    // Transform indicator placeholders
+    // {{IND:bob@example.com:RSI}} -> data.import_(user='bob@example.com', indicator='RSI')
+    .replace(/\{\{IND:([^:]+):([^}]+)\}\}/g,
+      (_, email, name) => `data.import_(user='${email}', indicator='${name}')`)
+    // Transform dataset placeholders
+    // {{DS:000001}} -> data.import_('000001', type='dataset')
+    .replace(/\{\{DS:([^}]+)\}\}/g,
+      (_, symbol) => `data.import_('${symbol}', type='dataset')`);
+};
+
+// Transform Python import code to placeholders (when loading for editing)
+const transformCodeToPlaceholders = (code: string): string => {
+  return code
+    // Transform indicator imports to placeholders (user='...', indicator='...')
+    .replace(/data\.import_\(\s*user\s*=\s*['"]([^'"]+)['"]\s*,\s*indicator\s*=\s*['"]([^'"]+)['"]\s*\)/g,
+      (_, email, name) => `{{IND:${email}:${name}}}`)
+    // Also handle alternative parameter order (indicator='...', user='...')
+    .replace(/data\.import_\(\s*indicator\s*=\s*['"]([^'"]+)['"]\s*,\s*user\s*=\s*['"]([^'"]+)['"]\s*\)/g,
+      (_, name, email) => `{{IND:${email}:${name}}}`)
+    // Transform dataset imports to placeholders
+    .replace(/data\.import_\(\s*['"]([^'"]+)['"]\s*,\s*type\s*=\s*['"]dataset['"]\s*\)/g,
+      (_, symbol) => `{{DS:${symbol}}}`);
+};
+
+// Find all placeholders in code
+const findPlaceholders = (code: string): PlaceholderInfo[] => {
+  const placeholders: PlaceholderInfo[] = [];
+  const lines = code.split('\n');
+  let offset = 0;
+
+  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+    const line = lines[lineIdx];
+
+    // Find indicator placeholders
+    const indRegex = /\{\{IND:([^:]+):([^}]+)\}\}/g;
+    let match;
+    while ((match = indRegex.exec(line)) !== null) {
+      placeholders.push({
+        type: 'indicator',
+        userEmail: match[1],
+        indicatorName: match[2],
+        startOffset: offset + match.index,
+        endOffset: offset + match.index + match[0].length,
+        lineNumber: lineIdx + 1,
+        column: match.index + 1,
+        length: match[0].length,
+      });
+    }
+
+    // Find dataset placeholders
+    const dsRegex = /\{\{DS:([^}]+)\}\}/g;
+    while ((match = dsRegex.exec(line)) !== null) {
+      placeholders.push({
+        type: 'dataset',
+        symbol: match[1],
+        startOffset: offset + match.index,
+        endOffset: offset + match.index + match[0].length,
+        lineNumber: lineIdx + 1,
+        column: match.index + 1,
+        length: match[0].length,
+      });
+    }
+
+    offset += line.length + 1; // +1 for newline
+  }
+
+  return placeholders;
+};
 
 const CODE_TEMPLATE = `def calculate(data):
     """
@@ -115,6 +219,229 @@ export default function IndicatorEditorModal({
     pendingSubmit: any; // Store the pending request body
   } | null>(null);
 
+  // Import panel state
+  const [isImportPanelOpen, setIsImportPanelOpen] = useState(false);
+  const [importPanelTab, setImportPanelTab] = useState<'indicator' | 'dataset'>('indicator');
+  const [importSearchQuery, setImportSearchQuery] = useState('');
+  const [availableIndicators, setAvailableIndicators] = useState<ImportableIndicator[]>([]);
+  const [availableDatasets, setAvailableDatasets] = useState<ImportableDataset[]>([]);
+  const [loadingImportData, setLoadingImportData] = useState(false);
+  const [selectedPlaceholder, setSelectedPlaceholder] = useState<PlaceholderInfo | null>(null);
+  const [placeholderDecorations, setPlaceholderDecorations] = useState<string[]>([]);
+
+  // Update placeholder decorations in Monaco editor
+  const updatePlaceholderDecorations = useCallback(() => {
+    if (!editorInstance || !monacoInstance) return;
+
+    const model = editorInstance.getModel();
+    if (!model) return;
+
+    const placeholders = findPlaceholders(pythonCode);
+    const decorations: any[] = [];
+
+    for (const placeholder of placeholders) {
+      const startPos = model.getPositionAt(placeholder.startOffset);
+      const endPos = model.getPositionAt(placeholder.endOffset);
+
+      decorations.push({
+        range: new monacoInstance.Range(
+          startPos.lineNumber, startPos.column,
+          endPos.lineNumber, endPos.column
+        ),
+        options: {
+          inlineClassName: placeholder.type === 'indicator'
+            ? 'import-placeholder-indicator'
+            : 'import-placeholder-dataset',
+          hoverMessage: {
+            value: placeholder.type === 'indicator'
+              ? `**Indicator**: ${placeholder.indicatorName}\n**From**: ${placeholder.userEmail}`
+              : `**Dataset**: ${placeholder.symbol}`
+          },
+          stickiness: monacoInstance.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges
+        }
+      });
+    }
+
+    const newDecorations = editorInstance.deltaDecorations(placeholderDecorations, decorations);
+    setPlaceholderDecorations(newDecorations);
+  }, [editorInstance, monacoInstance, pythonCode, placeholderDecorations]);
+
+  // Handle click on placeholder
+  const handleEditorClick = useCallback((e: any) => {
+    if (!editorInstance || !monacoInstance) return;
+
+    const position = e.target?.position;
+    if (!position) return;
+
+    const model = editorInstance.getModel();
+    if (!model) return;
+
+    const offset = model.getOffsetAt(position);
+    const placeholders = findPlaceholders(pythonCode);
+
+    // Find if click was on a placeholder
+    const clickedPlaceholder = placeholders.find(
+      p => offset >= p.startOffset && offset < p.endOffset
+    );
+
+    if (clickedPlaceholder) {
+      setSelectedPlaceholder(clickedPlaceholder);
+      // Select the entire placeholder in editor
+      const startPos = model.getPositionAt(clickedPlaceholder.startOffset);
+      const endPos = model.getPositionAt(clickedPlaceholder.endOffset);
+      editorInstance.setSelection(new monacoInstance.Range(
+        startPos.lineNumber, startPos.column,
+        endPos.lineNumber, endPos.column
+      ));
+      // Switch panel tab to match placeholder type
+      setImportPanelTab(clickedPlaceholder.type);
+      // Open panel if not already open
+      if (!isImportPanelOpen) {
+        setIsImportPanelOpen(true);
+      }
+    } else {
+      setSelectedPlaceholder(null);
+    }
+  }, [editorInstance, monacoInstance, pythonCode, isImportPanelOpen]);
+
+  // Insert placeholder at cursor
+  const insertPlaceholderAtCursor = useCallback((placeholder: string) => {
+    if (!editorInstance) return;
+
+    const selection = editorInstance.getSelection();
+    if (!selection) return;
+
+    editorInstance.executeEdits('insert-placeholder', [{
+      range: selection,
+      text: placeholder,
+      forceMoveMarkers: true
+    }]);
+    editorInstance.focus();
+
+    // Update decorations after a short delay
+    setTimeout(() => updatePlaceholderDecorations(), 100);
+  }, [editorInstance, updatePlaceholderDecorations]);
+
+  // Replace selected placeholder
+  const replaceSelectedPlaceholder = useCallback((newItem: ImportableIndicator | ImportableDataset) => {
+    if (!selectedPlaceholder || !editorInstance || !monacoInstance) return;
+
+    const model = editorInstance.getModel();
+    if (!model) return;
+
+    // Build new placeholder based on type
+    let newPlaceholder: string;
+    if (selectedPlaceholder.type === 'indicator' && 'ownerEmail' in newItem) {
+      newPlaceholder = `{{IND:${(newItem as ImportableIndicator).ownerEmail}:${(newItem as ImportableIndicator).name}}}`;
+    } else if (selectedPlaceholder.type === 'dataset' && 'symbol' in newItem) {
+      newPlaceholder = `{{DS:${(newItem as ImportableDataset).symbol}}}`;
+    } else {
+      alert('Cannot replace: type mismatch');
+      return;
+    }
+
+    // Replace at placeholder position
+    const startPos = model.getPositionAt(selectedPlaceholder.startOffset);
+    const endPos = model.getPositionAt(selectedPlaceholder.endOffset);
+
+    editorInstance.executeEdits('replace-placeholder', [{
+      range: new monacoInstance.Range(
+        startPos.lineNumber, startPos.column,
+        endPos.lineNumber, endPos.column
+      ),
+      text: newPlaceholder,
+      forceMoveMarkers: true
+    }]);
+
+    setSelectedPlaceholder(null);
+    setTimeout(() => updatePlaceholderDecorations(), 100);
+  }, [selectedPlaceholder, editorInstance, monacoInstance, updatePlaceholderDecorations]);
+
+  // Update decorations when code changes
+  useEffect(() => {
+    if (editorInstance && monacoInstance) {
+      updatePlaceholderDecorations();
+    }
+  }, [pythonCode, editorInstance, monacoInstance]);
+
+  // Set up click listener for placeholder selection
+  useEffect(() => {
+    if (!editorInstance || !monacoInstance) return;
+
+    const disposable = editorInstance.onMouseDown((e: any) => {
+      if (e.target?.type === monacoInstance.editor.MouseTargetType.CONTENT_TEXT) {
+        const position = e.target.position;
+        if (!position) return;
+
+        const model = editorInstance.getModel();
+        if (!model) return;
+
+        const code = model.getValue();
+        const offset = model.getOffsetAt(position);
+        const placeholders = findPlaceholders(code);
+
+        // Find if click was on a placeholder
+        const clickedPlaceholder = placeholders.find(
+          p => offset >= p.startOffset && offset < p.endOffset
+        );
+
+        if (clickedPlaceholder) {
+          setSelectedPlaceholder(clickedPlaceholder);
+          // Select the entire placeholder in editor
+          const startPos = model.getPositionAt(clickedPlaceholder.startOffset);
+          const endPos = model.getPositionAt(clickedPlaceholder.endOffset);
+          editorInstance.setSelection(new monacoInstance.Range(
+            startPos.lineNumber, startPos.column,
+            endPos.lineNumber, endPos.column
+          ));
+          // Switch panel tab to match placeholder type
+          setImportPanelTab(clickedPlaceholder.type);
+          // Open panel if not already open
+          setIsImportPanelOpen(true);
+        } else {
+          setSelectedPlaceholder(null);
+        }
+      }
+    });
+
+    return () => disposable.dispose();
+  }, [editorInstance, monacoInstance]);
+
+  // Fetch available indicators and datasets when panel opens
+  useEffect(() => {
+    if (isImportPanelOpen && availableIndicators.length === 0 && availableDatasets.length === 0) {
+      setLoadingImportData(true);
+
+      Promise.all([
+        fetch('/api/indicators').then(res => res.json()),
+        fetch('/api/datasets').then(res => res.json())
+      ]).then(([indicatorsData, datasetsData]) => {
+        if (indicatorsData.indicators) {
+          setAvailableIndicators(indicatorsData.indicators.map((ind: any) => ({
+            id: ind.id,
+            name: ind.name,
+            ownerEmail: ind.creatorEmail || 'me',
+            description: ind.description || '',
+            isOwner: ind.isOwner,
+            outputColumn: ind.outputColumn,
+          })));
+        }
+        if (datasetsData.datasets) {
+          setAvailableDatasets(datasetsData.datasets.map((ds: any) => ({
+            id: ds.id,
+            symbol: ds.symbol || ds.code,
+            name: ds.name,
+            dataSource: ds.dataSource,
+          })));
+        }
+      }).catch(err => {
+        console.error('Failed to load import data:', err);
+      }).finally(() => {
+        setLoadingImportData(false);
+      });
+    }
+  }, [isImportPanelOpen, availableIndicators.length, availableDatasets.length]);
+
   // Load groups on mount (includes both custom and data source groups)
   useEffect(() => {
     if (isOpen) {
@@ -137,7 +464,8 @@ export default function IndicatorEditorModal({
       setOutputColumn(indicator.outputColumn);
       setGroupName(indicator.groupName || '');
       setExpectedOutputs(indicator.expectedOutputs || ['']);
-      setPythonCode(indicator.pythonCode);
+      // Transform import statements to placeholders for visual editing
+      setPythonCode(transformCodeToPlaceholders(indicator.pythonCode));
       setExternalDatasets(indicator.externalDatasets || {});
       setPeriod(indicator.period || 'daily');
     } else {
@@ -265,10 +593,13 @@ export default function IndicatorEditorModal({
         : '/api/indicators';
       const method = indicator ? 'PUT' : 'POST';
 
+      // Transform placeholders to actual Python import code before saving
+      const codeToSave = transformPlaceholdersToCode(pythonCode);
+
       const requestBody: any = {
         name,
         description,
-        pythonCode,
+        pythonCode: codeToSave,
         period,
       };
 
@@ -1054,78 +1385,304 @@ export default function IndicatorEditorModal({
             </div>
 
             {activeTab === 'text' ? (
-              <div className="relative">
-                <div className="border border-gray-300 dark:border-gray-600 rounded overflow-hidden">
-                  <Editor
-                    height="600px"
-                    defaultLanguage="python"
-                    value={pythonCode}
-                    onChange={(value) => setPythonCode(value || '')}
-                    onMount={(editor, monaco) => {
-                      setEditorInstance(editor);
-                      setMonacoInstance(monaco);
-                    }}
-                    theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
-                    options={{
-                      minimap: { enabled: true },
-                      fontSize: 13,
-                      lineNumbers: 'on',
-                      scrollBeyondLastLine: false,
-                      automaticLayout: true,
-                      tabSize: 4,
-                      insertSpaces: true,
-                      wordWrap: 'off',
-                      readOnly: isLoading || readOnly,
-                      formatOnPaste: true,
-                      formatOnType: true,
-                      suggestOnTriggerCharacters: true,
-                      quickSuggestions: true,
-                      parameterHints: { enabled: true },
-                      folding: true,
-                      bracketPairColorization: { enabled: true },
-                      guides: {
-                        indentation: true,
-                        bracketPairs: true
-                      }
-                    }}
-                    loading={<div className="p-4 text-gray-500">Loading editor...</div>}
-                  />
-                </div>
-                <div className="mt-2">
+              <>
+              <div className="flex gap-2">
+                {/* Editor Section */}
+                <div className={`relative ${isImportPanelOpen ? 'flex-1' : 'w-full'}`}>
+                  <div className="border border-gray-300 dark:border-gray-600 rounded overflow-hidden">
+                    <Editor
+                      height="600px"
+                      defaultLanguage="python"
+                      value={pythonCode}
+                      onChange={(value) => setPythonCode(value || '')}
+                      onMount={(editor, monaco) => {
+                        setEditorInstance(editor);
+                        setMonacoInstance(monaco);
+                      }}
+                      theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
+                      options={{
+                        minimap: { enabled: !isImportPanelOpen },
+                        fontSize: 13,
+                        lineNumbers: 'on',
+                        scrollBeyondLastLine: false,
+                        automaticLayout: true,
+                        tabSize: 4,
+                        insertSpaces: true,
+                        wordWrap: 'off',
+                        readOnly: isLoading || readOnly,
+                        formatOnPaste: true,
+                        formatOnType: true,
+                        suggestOnTriggerCharacters: true,
+                        quickSuggestions: true,
+                        parameterHints: { enabled: true },
+                        folding: true,
+                        bracketPairColorization: { enabled: true },
+                        guides: {
+                          indentation: true,
+                          bracketPairs: true
+                        }
+                      }}
+                      loading={<div className="p-4 text-gray-500">Loading editor...</div>}
+                    />
+                  </div>
+
+                  {/* Toggle import panel button */}
                   <button
                     type="button"
-                    onClick={() => setShowSyntaxHelp(!showSyntaxHelp)}
-                    className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline"
+                    onClick={() => setIsImportPanelOpen(!isImportPanelOpen)}
+                    className="absolute right-2 top-2 px-2 py-1 bg-purple-600 text-white rounded text-xs hover:bg-purple-700 z-10"
                   >
-                    {showSyntaxHelp ? '▼ Hide' : '▶ Show'} Python Syntax Help
+                    {isImportPanelOpen ? 'Close Import' : 'Import DS/Ind'}
                   </button>
+                </div>
 
-                  {showSyntaxHelp && (
-                    <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded text-xs space-y-2 dark:text-blue-200">
-                      <div>
-                        <strong>Available in namespace:</strong>
-                        <code className="block mt-1 bg-white dark:bg-gray-800 p-1 rounded dark:text-gray-200">pd (pandas), np (numpy), data (DataFrame), MyTT (library)</code>
+                {/* Import Panel */}
+                {isImportPanelOpen && (
+                  <div className="w-72 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 flex flex-col" style={{ height: '600px' }}>
+                    {/* Panel Header */}
+                    <div className="p-2 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-semibold dark:text-white">Import</span>
+                        <button
+                          type="button"
+                          onClick={() => setIsImportPanelOpen(false)}
+                          className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                        >
+                          ✕
+                        </button>
                       </div>
-                      <div>
-                        <strong>Data columns:</strong>
-                        <code className="block mt-1 bg-white dark:bg-gray-800 p-1 rounded dark:text-gray-200">date, open, high, low, close, volume, turnover, amplitude, change_pct, etc.</code>
-                      </div>
-                      <div>
-                        <strong>Single indicator return:</strong>
-                        <code className="block mt-1 bg-white dark:bg-gray-800 p-1 rounded dark:text-gray-200">return data['close'].rolling(20).mean()</code>
-                      </div>
-                      <div>
-                        <strong>Group indicator return:</strong>
-                        <code className="block mt-1 bg-white dark:bg-gray-800 p-1 rounded dark:text-gray-200">return {'{'}  'DIF': dif_values, 'DEA': dea_values {'}'}</code>
-                      </div>
-                      <div>
-                        <strong>Common functions:</strong>
-                        <code className="block mt-1 bg-white dark:bg-gray-800 p-1 rounded dark:text-gray-200">rolling(), shift(), diff(), mean(), std(), min(), max()</code>
+
+                      {/* Tabs */}
+                      <div className="flex border-b border-gray-200 dark:border-gray-700">
+                        <button
+                          type="button"
+                          onClick={() => setImportPanelTab('indicator')}
+                          className={`flex-1 px-2 py-1 text-xs font-medium ${
+                            importPanelTab === 'indicator'
+                              ? 'border-b-2 border-purple-600 text-purple-600'
+                              : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                          }`}
+                        >
+                          Indicator
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setImportPanelTab('dataset')}
+                          className={`flex-1 px-2 py-1 text-xs font-medium ${
+                            importPanelTab === 'dataset'
+                              ? 'border-b-2 border-green-600 text-green-600'
+                              : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                          }`}
+                        >
+                          Dataset
+                        </button>
                       </div>
                     </div>
-                  )}
-                </div>
+
+                    {/* Search */}
+                    <div className="p-2 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+                      <input
+                        type="text"
+                        placeholder={`Search ${importPanelTab}s...`}
+                        value={importSearchQuery}
+                        onChange={(e) => setImportSearchQuery(e.target.value)}
+                        className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
+                      />
+                    </div>
+
+                    {/* Selected Placeholder Info */}
+                    {selectedPlaceholder && (
+                      <div className="p-2 border-b border-gray-200 dark:border-gray-700 bg-blue-50 dark:bg-blue-900/30 flex-shrink-0">
+                        <div className="text-xs text-blue-700 dark:text-blue-300 mb-1">
+                          Selected: {selectedPlaceholder.type === 'indicator'
+                            ? `${selectedPlaceholder.indicatorName} (${selectedPlaceholder.userEmail})`
+                            : `DS: ${selectedPlaceholder.symbol}`
+                          }
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          Click an item below to replace
+                        </div>
+                      </div>
+                    )}
+
+                    {/* List */}
+                    <div className="flex-1 overflow-y-auto p-2">
+                      {loadingImportData ? (
+                        <div className="text-center text-gray-500 dark:text-gray-400 py-4">
+                          Loading...
+                        </div>
+                      ) : importPanelTab === 'indicator' ? (
+                        <>
+                          {/* My Indicators */}
+                          <div className="mb-3">
+                            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">
+                              My Indicators
+                            </div>
+                            {availableIndicators
+                              .filter(ind => ind.isOwner)
+                              .filter(ind => !importSearchQuery ||
+                                ind.name.toLowerCase().includes(importSearchQuery.toLowerCase()))
+                              .map(ind => (
+                                <div
+                                  key={ind.id}
+                                  className="flex items-center justify-between p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-sm"
+                                >
+                                  <div className="flex-1 truncate dark:text-white">{ind.name}</div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (selectedPlaceholder && selectedPlaceholder.type === 'indicator') {
+                                        replaceSelectedPlaceholder(ind);
+                                      } else {
+                                        insertPlaceholderAtCursor(`{{IND:${ind.ownerEmail}:${ind.name}}}`);
+                                      }
+                                    }}
+                                    className={`px-2 py-0.5 text-xs rounded ${
+                                      selectedPlaceholder && selectedPlaceholder.type === 'indicator'
+                                        ? 'bg-orange-500 hover:bg-orange-600 text-white'
+                                        : 'bg-purple-500 hover:bg-purple-600 text-white'
+                                    }`}
+                                  >
+                                    {selectedPlaceholder && selectedPlaceholder.type === 'indicator' ? 'Replace' : 'Import'}
+                                  </button>
+                                </div>
+                              ))}
+                          </div>
+
+                          {/* Subscribed Indicators */}
+                          <div>
+                            <div className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-1">
+                              Subscribed
+                            </div>
+                            {availableIndicators
+                              .filter(ind => !ind.isOwner)
+                              .filter(ind => !importSearchQuery ||
+                                ind.name.toLowerCase().includes(importSearchQuery.toLowerCase()) ||
+                                ind.ownerEmail.toLowerCase().includes(importSearchQuery.toLowerCase()))
+                              .map(ind => (
+                                <div
+                                  key={ind.id}
+                                  className="flex items-center justify-between p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-sm"
+                                >
+                                  <div className="flex-1 truncate">
+                                    <div className="dark:text-white">{ind.name}</div>
+                                    <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{ind.ownerEmail}</div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (selectedPlaceholder && selectedPlaceholder.type === 'indicator') {
+                                        replaceSelectedPlaceholder(ind);
+                                      } else {
+                                        insertPlaceholderAtCursor(`{{IND:${ind.ownerEmail}:${ind.name}}}`);
+                                      }
+                                    }}
+                                    className={`px-2 py-0.5 text-xs rounded ${
+                                      selectedPlaceholder && selectedPlaceholder.type === 'indicator'
+                                        ? 'bg-orange-500 hover:bg-orange-600 text-white'
+                                        : 'bg-purple-500 hover:bg-purple-600 text-white'
+                                    }`}
+                                  >
+                                    {selectedPlaceholder && selectedPlaceholder.type === 'indicator' ? 'Replace' : 'Import'}
+                                  </button>
+                                </div>
+                              ))}
+                            {availableIndicators.filter(ind => !ind.isOwner).length === 0 && (
+                              <div className="text-xs text-gray-400 dark:text-gray-500 text-center py-2">
+                                No subscribed indicators
+                              </div>
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          {/* Datasets */}
+                          {availableDatasets
+                            .filter(ds => !importSearchQuery ||
+                              ds.symbol.toLowerCase().includes(importSearchQuery.toLowerCase()) ||
+                              ds.name.toLowerCase().includes(importSearchQuery.toLowerCase()))
+                            .map(ds => (
+                              <div
+                                key={ds.id}
+                                className="flex items-center justify-between p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-sm"
+                              >
+                                <div className="flex-1 truncate">
+                                  <div className="dark:text-white">{ds.symbol}</div>
+                                  <div className="text-xs text-gray-500 dark:text-gray-400 truncate">{ds.name}</div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (selectedPlaceholder && selectedPlaceholder.type === 'dataset') {
+                                      replaceSelectedPlaceholder(ds);
+                                    } else {
+                                      insertPlaceholderAtCursor(`{{DS:${ds.symbol}}}`);
+                                    }
+                                  }}
+                                  className={`px-2 py-0.5 text-xs rounded ${
+                                    selectedPlaceholder && selectedPlaceholder.type === 'dataset'
+                                      ? 'bg-orange-500 hover:bg-orange-600 text-white'
+                                      : 'bg-green-500 hover:bg-green-600 text-white'
+                                  }`}
+                                >
+                                  {selectedPlaceholder && selectedPlaceholder.type === 'dataset' ? 'Replace' : 'Import'}
+                                </button>
+                              </div>
+                            ))}
+                          {availableDatasets.length === 0 && (
+                            <div className="text-xs text-gray-400 dark:text-gray-500 text-center py-2">
+                              No datasets available
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
+
+              {/* Syntax Help - below the editor and import panel */}
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowSyntaxHelp(!showSyntaxHelp)}
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline"
+                >
+                  {showSyntaxHelp ? '▼ Hide' : '▶ Show'} Python Syntax Help
+                </button>
+
+                {showSyntaxHelp && (
+                  <div className="mt-2 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded text-xs space-y-2 dark:text-blue-200">
+                    <div>
+                      <strong>Available in namespace:</strong>
+                      <code className="block mt-1 bg-white dark:bg-gray-800 p-1 rounded dark:text-gray-200">pd (pandas), np (numpy), data (DataFrame), MyTT (library)</code>
+                    </div>
+                    <div>
+                      <strong>Data columns:</strong>
+                      <code className="block mt-1 bg-white dark:bg-gray-800 p-1 rounded dark:text-gray-200">date, open, high, low, close, volume, turnover, amplitude, change_pct, etc.</code>
+                    </div>
+                    <div>
+                      <strong>Single indicator return:</strong>
+                      <code className="block mt-1 bg-white dark:bg-gray-800 p-1 rounded dark:text-gray-200">return data['close'].rolling(20).mean()</code>
+                    </div>
+                    <div>
+                      <strong>Group indicator return:</strong>
+                      <code className="block mt-1 bg-white dark:bg-gray-800 p-1 rounded dark:text-gray-200">return {'{'}  'DIF': dif_values, 'DEA': dea_values {'}'}</code>
+                    </div>
+                    <div>
+                      <strong>Common functions:</strong>
+                      <code className="block mt-1 bg-white dark:bg-gray-800 p-1 rounded dark:text-gray-200">rolling(), shift(), diff(), mean(), std(), min(), max()</code>
+                    </div>
+                    <div>
+                      <strong>Import syntax:</strong>
+                      <code className="block mt-1 bg-white dark:bg-gray-800 p-1 rounded dark:text-gray-200">
+                        {'{{IND:email:name}}'} - Import indicator | {'{{DS:symbol}}'} - Import dataset
+                      </code>
+                    </div>
+                  </div>
+                )}
+              </div>
+              </>
             ) : (
               <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded p-4 text-center">
                 <input

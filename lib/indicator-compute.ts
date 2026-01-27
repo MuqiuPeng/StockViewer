@@ -621,40 +621,87 @@ async function saveIndicatorValues(
  * Detect data.import_() calls in Python code
  * Returns the names of resources to preload
  */
+interface DetectedImport {
+  name: string;
+  user?: string;  // User email if specified
+}
+
 interface DetectedImports {
-  indicators: string[];
-  datasets: string[];
+  indicators: DetectedImport[];
+  datasets: DetectedImport[];
 }
 
 function detectImportCalls(pythonCode: string): DetectedImports {
-  const indicators: string[] = [];
-  const datasets: string[] = [];
+  const indicators: DetectedImport[] = [];
+  const datasets: DetectedImport[] = [];
+  const seenIndicators = new Set<string>();
+  const seenDatasets = new Set<string>();
 
-  // Match data.import_('name') or data.import_('name', type='...')
-  // Also match data.import_("name") with double quotes
-  const importPattern = /data\.import_\s*\(\s*['"]([^'"]+)['"]\s*(?:,\s*type\s*=\s*['"](\w+)['"])?\s*\)/g;
+  // Pattern 1: data.import_('name') or data.import_('name', type='...')
+  // For backward compatibility with simple import calls
+  const simplePattern = /data\.import_\s*\(\s*['"]([^'"]+)['"]\s*(?:,\s*type\s*=\s*['"](\w+)['"])?\s*\)/g;
 
   let match;
-  while ((match = importPattern.exec(pythonCode)) !== null) {
+  while ((match = simplePattern.exec(pythonCode)) !== null) {
     const name = match[1];
     const type = match[2];
 
     if (type === 'indicator') {
-      indicators.push(name);
+      const key = name;
+      if (!seenIndicators.has(key)) {
+        seenIndicators.add(key);
+        indicators.push({ name });
+      }
     } else if (type === 'dataset') {
-      datasets.push(name);
+      const key = name;
+      if (!seenDatasets.has(key)) {
+        seenDatasets.add(key);
+        datasets.push({ name });
+      }
     } else {
       // Unknown type, add to both for preloading
-      // The Python side will resolve the actual type
-      indicators.push(name);
-      datasets.push(name);
+      const key = name;
+      if (!seenIndicators.has(key)) {
+        seenIndicators.add(key);
+        indicators.push({ name });
+      }
+      if (!seenDatasets.has(key)) {
+        seenDatasets.add(key);
+        datasets.push({ name });
+      }
     }
   }
 
-  return {
-    indicators: [...new Set(indicators)],
-    datasets: [...new Set(datasets)],
-  };
+  // Pattern 2: data.import_(user='email', indicator='name')
+  // For user-specific imports
+  const userPattern = /data\.import_\s*\(\s*user\s*=\s*['"]([^'"]+)['"]\s*,\s*indicator\s*=\s*['"]([^'"]+)['"]\s*\)/g;
+
+  while ((match = userPattern.exec(pythonCode)) !== null) {
+    const user = match[1];
+    const name = match[2];
+    const key = `${user}:${name}`;
+
+    if (!seenIndicators.has(key)) {
+      seenIndicators.add(key);
+      indicators.push({ name, user });
+    }
+  }
+
+  // Pattern 3: data.import_(indicator='name', user='email') - reversed order
+  const userPatternReversed = /data\.import_\s*\(\s*indicator\s*=\s*['"]([^'"]+)['"]\s*,\s*user\s*=\s*['"]([^'"]+)['"]\s*\)/g;
+
+  while ((match = userPatternReversed.exec(pythonCode)) !== null) {
+    const name = match[1];
+    const user = match[2];
+    const key = `${user}:${name}`;
+
+    if (!seenIndicators.has(key)) {
+      seenIndicators.add(key);
+      indicators.push({ name, user });
+    }
+  }
+
+  return { indicators, datasets };
 }
 
 /**
@@ -664,10 +711,19 @@ function detectImportCalls(pythonCode: string): DetectedImports {
  * Name resolution priority:
  * 1. User's own indicators (createdBy === userId)
  * 2. Subscribed indicators from others
+ *
+ * For user='email' imports, we also store indicators keyed by "email:name"
  */
 async function buildResourceManifest(userId: string): Promise<ResourceManifest> {
   const indicatorsMap: Record<string, ResourceInfo> = {};
   const datasetsMap: Record<string, ResourceInfo> = {};
+
+  // Get current user's email for self-reference
+  const currentUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { email: true },
+  });
+  const currentUserEmail = currentUser?.email || '';
 
   // First, load user's own indicators (highest priority)
   const ownedIndicators = await prisma.indicator.findMany({
@@ -684,18 +740,25 @@ async function buildResourceManifest(userId: string): Promise<ResourceManifest> 
   });
 
   for (const ind of ownedIndicators) {
-    indicatorsMap[ind.name] = {
+    const resourceInfo: ResourceInfo = {
       id: ind.id,
       name: ind.name,
       isOwner: true,
+      creatorEmail: currentUserEmail,
       outputColumn: ind.outputColumn,
       isGroup: ind.isGroup,
       expectedOutputs: ind.expectedOutputs.length > 0 ? ind.expectedOutputs : undefined,
       period: ind.period,
     };
+    // Add by name (for simple import)
+    indicatorsMap[ind.name] = resourceInfo;
+    // Also add by email:name (for user='email' import)
+    if (currentUserEmail) {
+      indicatorsMap[`${currentUserEmail}:${ind.name}`] = resourceInfo;
+    }
   }
 
-  // Then load subscribed indicators (lower priority - won't override user's own)
+  // Then load subscribed indicators (lower priority - won't override user's own by name)
   const userIndicators = await prisma.userIndicator.findMany({
     where: { userId },
     include: {
@@ -713,19 +776,38 @@ async function buildResourceManifest(userId: string): Promise<ResourceManifest> 
     },
   });
 
+  // Fetch creator emails for subscribed indicators
+  const creatorIds = [...new Set(userIndicators.map(ui => ui.indicator.createdBy))];
+  const creators = await prisma.user.findMany({
+    where: { id: { in: creatorIds } },
+    select: { id: true, email: true },
+  });
+  const creatorEmailMap = new Map(creators.map(c => [c.id, c.email]));
+
   for (const ui of userIndicators) {
     const ind = ui.indicator;
-    // Only add if not already present (user's own indicators take priority)
+    const creatorEmail = creatorEmailMap.get(ind.createdBy) || '';
+    const isOwner = ind.createdBy === userId;
+
+    const resourceInfo: ResourceInfo = {
+      id: ind.id,
+      name: ind.name,
+      isOwner,
+      creatorEmail,
+      outputColumn: ind.outputColumn,
+      isGroup: ind.isGroup,
+      expectedOutputs: ind.expectedOutputs.length > 0 ? ind.expectedOutputs : undefined,
+      period: ind.period,
+    };
+
+    // Only add by name if not already present (user's own indicators take priority)
     if (!indicatorsMap[ind.name]) {
-      indicatorsMap[ind.name] = {
-        id: ind.id,
-        name: ind.name,
-        isOwner: ind.createdBy === userId,
-        outputColumn: ind.outputColumn,
-        isGroup: ind.isGroup,
-        expectedOutputs: ind.expectedOutputs.length > 0 ? ind.expectedOutputs : undefined,
-        period: ind.period,
-      };
+      indicatorsMap[ind.name] = resourceInfo;
+    }
+
+    // Always add by email:name for explicit user='email' lookup
+    if (creatorEmail) {
+      indicatorsMap[`${creatorEmail}:${ind.name}`] = resourceInfo;
     }
   }
 
@@ -764,47 +846,76 @@ async function buildResourceManifest(userId: string): Promise<ResourceManifest> 
 }
 
 /**
- * Preload indicator values for import
+ * Get or compute indicator values (lazy computation)
+ * Checks cache first, computes if missing, returns values
+ */
+async function getOrComputeIndicatorValues(
+  indicatorId: string,
+  stockId: string,
+  userId: string
+): Promise<Array<{ date: string; value?: number | null; groupValues?: Record<string, number | null> }>> {
+  // Load indicator metadata to get version
+  const indicator = await loadIndicator(indicatorId);
+  if (!indicator) {
+    return [];
+  }
+
+  // Check if we have cached values
+  const cachedValues = await getCachedIndicatorValues(indicatorId, stockId, indicator.version, indicator.period);
+
+  if (cachedValues.size > 0) {
+    // Return cached values
+    return Array.from(cachedValues.values()).map(v => ({
+      date: v.date.toISOString().split('T')[0],
+      value: v.value,
+      groupValues: v.groupValues,
+    }));
+  }
+
+  // Not cached - compute it
+  const computeResult = await computeIndicator(indicatorId, stockId, userId);
+
+  if (!computeResult.success) {
+    console.warn(`Failed to compute indicator ${indicatorId} for stock ${stockId}: ${computeResult.error}`);
+    return [];
+  }
+
+  // Load newly computed values
+  const newValues = await getCachedIndicatorValues(indicatorId, stockId, indicator.version, indicator.period);
+
+  return Array.from(newValues.values()).map(v => ({
+    date: v.date.toISOString().split('T')[0],
+    value: v.value,
+    groupValues: v.groupValues,
+  }));
+}
+
+/**
+ * Preload indicator values for import (with lazy computation)
  */
 async function preloadIndicatorValues(
-  indicatorNames: string[],
+  imports: DetectedImport[],
   stockId: string,
+  userId: string,
   manifest: ResourceManifest
 ): Promise<Record<string, Array<{ date: string; value?: number | null; groupValues?: Record<string, number | null> }>>> {
   const result: Record<string, Array<{ date: string; value?: number | null; groupValues?: Record<string, number | null> }>> = {};
 
-  for (const name of indicatorNames) {
-    const resourceInfo = manifest.indicators[name];
-    if (!resourceInfo) continue;
+  for (const imp of imports) {
+    // Build the manifest key based on whether user is specified
+    const manifestKey = imp.user ? `${imp.user}:${imp.name}` : imp.name;
+    const resourceInfo = manifest.indicators[manifestKey];
 
-    // Load indicator metadata to get version
-    const indicator = await prisma.indicator.findUnique({
-      where: { id: resourceInfo.id },
-      select: { version: true, period: true },
-    });
+    if (!resourceInfo) {
+      console.warn(`Indicator not found in manifest: ${manifestKey}`);
+      continue;
+    }
 
-    if (!indicator) continue;
+    // Use lazy compute to get or compute values
+    const values = await getOrComputeIndicatorValues(resourceInfo.id, stockId, userId);
 
-    // Load cached values for this indicator on this stock
-    const values = await prisma.indicatorValue.findMany({
-      where: {
-        indicatorId: resourceInfo.id,
-        version: indicator.version,
-        stockPrice: { stockId },
-      },
-      include: {
-        stockPrice: {
-          select: { date: true },
-        },
-      },
-      orderBy: { stockPrice: { date: 'asc' } },
-    });
-
-    result[name] = values.map(v => ({
-      date: v.stockPrice.date.toISOString().split('T')[0],
-      value: v.value ? Number(v.value) : null,
-      groupValues: v.groupValues as Record<string, number | null> | undefined,
-    }));
+    // Store in result with the manifest key for Python to look up
+    result[manifestKey] = values;
   }
 
   return result;
@@ -979,14 +1090,15 @@ export async function computeIndicator(
     const resourceManifest = await buildResourceManifest(userId);
     const detectedImports = detectImportCalls(indicator.pythonCode);
 
-    // Preload detected resources
+    // Preload detected resources (with lazy computation)
     const preloadedIndicators = await preloadIndicatorValues(
       detectedImports.indicators,
       stockId,
+      userId,
       resourceManifest
     );
     const preloadedDatasets = await preloadDatasetPrices(
-      detectedImports.datasets,
+      detectedImports.datasets.map(d => d.name),
       resourceManifest
     );
 
