@@ -8,7 +8,7 @@
 
 import { prisma } from './prisma';
 import { Prisma } from '@prisma/client';
-import { executePythonIndicator, PythonExecutionResult } from './python-executor';
+import { executePythonIndicator, PythonExecutionResult, ResourceManifest, ResourceInfo } from './python-executor';
 
 /**
  * Period type for indicators
@@ -618,6 +618,231 @@ async function saveIndicatorValues(
 }
 
 /**
+ * Detect data.import_() calls in Python code
+ * Returns the names of resources to preload
+ */
+interface DetectedImports {
+  indicators: string[];
+  datasets: string[];
+}
+
+function detectImportCalls(pythonCode: string): DetectedImports {
+  const indicators: string[] = [];
+  const datasets: string[] = [];
+
+  // Match data.import_('name') or data.import_('name', type='...')
+  // Also match data.import_("name") with double quotes
+  const importPattern = /data\.import_\s*\(\s*['"]([^'"]+)['"]\s*(?:,\s*type\s*=\s*['"](\w+)['"])?\s*\)/g;
+
+  let match;
+  while ((match = importPattern.exec(pythonCode)) !== null) {
+    const name = match[1];
+    const type = match[2];
+
+    if (type === 'indicator') {
+      indicators.push(name);
+    } else if (type === 'dataset') {
+      datasets.push(name);
+    } else {
+      // Unknown type, add to both for preloading
+      // The Python side will resolve the actual type
+      indicators.push(name);
+      datasets.push(name);
+    }
+  }
+
+  return {
+    indicators: [...new Set(indicators)],
+    datasets: [...new Set(datasets)],
+  };
+}
+
+/**
+ * Build resource manifest for a user
+ * This contains all indicators and datasets the user has access to
+ */
+async function buildResourceManifest(userId: string): Promise<ResourceManifest> {
+  const indicatorsMap: Record<string, ResourceInfo> = {};
+  const datasetsMap: Record<string, ResourceInfo> = {};
+
+  // Fetch all indicators the user has access to (subscribed + owned)
+  const userIndicators = await prisma.userIndicator.findMany({
+    where: { userId },
+    include: {
+      indicator: {
+        select: {
+          id: true,
+          name: true,
+          outputColumn: true,
+          isGroup: true,
+          expectedOutputs: true,
+          period: true,
+          createdBy: true,
+        },
+      },
+    },
+  });
+
+  for (const ui of userIndicators) {
+    const ind = ui.indicator;
+    indicatorsMap[ind.name] = {
+      id: ind.id,
+      name: ind.name,
+      isOwner: ind.createdBy === userId,
+      outputColumn: ind.outputColumn,
+      isGroup: ind.isGroup,
+      expectedOutputs: ind.expectedOutputs.length > 0 ? ind.expectedOutputs : undefined,
+      period: ind.period,
+    };
+  }
+
+  // Also include indicators the user created (even if not in UserIndicator collection)
+  const ownedIndicators = await prisma.indicator.findMany({
+    where: { createdBy: userId },
+    select: {
+      id: true,
+      name: true,
+      outputColumn: true,
+      isGroup: true,
+      expectedOutputs: true,
+      period: true,
+      createdBy: true,
+    },
+  });
+
+  for (const ind of ownedIndicators) {
+    if (!indicatorsMap[ind.name]) {
+      indicatorsMap[ind.name] = {
+        id: ind.id,
+        name: ind.name,
+        isOwner: true,
+        outputColumn: ind.outputColumn,
+        isGroup: ind.isGroup,
+        expectedOutputs: ind.expectedOutputs.length > 0 ? ind.expectedOutputs : undefined,
+        period: ind.period,
+      };
+    }
+  }
+
+  // Fetch all datasets (stocks) the user has access to
+  const userStocks = await prisma.userStock.findMany({
+    where: { userId },
+    include: {
+      stock: {
+        select: {
+          id: true,
+          symbol: true,
+          name: true,
+          dataSource: true,
+        },
+      },
+    },
+  });
+
+  for (const us of userStocks) {
+    const stock = us.stock;
+    // Use symbol as the key (this is what users will use to import)
+    datasetsMap[stock.symbol] = {
+      id: stock.id,
+      name: stock.name,
+      isOwner: false, // Stocks don't have ownership concept
+      stockId: stock.id,
+      symbol: stock.symbol,
+      dataSource: stock.dataSource,
+    };
+  }
+
+  return {
+    indicators: indicatorsMap,
+    datasets: datasetsMap,
+  };
+}
+
+/**
+ * Preload indicator values for import
+ */
+async function preloadIndicatorValues(
+  indicatorNames: string[],
+  stockId: string,
+  manifest: ResourceManifest
+): Promise<Record<string, Array<{ date: string; value?: number | null; groupValues?: Record<string, number | null> }>>> {
+  const result: Record<string, Array<{ date: string; value?: number | null; groupValues?: Record<string, number | null> }>> = {};
+
+  for (const name of indicatorNames) {
+    const resourceInfo = manifest.indicators[name];
+    if (!resourceInfo) continue;
+
+    // Load indicator metadata to get version
+    const indicator = await prisma.indicator.findUnique({
+      where: { id: resourceInfo.id },
+      select: { version: true, period: true },
+    });
+
+    if (!indicator) continue;
+
+    // Load cached values for this indicator on this stock
+    const values = await prisma.indicatorValue.findMany({
+      where: {
+        indicatorId: resourceInfo.id,
+        version: indicator.version,
+        stockPrice: { stockId },
+      },
+      include: {
+        stockPrice: {
+          select: { date: true },
+        },
+      },
+      orderBy: { stockPrice: { date: 'asc' } },
+    });
+
+    result[name] = values.map(v => ({
+      date: v.stockPrice.date.toISOString().split('T')[0],
+      value: v.value ? Number(v.value) : null,
+      groupValues: v.groupValues as Record<string, number | null> | undefined,
+    }));
+  }
+
+  return result;
+}
+
+/**
+ * Preload dataset prices for import
+ */
+async function preloadDatasetPrices(
+  datasetNames: string[],
+  manifest: ResourceManifest
+): Promise<Record<string, Record<string, any>[]>> {
+  const result: Record<string, Record<string, any>[]> = {};
+
+  for (const name of datasetNames) {
+    const resourceInfo = manifest.datasets[name];
+    if (!resourceInfo || !resourceInfo.stockId) continue;
+
+    // Load price data for this stock
+    const prices = await prisma.stockPrice.findMany({
+      where: { stockId: resourceInfo.stockId },
+      orderBy: { date: 'asc' },
+    });
+
+    result[name] = prices.map(p => ({
+      date: p.date.toISOString().split('T')[0],
+      open: Number(p.open),
+      high: Number(p.high),
+      low: Number(p.low),
+      close: Number(p.close),
+      volume: Number(p.volume),
+      turnover: p.turnover ? Number(p.turnover) : null,
+      amplitude: p.amplitude ? Number(p.amplitude) : null,
+      change_pct: p.changePct ? Number(p.changePct) : null,
+      change_amount: p.changeAmount ? Number(p.changeAmount) : null,
+      turnover_rate: p.turnoverRate ? Number(p.turnoverRate) : null,
+    }));
+  }
+
+  return result;
+}
+
+/**
  * Compute an indicator for a stock
  */
 export async function computeIndicator(
@@ -745,12 +970,30 @@ export async function computeIndicator(
     );
     const dataRecords = priceRecords.map(pr => pr.data);
 
+    // Build resource manifest and preload data for dynamic imports
+    const resourceManifest = await buildResourceManifest(userId);
+    const detectedImports = detectImportCalls(indicator.pythonCode);
+
+    // Preload detected resources
+    const preloadedIndicators = await preloadIndicatorValues(
+      detectedImports.indicators,
+      stockId,
+      resourceManifest
+    );
+    const preloadedDatasets = await preloadDatasetPrices(
+      detectedImports.datasets,
+      resourceManifest
+    );
+
     // Execute Python indicator
     const executionResult: PythonExecutionResult = await executePythonIndicator({
       code: indicator.pythonCode,
       data: dataRecords,
       isGroup: indicator.isGroup,
       externalDatasets: indicator.externalDatasets,
+      resourceManifest,
+      preloadedIndicators,
+      preloadedDatasets,
     });
 
     if (!executionResult.success) {

@@ -10,6 +10,7 @@ import inspect
 from typing import Dict, Any, List, Union
 
 from base_executor import BaseExecutor
+from importable_dataframe import ImportableDataFrame
 
 # Add MyTT.py to sys.path so it can be imported
 import os
@@ -29,7 +30,10 @@ class IndicatorExecutor(BaseExecutor):
         user_code: str,
         data_records: List[Dict[str, Any]],
         is_group: bool = False,
-        external_datasets_config: Dict[str, Dict[str, str]] = None
+        external_datasets_config: Dict[str, Dict[str, str]] = None,
+        resource_manifest: Dict[str, Dict[str, Any]] = None,
+        preloaded_indicators: Dict[str, List[Dict[str, Any]]] = None,
+        preloaded_datasets: Dict[str, List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         Execute indicator code and return results.
@@ -39,6 +43,9 @@ class IndicatorExecutor(BaseExecutor):
             data_records: Data records to process
             is_group: Whether this is a group indicator (returns dict)
             external_datasets_config: Optional external datasets configuration
+            resource_manifest: Optional manifest of accessible resources for import_()
+            preloaded_indicators: Optional preloaded indicator data for import_()
+            preloaded_datasets: Optional preloaded dataset data for import_()
 
         Returns:
             Execution result with success status and values
@@ -46,6 +53,15 @@ class IndicatorExecutor(BaseExecutor):
         try:
             # Prepare dataframe
             df = self.prepare_dataframe(data_records, external_datasets_config)
+
+            # Wrap with ImportableDataFrame if manifest is provided
+            if resource_manifest:
+                df = ImportableDataFrame(
+                    df,
+                    resource_manifest,
+                    preloaded_indicators or {},
+                    preloaded_datasets or {}
+                )
 
             # Create empty parameters dict for backward compatibility
             parameters = {}
@@ -246,13 +262,19 @@ class IndicatorExecutor(BaseExecutor):
             data_records = input_data['data']
             is_group = input_data.get('isGroup', False)
             external_datasets_config = input_data.get('externalDatasets', {})
+            resource_manifest = input_data.get('resourceManifest', None)
+            preloaded_indicators = input_data.get('preloadedIndicators', None)
+            preloaded_datasets = input_data.get('preloadedDatasets', None)
 
             # Execute indicator
             result = self.execute_indicator(
                 user_code,
                 data_records,
                 is_group,
-                external_datasets_config
+                external_datasets_config,
+                resource_manifest,
+                preloaded_indicators,
+                preloaded_datasets
             )
 
             # Output results

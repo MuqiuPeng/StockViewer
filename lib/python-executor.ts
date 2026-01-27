@@ -6,11 +6,41 @@ import { PYTHON_CONFIG } from './env';
 // Get project root directory - use the location of this file to find it
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 
+/**
+ * Resource info for import manifest
+ */
+export interface ResourceInfo {
+  id: string;
+  name: string;
+  isOwner: boolean;
+  // For indicators
+  outputColumn?: string;
+  isGroup?: boolean;
+  expectedOutputs?: string[];
+  period?: string;
+  // For datasets
+  stockId?: string;
+  symbol?: string;
+  dataSource?: string;
+}
+
+/**
+ * Manifest of resources available for import
+ */
+export interface ResourceManifest {
+  indicators: Record<string, ResourceInfo>;
+  datasets: Record<string, ResourceInfo>;
+}
+
 export interface PythonExecutionInput {
   code: string;
   data: Record<string, any>[];
   isGroup?: boolean;  // NEW: indicates group mode for MyTT indicators
   externalDatasets?: Record<string, { groupId: string; datasetName: string }>;  // External datasets configuration
+  // Dynamic import support
+  resourceManifest?: ResourceManifest;
+  preloadedIndicators?: Record<string, Array<{ date: string; value?: number | null; groupValues?: Record<string, number | null> }>>;
+  preloadedDatasets?: Record<string, Record<string, any>[]>;
 }
 
 export interface PythonExecutionResult {
