@@ -332,6 +332,8 @@ class ImportableDataFrame:
         Returns:
             DataFrame with indicator values indexed by date, aligned to current data
         """
+        import sys
+
         if name not in self._preloaded_indicators:
             raise ValueError(
                 f"Indicator '{name}' is in your collection but data is not preloaded. "
@@ -344,6 +346,7 @@ class ImportableDataFrame:
             raise ValueError(f"Indicator '{name}' has no data for this stock.")
 
         df = pd.DataFrame(indicator_data)
+        print(f"DEBUG [_load_indicator]: Loaded {len(df)} rows for '{name}'", file=sys.stderr)
 
         # Set date as index for alignment
         if 'date' in df.columns:
@@ -358,8 +361,35 @@ class ImportableDataFrame:
         # Align to current data's index to ensure same length
         if hasattr(self._df, 'index') and len(self._df) > 0:
             current_index = self._df.index
-            # Reindex to match current data, filling missing with NaN
-            df = df.reindex(current_index)
+
+            print(f"DEBUG [_load_indicator]: Current data index type: {type(current_index)}, len: {len(current_index)}", file=sys.stderr)
+            print(f"DEBUG [_load_indicator]: Imported data index type: {type(df.index)}, len: {len(df.index)}", file=sys.stderr)
+            if len(current_index) > 0:
+                print(f"DEBUG [_load_indicator]: Current index sample: {current_index[0]} (type: {type(current_index[0])})", file=sys.stderr)
+            if len(df.index) > 0:
+                print(f"DEBUG [_load_indicator]: Imported index sample: {df.index[0]} (type: {type(df.index[0])})", file=sys.stderr)
+
+            # Convert both indices to string format for reliable matching
+            # This handles any timezone/format mismatches
+            df_date_strs = df.index.strftime('%Y-%m-%d') if hasattr(df.index, 'strftime') else df.index.astype(str)
+            current_date_strs = current_index.strftime('%Y-%m-%d') if hasattr(current_index, 'strftime') else current_index.astype(str)
+
+            # Create a mapping from date string to value
+            df['_date_str'] = df_date_strs
+            df_indexed = df.set_index('_date_str')
+
+            # Reindex using date strings
+            df_aligned = df_indexed.reindex(current_date_strs)
+
+            # Restore the original index from current data
+            df_aligned.index = current_index
+
+            print(f"DEBUG [_load_indicator]: After alignment, len: {len(df_aligned)}", file=sys.stderr)
+            if 'value' in df_aligned.columns:
+                non_nan = df_aligned['value'].notna().sum()
+                print(f"DEBUG [_load_indicator]: Non-NaN values in 'value': {non_nan}", file=sys.stderr)
+
+            return df_aligned
 
         return df
 
@@ -378,6 +408,8 @@ class ImportableDataFrame:
         Returns:
             DataFrame with OHLCV data indexed by date, aligned to current data
         """
+        import sys
+
         if name not in self._preloaded_datasets:
             raise ValueError(
                 f"Dataset '{name}' is in your collection but data is not preloaded."
@@ -389,6 +421,7 @@ class ImportableDataFrame:
             raise ValueError(f"Dataset '{name}' has no data.")
 
         df = pd.DataFrame(dataset_records)
+        print(f"DEBUG [_load_dataset]: Loaded {len(df)} rows for '{name}'", file=sys.stderr)
 
         # Set date as index for alignment
         if 'date' in df.columns:
@@ -403,8 +436,25 @@ class ImportableDataFrame:
         # Align to current data's index to ensure same length
         if hasattr(self._df, 'index') and len(self._df) > 0:
             current_index = self._df.index
-            # Reindex to match current data, filling missing with NaN
-            df = df.reindex(current_index)
+
+            # Convert both indices to string format for reliable matching
+            # This handles any timezone/format mismatches
+            df_date_strs = df.index.strftime('%Y-%m-%d') if hasattr(df.index, 'strftime') else df.index.astype(str)
+            current_date_strs = current_index.strftime('%Y-%m-%d') if hasattr(current_index, 'strftime') else current_index.astype(str)
+
+            # Create a mapping from date string to value
+            df['_date_str'] = df_date_strs
+            df_indexed = df.set_index('_date_str')
+
+            # Reindex using date strings
+            df_aligned = df_indexed.reindex(current_date_strs)
+
+            # Restore the original index from current data
+            df_aligned.index = current_index
+
+            print(f"DEBUG [_load_dataset]: After alignment, len: {len(df_aligned)}", file=sys.stderr)
+
+            return df_aligned
 
         return df
 
