@@ -65,50 +65,43 @@ body {
 }
 
 /* Import placeholder decorations for Monaco editor - tag-like appearance */
-/* Indicator placeholder styling */
+/* Indicator placeholder styling - purple tag */
 .import-placeholder-indicator {
-  background-color: rgba(139, 92, 246, 0.25);
-  color: rgb(109, 40, 217) !important;
+  background-color: rgba(139, 92, 246, 0.9) !important;
+  color: white !important;
   border-radius: 4px;
+  padding: 0 2px;
   cursor: pointer;
-  border-bottom: 2px solid rgba(139, 92, 246, 0.6);
+  font-weight: 500;
 }
 
 .import-placeholder-indicator-selected {
-  background-color: rgba(139, 92, 246, 0.4);
-  color: rgb(109, 40, 217) !important;
+  background-color: rgba(109, 40, 217, 1) !important;
+  color: white !important;
   border-radius: 4px;
+  padding: 0 2px;
   cursor: pointer;
-  border-bottom: 2px solid rgba(139, 92, 246, 1);
-  outline: 1px solid rgba(139, 92, 246, 0.8);
+  font-weight: 500;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.5);
 }
 
-/* Dataset placeholder styling */
+/* Dataset placeholder styling - green tag */
 .import-placeholder-dataset {
-  background-color: rgba(34, 197, 94, 0.25);
-  color: rgb(22, 163, 74) !important;
+  background-color: rgba(34, 197, 94, 0.9) !important;
+  color: white !important;
   border-radius: 4px;
+  padding: 0 2px;
   cursor: pointer;
-  border-bottom: 2px solid rgba(34, 197, 94, 0.6);
+  font-weight: 500;
 }
 
 .import-placeholder-dataset-selected {
-  background-color: rgba(34, 197, 94, 0.4);
-  color: rgb(22, 163, 74) !important;
+  background-color: rgba(22, 163, 74, 1) !important;
+  color: white !important;
   border-radius: 4px;
+  padding: 0 2px;
   cursor: pointer;
-  border-bottom: 2px solid rgba(34, 197, 94, 1);
-  outline: 1px solid rgba(34, 197, 94, 0.8);
-}
-
-/* Dark mode adjustments */
-.vs-dark .import-placeholder-indicator,
-.vs-dark .import-placeholder-indicator-selected {
-  color: rgb(196, 181, 253) !important;
-}
-
-.vs-dark .import-placeholder-dataset,
-.vs-dark .import-placeholder-dataset-selected {
-  color: rgb(134, 239, 172) !important;
+  font-weight: 500;
+  box-shadow: 0 0 0 2px rgba(34, 197, 94, 0.5);
 }
 

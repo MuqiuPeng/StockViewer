@@ -47,6 +47,7 @@ interface ImportableDataset {
 interface PlaceholderInfo {
   type: 'indicator' | 'dataset';
   id: string;  // Indicator or dataset ID
+  displayName: string;  // Display name shown in tag
   // Position in editor
   startOffset: number;
   endOffset: number;
@@ -56,19 +57,21 @@ interface PlaceholderInfo {
 }
 
 // Transform placeholders to actual Python import code (before save/validate)
-// {{IND:indicatorId}} -> data.import_(indicator_id='indicatorId')
-// {{DS:datasetId}} -> data.import_(dataset_id='datasetId')
+// {{IND:id|name}} -> data.import_(indicator_id='id')
+// {{DS:id|name}} -> data.import_(dataset_id='id')
 const transformPlaceholdersToCode = (code: string): string => {
   return code
-    .replace(/\{\{IND:([^}]+)\}\}/g, (_, id) => `data.import_(indicator_id='${id}')`)
-    .replace(/\{\{DS:([^}]+)\}\}/g, (_, id) => `data.import_(dataset_id='${id}')`);
+    .replace(/\{\{IND:([^|]+)\|[^}]+\}\}/g, (_, id) => `data.import_(indicator_id='${id}')`)
+    .replace(/\{\{DS:([^|]+)\|[^}]+\}\}/g, (_, id) => `data.import_(dataset_id='${id}')`);
 };
 
 // Transform Python import code to placeholders (when loading for editing)
+// Note: When loading, we only have the ID, so displayName will be set to ID temporarily
+// and resolved later when availableIndicators/availableDatasets are loaded
 const transformCodeToPlaceholders = (code: string): string => {
   return code
-    .replace(/data\.import_\(\s*indicator_id\s*=\s*['"]([^'"]+)['"]\s*\)/g, (_, id) => `{{IND:${id}}}`)
-    .replace(/data\.import_\(\s*dataset_id\s*=\s*['"]([^'"]+)['"]\s*\)/g, (_, id) => `{{DS:${id}}}`);
+    .replace(/data\.import_\(\s*indicator_id\s*=\s*['"]([^'"]+)['"]\s*\)/g, (_, id) => `{{IND:${id}|${id}}}`)
+    .replace(/data\.import_\(\s*dataset_id\s*=\s*['"]([^'"]+)['"]\s*\)/g, (_, id) => `{{DS:${id}|${id}}}`);
 };
 
 // Find all placeholders in code
@@ -80,13 +83,14 @@ const findPlaceholders = (code: string): PlaceholderInfo[] => {
   for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
     const line = lines[lineIdx];
 
-    // Find indicator placeholders {{IND:id}}
-    const indRegex = /\{\{IND:([^}]+)\}\}/g;
+    // Find indicator placeholders {{IND:id|name}}
+    const indRegex = /\{\{IND:([^|]+)\|([^}]+)\}\}/g;
     let match;
     while ((match = indRegex.exec(line)) !== null) {
       placeholders.push({
         type: 'indicator',
         id: match[1],
+        displayName: match[2],
         startOffset: offset + match.index,
         endOffset: offset + match.index + match[0].length,
         lineNumber: lineIdx + 1,
@@ -95,12 +99,13 @@ const findPlaceholders = (code: string): PlaceholderInfo[] => {
       });
     }
 
-    // Find dataset placeholders {{DS:id}}
-    const dsRegex = /\{\{DS:([^}]+)\}\}/g;
+    // Find dataset placeholders {{DS:id|name}}
+    const dsRegex = /\{\{DS:([^|]+)\|([^}]+)\}\}/g;
     while ((match = dsRegex.exec(line)) !== null) {
       placeholders.push({
         type: 'dataset',
         id: match[1],
+        displayName: match[2],
         startOffset: offset + match.index,
         endOffset: offset + match.index + match[0].length,
         lineNumber: lineIdx + 1,
@@ -212,20 +217,31 @@ export default function IndicatorEditorModal({
   const [selectedPlaceholder, setSelectedPlaceholder] = useState<PlaceholderInfo | null>(null);
   const [placeholderDecorations, setPlaceholderDecorations] = useState<string[]>([]);
 
-  // Get display info for a placeholder by ID
+  // Get display info for a placeholder - uses embedded displayName or falls back to lookup
   const getPlaceholderDisplayInfo = useCallback((placeholder: PlaceholderInfo): { label: string; detail: string } => {
+    // Use embedded displayName if it's not just the ID
+    if (placeholder.displayName && placeholder.displayName !== placeholder.id) {
+      if (placeholder.type === 'indicator') {
+        const ind = availableIndicators.find(i => i.id === placeholder.id);
+        return { label: placeholder.displayName, detail: ind?.ownerEmail || '' };
+      } else {
+        const ds = availableDatasets.find(d => d.id === placeholder.id);
+        return { label: placeholder.displayName, detail: ds?.name || '' };
+      }
+    }
+    // Fall back to lookup by ID
     if (placeholder.type === 'indicator') {
       const ind = availableIndicators.find(i => i.id === placeholder.id);
       if (ind) {
         return { label: ind.name, detail: ind.ownerEmail };
       }
-      return { label: placeholder.id, detail: 'Unknown indicator' };
+      return { label: placeholder.displayName || placeholder.id, detail: 'Unknown indicator' };
     } else {
       const ds = availableDatasets.find(d => d.id === placeholder.id);
       if (ds) {
         return { label: ds.symbol, detail: ds.name };
       }
-      return { label: placeholder.id, detail: 'Unknown dataset' };
+      return { label: placeholder.displayName || placeholder.id, detail: 'Unknown dataset' };
     }
   }, [availableIndicators, availableDatasets]);
 
@@ -332,12 +348,14 @@ export default function IndicatorEditorModal({
     const model = editorInstance.getModel();
     if (!model) return;
 
-    // Build new placeholder based on type (using ID)
+    // Build new placeholder based on type (using ID and display name)
     let newPlaceholder: string;
     if (selectedPlaceholder.type === 'indicator' && 'ownerEmail' in newItem) {
-      newPlaceholder = `{{IND:${(newItem as ImportableIndicator).id}}}`;
+      const ind = newItem as ImportableIndicator;
+      newPlaceholder = `{{IND:${ind.id}|${ind.name}}}`;
     } else if (selectedPlaceholder.type === 'dataset' && 'symbol' in newItem) {
-      newPlaceholder = `{{DS:${(newItem as ImportableDataset).id}}}`;
+      const ds = newItem as ImportableDataset;
+      newPlaceholder = `{{DS:${ds.id}|${ds.symbol}}}`;
     } else {
       alert('Cannot replace: type mismatch');
       return;
@@ -442,6 +460,39 @@ export default function IndicatorEditorModal({
       });
     }
   }, [isOpen, availableIndicators.length, availableDatasets.length]);
+
+  // Resolve placeholder display names when available indicators/datasets are loaded
+  // This updates placeholders like {{IND:id|id}} to {{IND:id|ActualName}}
+  useEffect(() => {
+    if (pythonCode && (availableIndicators.length > 0 || availableDatasets.length > 0)) {
+      let updatedCode = pythonCode;
+      let hasChanges = false;
+
+      // Update indicator placeholders where displayName equals ID
+      for (const ind of availableIndicators) {
+        const oldPattern = `{{IND:${ind.id}|${ind.id}}}`;
+        const newPattern = `{{IND:${ind.id}|${ind.name}}}`;
+        if (updatedCode.includes(oldPattern)) {
+          updatedCode = updatedCode.replace(new RegExp(oldPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), newPattern);
+          hasChanges = true;
+        }
+      }
+
+      // Update dataset placeholders where displayName equals ID
+      for (const ds of availableDatasets) {
+        const oldPattern = `{{DS:${ds.id}|${ds.id}}}`;
+        const newPattern = `{{DS:${ds.id}|${ds.symbol}}}`;
+        if (updatedCode.includes(oldPattern)) {
+          updatedCode = updatedCode.replace(new RegExp(oldPattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), newPattern);
+          hasChanges = true;
+        }
+      }
+
+      if (hasChanges) {
+        setPythonCode(updatedCode);
+      }
+    }
+  }, [availableIndicators, availableDatasets]);
 
   // Load groups on mount (includes both custom and data source groups)
   useEffect(() => {
@@ -1282,7 +1333,7 @@ export default function IndicatorEditorModal({
                                       if (selectedPlaceholder && selectedPlaceholder.type === 'indicator') {
                                         replaceSelectedPlaceholder(ind);
                                       } else {
-                                        insertPlaceholderAtCursor(`{{IND:${ind.id}}}`);
+                                        insertPlaceholderAtCursor(`{{IND:${ind.id}|${ind.name}}}`);
                                       }
                                     }}
                                     className={`px-2 py-0.5 text-xs rounded ${
@@ -1322,7 +1373,7 @@ export default function IndicatorEditorModal({
                                       if (selectedPlaceholder && selectedPlaceholder.type === 'indicator') {
                                         replaceSelectedPlaceholder(ind);
                                       } else {
-                                        insertPlaceholderAtCursor(`{{IND:${ind.id}}}`);
+                                        insertPlaceholderAtCursor(`{{IND:${ind.id}|${ind.name}}}`);
                                       }
                                     }}
                                     className={`px-2 py-0.5 text-xs rounded ${
@@ -1364,7 +1415,7 @@ export default function IndicatorEditorModal({
                                     if (selectedPlaceholder && selectedPlaceholder.type === 'dataset') {
                                       replaceSelectedPlaceholder(ds);
                                     } else {
-                                      insertPlaceholderAtCursor(`{{DS:${ds.id}}}`);
+                                      insertPlaceholderAtCursor(`{{DS:${ds.id}|${ds.symbol}}}`);
                                     }
                                   }}
                                   className={`px-2 py-0.5 text-xs rounded ${
