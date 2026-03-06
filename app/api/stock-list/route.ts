@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { API_CONFIG } from '@/lib/env';
-import { fetchWithRetry } from '@/lib/fetch-utils';
+import { dataService, StockItem } from '@/lib/data-service-client';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -8,155 +7,45 @@ export const dynamic = 'force-dynamic';
 /**
  * GET /api/stock-list
  *
- * Fetches the complete list of stocks with their codes and names.
+ * Fetches the complete list of A-share stocks with their codes and names.
  *
  * Query parameters:
- *   - source: 'active' (default) | 'delisted_sh' | 'delisted_sz' | 'all'
- *   - cache: 'true' | 'false' (default true) - whether to cache the result
+ *   - source: 'active' (default) | 'all' (includes delisted)
  */
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const source = searchParams.get('source') || 'active';
+    const includeDelisted = source === 'all';
 
-    const results: { code: string; name: string; status: string }[] = [];
-    const errors: string[] = [];
+    // Fetch from Data Service
+    const response = await dataService.getStockList('a_share', includeDelisted);
 
-    // Fetch active stocks
-    if (source === 'active' || source === 'all') {
-      try {
-        const activeUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/stock_info_a_code_name`;
-        const activeResponse = await fetchWithRetry(activeUrl);
-
-        if (activeResponse.ok) {
-          const activeData = await activeResponse.json();
-
-          // Transform to standard format
-          if (Array.isArray(activeData)) {
-            activeData.forEach((item: any) => {
-              // Handle both possible column names
-              const code = item.code || item['代码'] || item.symbol;
-              const name = item.name || item['名称'];
-
-              if (code && name) {
-                results.push({
-                  code: String(code),
-                  name: String(name),
-                  status: 'active'
-                });
-              }
-            });
-          }
-        } else {
-          errors.push(`Active stocks API returned ${activeResponse.status}`);
-        }
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : 'Unknown error';
-        console.error('Failed to fetch active stocks:', errMsg);
-        errors.push(`Failed to fetch active stocks: ${errMsg}`);
-      }
-    }
-
-    // Fetch Shanghai delisted stocks
-    if (source === 'delisted_sh' || source === 'all') {
-      try {
-        const shDelistUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/stock_info_sh_delist?symbol=全部`;
-        const shDelistResponse = await fetchWithRetry(shDelistUrl);
-
-        if (shDelistResponse.ok) {
-          const shDelistData = await shDelistResponse.json();
-
-          if (Array.isArray(shDelistData)) {
-            shDelistData.forEach((item: any) => {
-              const code = item['公司代码'] || item.code;
-              const name = item['公司简称'] || item.name;
-
-              if (code && name) {
-                results.push({
-                  code: String(code),
-                  name: String(name),
-                  status: 'delisted_sh'
-                });
-              }
-            });
-          }
-        } else {
-          errors.push(`Shanghai delisted API returned ${shDelistResponse.status}`);
-        }
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : 'Unknown error';
-        console.error('Failed to fetch Shanghai delisted stocks:', errMsg);
-        errors.push(`Failed to fetch Shanghai delisted stocks: ${errMsg}`);
-      }
-    }
-
-    // Fetch Shenzhen delisted stocks
-    if (source === 'delisted_sz' || source === 'all') {
-      try {
-        const szDelistUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/stock_info_sz_delist?symbol=终止上市公司`;
-        const szDelistResponse = await fetchWithRetry(szDelistUrl);
-
-        if (szDelistResponse.ok) {
-          const szDelistData = await szDelistResponse.json();
-
-          if (Array.isArray(szDelistData)) {
-            szDelistData.forEach((item: any) => {
-              const code = item['证券代码'] || item.code;
-              const name = item['证券简称'] || item.name;
-
-              if (code && name) {
-                results.push({
-                  code: String(code),
-                  name: String(name),
-                  status: 'delisted_sz'
-                });
-              }
-            });
-          }
-        } else {
-          errors.push(`Shenzhen delisted API returned ${szDelistResponse.status}`);
-        }
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : 'Unknown error';
-        console.error('Failed to fetch Shenzhen delisted stocks:', errMsg);
-        errors.push(`Failed to fetch Shenzhen delisted stocks: ${errMsg}`);
-      }
-    }
-
-    // Remove duplicates (prefer active status)
-    const uniqueStocks = new Map<string, { code: string; name: string; status: string }>();
-
-    for (const stock of results) {
-      const existing = uniqueStocks.get(stock.code);
-
-      // If not exists, or existing is delisted but new is active, update
-      if (!existing || (existing.status !== 'active' && stock.status === 'active')) {
-        uniqueStocks.set(stock.code, stock);
-      }
-    }
-
-    const finalResults = Array.from(uniqueStocks.values());
-
-    // Sort by code
-    finalResults.sort((a, b) => a.code.localeCompare(b.code));
-
-    // If no results and there were errors, return error response
-    if (finalResults.length === 0 && errors.length > 0) {
+    if (!response.success || !response.data) {
       return NextResponse.json(
         {
           error: 'Failed to fetch stock list',
-          message: errors.join('; '),
+          message: response.error?.message || 'Unknown error',
           stocks: []
         },
         { status: 503 }
       );
     }
 
+    // Transform to the expected format
+    const stocks = response.data.items.map((item: StockItem) => ({
+      code: item.code,
+      name: item.name,
+      status: item.status || 'active'
+    }));
+
+    // Sort by code
+    stocks.sort((a, b) => a.code.localeCompare(b.code));
+
     return NextResponse.json({
       success: true,
-      count: finalResults.length,
-      stocks: finalResults,
-      ...(errors.length > 0 && { warnings: errors })
+      count: stocks.length,
+      stocks
     });
 
   } catch (error) {

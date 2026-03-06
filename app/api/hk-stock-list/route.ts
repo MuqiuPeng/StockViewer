@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { API_CONFIG } from '@/lib/env';
-import { fetchWithRetry } from '@/lib/fetch-utils';
+import { dataService, StockItem } from '@/lib/data-service-client';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,37 +9,26 @@ export const dynamic = 'force-dynamic';
  *
  * Fetches the list of available Hong Kong stocks
  */
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    const hkUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/stock_hk_spot_em`;
-    const response = await fetchWithRetry(hkUrl);
+    // Fetch from Data Service
+    const response = await dataService.getStockList('hk');
 
-    if (!response.ok) {
+    if (!response.success || !response.data) {
       return NextResponse.json(
-        { error: 'Failed to fetch HK stock list', message: `API returned status ${response.status}` },
-        { status: 502 }
-      );
-    }
-
-    const data = await response.json();
-
-    if (!Array.isArray(data)) {
-      return NextResponse.json(
-        { error: 'Invalid response', message: 'API did not return an array' },
+        {
+          error: 'Failed to fetch HK stock list',
+          message: response.error?.message || 'Unknown error'
+        },
         { status: 502 }
       );
     }
 
     // Transform to standard format
-    const stocks = data.map((item: any) => {
-      const code = item['代码'] || item.code || item.symbol;
-      const name = item['名称'] || item.name;
-
-      return {
-        code: String(code || ''),
-        name: String(name || ''),
-      };
-    }).filter(item => item.code && item.name);
+    const stocks = response.data.items.map((item: StockItem) => ({
+      code: item.code,
+      name: item.name,
+    }));
 
     // Sort by code
     stocks.sort((a, b) => a.code.localeCompare(b.code));

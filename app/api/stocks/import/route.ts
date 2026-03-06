@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/api-auth';
 import { Prisma } from '@prisma/client';
+import { fetchStockDataFromService } from '@/lib/data-service-client';
 
 export const runtime = 'nodejs';
 
@@ -148,143 +149,25 @@ async function processImportJob(
       data: {
         status: 'PROCESSING',
         startedAt: new Date(),
-        message: 'Fetching data from API...',
+        message: 'Fetching data from Data Service...',
       },
     });
 
-    // Call Python to fetch data from AKShare
-    const { spawn } = await import('child_process');
-
-    const pythonCode = `
-import akshare as ak
-import json
-import sys
-
-symbol = "${symbol}"
-data_source = "${dataSource}"
-start_date = "${startDate || ''}"
-end_date = "${endDate || ''}"
-
-try:
-    stock_name = None
-
-    # Fetch data based on data source
-    if data_source == "stock_zh_a_hist":
-        df = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_date or "19900101", end_date=end_date or "21001231", adjust="qfq")
-        # Try to get stock name from stock info
-        try:
-            info_df = ak.stock_individual_info_em(symbol=symbol)
-            if info_df is not None and len(info_df) > 0:
-                name_row = info_df[info_df['item'] == '股票简称']
-                if len(name_row) > 0:
-                    stock_name = name_row.iloc[0]['value']
-        except:
-            pass
-    elif data_source == "stock_hk_hist":
-        df = ak.stock_hk_hist(symbol=symbol, period="daily", start_date=start_date or "19900101", end_date=end_date or "21001231", adjust="qfq")
-    elif data_source == "stock_us_hist":
-        df = ak.stock_us_hist(symbol=symbol, period="daily", start_date=start_date or "19900101", end_date=end_date or "21001231", adjust="qfq")
-    elif data_source == "fund_etf_hist_em":
-        df = ak.fund_etf_hist_em(symbol=symbol, period="daily", start_date=start_date or "19900101", end_date=end_date or "21001231", adjust="qfq")
-        # Try to get ETF name
-        try:
-            etf_list = ak.fund_etf_spot_em()
-            if etf_list is not None:
-                match = etf_list[etf_list['代码'] == symbol]
-                if len(match) > 0:
-                    stock_name = match.iloc[0]['名称']
-        except:
-            pass
-    elif data_source == "index_zh_a_hist":
-        df = ak.index_zh_a_hist(symbol=symbol, period="daily", start_date=start_date or "19900101", end_date=end_date or "21001231")
-        # Try to get index name
-        try:
-            index_list = ak.stock_zh_index_spot_em()
-            if index_list is not None:
-                match = index_list[index_list['代码'] == symbol]
-                if len(match) > 0:
-                    stock_name = match.iloc[0]['名称']
-        except:
-            pass
-    else:
-        raise ValueError(f"Unsupported data source: {data_source}")
-
-    # Rename columns to English
-    column_map = {
-        "日期": "date",
-        "开盘": "open",
-        "收盘": "close",
-        "最高": "high",
-        "最低": "low",
-        "成交量": "volume",
-        "成交额": "turnover",
-        "振幅": "amplitude",
-        "涨跌幅": "change_pct",
-        "涨跌额": "change_amount",
-        "换手率": "turnover_rate",
-    }
-    df = df.rename(columns=column_map)
-
-    # Convert date to string
-    if "date" in df.columns:
-        df["date"] = df["date"].astype(str)
-
-    # Convert to list of dicts
-    records = df.to_dict(orient="records")
-
-    print(json.dumps({
-        "success": True,
-        "rowCount": len(records),
-        "firstDate": records[0]["date"] if records else None,
-        "lastDate": records[-1]["date"] if records else None,
-        "stockName": stock_name,
-        "data": records
-    }))
-except Exception as e:
-    print(json.dumps({
-        "success": False,
-        "error": str(e)
-    }))
-`;
-
-    const result = await new Promise<any>((resolve, reject) => {
-      const python = spawn('python3', ['-c', pythonCode]);
-      let stdout = '';
-      let stderr = '';
-
-      python.stdout.on('data', (data) => {
-        stdout += data.toString();
-      });
-
-      python.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
-
-      python.on('close', (code) => {
-        if (code !== 0) {
-          reject(new Error(`Python exited with code ${code}: ${stderr}`));
-          return;
-        }
-
-        try {
-          const result = JSON.parse(stdout);
-          resolve(result);
-        } catch (e) {
-          reject(new Error(`Failed to parse Python output: ${stdout}`));
-        }
-      });
-    });
+    // Fetch data from Data Service
+    const result = await fetchStockDataFromService(symbol, dataSource, startDate, endDate);
 
     if (!result.success) {
-      throw new Error(result.error || 'Unknown error from Python');
+      throw new Error(result.error || 'Unknown error from Data Service');
     }
+
+    const records = result.data || [];
 
     // Update progress
     await prisma.dataImportJob.update({
       where: { id: jobId },
       data: {
         progress: 50,
-        message: `Fetched ${result.rowCount} records, saving to database...`,
+        message: `Fetched ${records.length} records, saving to database...`,
       },
     });
 
@@ -332,7 +215,6 @@ except Exception as e:
 
     // Insert price data in batches
     const batchSize = 1000;
-    const records = result.data;
     let inserted = 0;
 
     for (let i = 0; i < records.length; i += batchSize) {

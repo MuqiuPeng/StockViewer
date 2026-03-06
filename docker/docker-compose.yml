@@ -1,4 +1,24 @@
 services:
+  # Stock Data Service (数据获取服务)
+  data-service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.data-service
+    ports:
+      - "8000:8000"
+    environment:
+      - LOG_LEVEL=info
+      - CACHE_TTL=300
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - stockviewer-network
+
   # Main StockViewer Application
   app:
     build:
@@ -8,6 +28,10 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+      - DATA_SERVICE_URL=http://data-service:8000
+      - DATA_SERVICE_TIMEOUT_MS=60000
+      - DATA_SERVICE_RETRIES=2
+      # Legacy AKTools (for backward compatibility during migration)
       - NEXT_PUBLIC_AKTOOLS_API_URL=http://aktools:8080
       - PYTHON_EXECUTABLE=python3
       - PYTHON_TIMEOUT_MS=300000
@@ -21,13 +45,13 @@ services:
       - stockviewer-datasets:/app/data/datasets
       - stockviewer-viewsettings:/app/data/view-settings
     depends_on:
-      aktools:
+      data-service:
         condition: service_healthy
     restart: unless-stopped
     networks:
       - stockviewer-network
 
-  # AKTools API Service
+  # Legacy AKTools API Service (可选，迁移完成后可移除)
   aktools:
     build:
       context: .
@@ -43,6 +67,8 @@ services:
       start_period: 60s
     networks:
       - stockviewer-network
+    profiles:
+      - legacy  # 只有指定 --profile legacy 才会启动
 
 networks:
   stockviewer-network:

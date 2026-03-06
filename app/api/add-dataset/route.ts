@@ -3,7 +3,7 @@
  * POST /api/add-dataset - Add stock to user's collection
  *
  * If stock exists in shared pool: just add to user's collection
- * If stock doesn't exist: fetch from AKShare, add to shared pool, then add to collection
+ * If stock doesn't exist: fetch from Data Service, add to shared pool, then add to collection
  *
  * Update modes:
  * - forceUpdate: true  -> Incremental update (fetch from lastDate+1, preserve existing data)
@@ -14,7 +14,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
 import { Prisma } from '@prisma/client';
-import { spawn } from 'child_process';
+import { fetchStockDataFromService } from '@/lib/data-service-client';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -135,8 +135,8 @@ export async function POST(request: Request) {
       fetchStartDate = formatDateForAKShare(nextDay);
     }
 
-    // Fetch stock data from AKShare
-    const result = await fetchStockData(symbol, dataSource, fetchStartDate, endDate);
+    // Fetch stock data from Data Service
+    const result = await fetchStockDataFromService(symbol, dataSource, fetchStartDate, endDate);
 
     if (!result.success) {
       return NextResponse.json(
@@ -351,144 +351,3 @@ export async function POST(request: Request) {
   }
 }
 
-/**
- * Fetch stock data from AKShare via Python
- */
-async function fetchStockData(
-  symbol: string,
-  dataSource: string,
-  startDate?: string,
-  endDate?: string
-): Promise<{
-  success: boolean;
-  data?: any[];
-  firstDate?: string;
-  lastDate?: string;
-  stockName?: string;
-  error?: string;
-}> {
-  const pythonCode = `
-import akshare as ak
-import json
-import sys
-
-symbol = "${symbol}"
-data_source = "${dataSource}"
-start_date = "${startDate || ''}"
-end_date = "${endDate || ''}"
-
-try:
-    stock_name = None
-
-    # Fetch data based on data source
-    if data_source == "stock_zh_a_hist":
-        df = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_date or "19900101", end_date=end_date or "21001231", adjust="qfq")
-        # Try to get stock name
-        try:
-            info_df = ak.stock_individual_info_em(symbol=symbol)
-            if info_df is not None and len(info_df) > 0:
-                name_row = info_df[info_df['item'] == '股票简称']
-                if len(name_row) > 0:
-                    stock_name = name_row.iloc[0]['value']
-        except:
-            pass
-    elif data_source == "stock_hk_hist":
-        df = ak.stock_hk_hist(symbol=symbol, period="daily", start_date=start_date or "19900101", end_date=end_date or "21001231", adjust="qfq")
-    elif data_source == "stock_us_hist":
-        df = ak.stock_us_hist(symbol=symbol, period="daily", start_date=start_date or "19900101", end_date=end_date or "21001231", adjust="qfq")
-    elif data_source == "fund_etf_hist_em":
-        df = ak.fund_etf_hist_em(symbol=symbol, period="daily", start_date=start_date or "19900101", end_date=end_date or "21001231", adjust="qfq")
-        # Try to get ETF name
-        try:
-            etf_list = ak.fund_etf_spot_em()
-            if etf_list is not None:
-                match = etf_list[etf_list['代码'] == symbol]
-                if len(match) > 0:
-                    stock_name = match.iloc[0]['名称']
-        except:
-            pass
-    elif data_source == "index_zh_a_hist":
-        df = ak.index_zh_a_hist(symbol=symbol, period="daily", start_date=start_date or "19900101", end_date=end_date or "21001231")
-        # Try to get index name
-        try:
-            index_list = ak.stock_zh_index_spot_em()
-            if index_list is not None:
-                match = index_list[index_list['代码'] == symbol]
-                if len(match) > 0:
-                    stock_name = match.iloc[0]['名称']
-        except:
-            pass
-    else:
-        raise ValueError(f"Unsupported data source: {data_source}")
-
-    # Rename columns to English
-    column_map = {
-        "日期": "date",
-        "开盘": "open",
-        "收盘": "close",
-        "最高": "high",
-        "最低": "low",
-        "成交量": "volume",
-        "成交额": "turnover",
-        "振幅": "amplitude",
-        "涨跌幅": "change_pct",
-        "涨跌额": "change_amount",
-        "换手率": "turnover_rate",
-    }
-    df = df.rename(columns=column_map)
-
-    # Convert date to string
-    if "date" in df.columns:
-        df["date"] = df["date"].astype(str)
-
-    # Convert to list of dicts
-    records = df.to_dict(orient="records")
-
-    print(json.dumps({
-        "success": True,
-        "rowCount": len(records),
-        "firstDate": records[0]["date"] if records else None,
-        "lastDate": records[-1]["date"] if records else None,
-        "stockName": stock_name,
-        "data": records
-    }))
-except Exception as e:
-    print(json.dumps({
-        "success": False,
-        "error": str(e)
-    }))
-`;
-
-  return new Promise((resolve) => {
-    const pythonExecutable = process.env.PYTHON_EXECUTABLE || 'python3';
-    const python = spawn(pythonExecutable, ['-c', pythonCode]);
-    let stdout = '';
-    let stderr = '';
-
-    python.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    python.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    python.on('close', (code) => {
-      if (code !== 0) {
-        resolve({ success: false, error: `Python exited with code ${code}: ${stderr}` });
-        return;
-      }
-
-      try {
-        const result = JSON.parse(stdout);
-        resolve(result);
-      } catch (e) {
-        resolve({ success: false, error: `Failed to parse Python output: ${stdout}` });
-      }
-    });
-
-    python.on('error', (err) => {
-      resolve({ success: false, error: `Failed to spawn Python: ${err.message}` });
-    });
-  });
-}

@@ -1,9 +1,27 @@
-# Production deployment with PostgreSQL and auth
+# Production deployment with PostgreSQL, Data Service and auth
 # Usage:
 #   1. Copy .env.production.example to .env.production and fill in values
 #   2. docker compose -f docker/docker-compose.production.yml up -d
 
 services:
+  # Stock Data Service (数据获取服务)
+  data-service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.data-service
+    environment:
+      - LOG_LEVEL=info
+      - CACHE_TTL=300
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - stockviewer-network
+
   stockviewer:
     build:
       context: ..
@@ -14,6 +32,10 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+      - DATA_SERVICE_URL=http://data-service:8000
+      - DATA_SERVICE_TIMEOUT_MS=60000
+      - DATA_SERVICE_RETRIES=2
+      # Legacy (for backward compatibility)
       - NEXT_PUBLIC_AKTOOLS_API_URL=http://127.0.0.1:8080
       - NEXT_PUBLIC_STORAGE_MODE=database
       - NEXT_PUBLIC_BASE_PATH=/stockviewer
@@ -32,6 +54,8 @@ services:
       - stockviewer-data:/app/data
     depends_on:
       db:
+        condition: service_healthy
+      data-service:
         condition: service_healthy
     restart: unless-stopped
     networks:

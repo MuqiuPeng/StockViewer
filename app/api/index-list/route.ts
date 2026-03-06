@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
-import { API_CONFIG } from '@/lib/env';
-import { fetchWithRetry } from '@/lib/fetch-utils';
+import { dataService, IndexItem } from '@/lib/data-service-client';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -17,66 +16,33 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const source = searchParams.get('source') || 'zh';
 
-    let apiUrl: string;
-    let labelMapping: { code: string; name: string };
-
-    switch (source) {
-      case 'zh':
-        // Chinese indices from East Money
-        apiUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/stock_zh_index_spot_em`;
-        labelMapping = { code: '代码', name: '名称' };
-        break;
-
-      case 'hk':
-        // Hong Kong indices
-        apiUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/stock_hk_index_spot_em`;
-        labelMapping = { code: '代码', name: '名称' };
-        break;
-
-      case 'us':
-        // US indices via Sina
-        apiUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/index_us_stock_sina`;
-        labelMapping = { code: 'symbol', name: 'name' };
-        break;
-
-      case 'global':
-        // Global indices
-        apiUrl = `${API_CONFIG.AKTOOLS_URL}/api/public/index_global_spot_em`;
-        labelMapping = { code: '代码', name: '名称' };
-        break;
-
-      default:
-        return NextResponse.json(
-          { error: 'Invalid source', message: 'Source must be zh, hk, us, or global' },
-          { status: 400 }
-        );
-    }
-
-    const response = await fetchWithRetry(apiUrl);
-
-    if (!response.ok) {
+    // Validate source
+    if (!['zh', 'hk', 'us', 'global'].includes(source)) {
       return NextResponse.json(
-        { error: 'Failed to fetch index list', message: `API returned status ${response.status}` },
-        { status: 502 }
+        { error: 'Invalid source', message: 'Source must be zh, hk, us, or global' },
+        { status: 400 }
       );
     }
 
-    const data = await response.json();
+    // Fetch from Data Service
+    const response = await dataService.getIndexList(source as 'zh' | 'hk' | 'us' | 'global');
 
-    if (!Array.isArray(data)) {
+    if (!response.success || !response.data) {
       return NextResponse.json(
-        { error: 'Invalid response', message: 'API did not return an array' },
+        {
+          error: 'Failed to fetch index list',
+          message: response.error?.message || 'Unknown error'
+        },
         { status: 502 }
       );
     }
 
     // Transform to standard format and sort by code
-    const indices = data.map((item: any) => ({
-      code: String(item[labelMapping.code] || item.code || ''),
-      name: String(item[labelMapping.name] || item.name || ''),
+    const indices = response.data.items.map((item: IndexItem) => ({
+      code: item.code,
+      name: item.name,
       source
-    })).filter(item => item.code && item.name)
-      .sort((a, b) => a.code.localeCompare(b.code));
+    })).sort((a, b) => a.code.localeCompare(b.code));
 
     return NextResponse.json({
       success: true,

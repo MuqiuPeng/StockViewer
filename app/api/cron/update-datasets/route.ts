@@ -9,8 +9,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
-import { spawn } from 'child_process';
-import { API_CONFIG } from '@/lib/env';
+import { fetchStockDataFromService } from '@/lib/data-service-client';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -39,79 +38,6 @@ function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-// Fetch stock data from AKShare API
-async function fetchStockData(
-  symbol: string,
-  dataSource: string,
-  startDate?: string,
-  endDate?: string
-): Promise<{ success: boolean; data?: any[]; error?: string; stockName?: string; firstDate?: string; lastDate?: string }> {
-  return new Promise((resolve) => {
-    const args = [
-      '-c',
-      `import akshare as ak; import json; import pandas as pd; df = ak.${dataSource}(symbol="${symbol}"${startDate ? `, start_date="${startDate}"` : ''}${endDate ? `, end_date="${endDate}"` : ''}); df['日期'] = df['日期'].astype(str) if '日期' in df.columns else df.index.astype(str); print(json.dumps(df.to_dict('records')))`
-    ];
-
-    const pythonProcess = spawn('python3', args);
-    let stdout = '';
-    let stderr = '';
-
-    pythonProcess.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    pythonProcess.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    pythonProcess.on('close', (code) => {
-      if (code !== 0) {
-        resolve({ success: false, error: stderr || `Process exited with code ${code}` });
-        return;
-      }
-
-      try {
-        const data = JSON.parse(stdout);
-        if (!Array.isArray(data) || data.length === 0) {
-          resolve({ success: true, data: [] });
-          return;
-        }
-
-        // Transform data to consistent format
-        const transformed = data.map((row: any) => ({
-          date: row['日期'] || row['date'],
-          open: parseFloat(row['开盘'] || row['open'] || 0),
-          high: parseFloat(row['最高'] || row['high'] || 0),
-          low: parseFloat(row['最低'] || row['low'] || 0),
-          close: parseFloat(row['收盘'] || row['close'] || 0),
-          volume: parseFloat(row['成交量'] || row['volume'] || 0),
-          turnover: row['成交额'] !== undefined ? parseFloat(row['成交额']) : undefined,
-          amplitude: row['振幅'] !== undefined ? parseFloat(row['振幅']) : undefined,
-          change_pct: row['涨跌幅'] !== undefined ? parseFloat(row['涨跌幅']) : undefined,
-          change_amount: row['涨跌额'] !== undefined ? parseFloat(row['涨跌额']) : undefined,
-          turnover_rate: row['换手率'] !== undefined ? parseFloat(row['换手率']) : undefined,
-        }));
-
-        const dates = transformed.map(r => r.date).filter(Boolean).sort();
-        resolve({
-          success: true,
-          data: transformed,
-          firstDate: dates[0],
-          lastDate: dates[dates.length - 1],
-        });
-      } catch (e) {
-        resolve({ success: false, error: `Failed to parse response: ${e}` });
-      }
-    });
-
-    // Timeout after 60 seconds
-    setTimeout(() => {
-      pythonProcess.kill();
-      resolve({ success: false, error: 'Request timeout' });
-    }, 60000);
-  });
-}
-
 // Update a single stock
 async function updateStock(stock: {
   id: string;
@@ -127,8 +53,8 @@ async function updateStock(stock: {
       startDate = formatDateForAKShare(nextDay);
     }
 
-    // Fetch new data
-    const result = await fetchStockData(stock.symbol, stock.dataSource, startDate);
+    // Fetch new data from Data Service
+    const result = await fetchStockDataFromService(stock.symbol, stock.dataSource, startDate);
 
     if (!result.success) {
       return { success: false, newRecords: 0, error: result.error };
