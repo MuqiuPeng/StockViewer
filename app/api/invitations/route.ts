@@ -18,13 +18,13 @@ export async function GET() {
     }
     const { userId } = authResult;
 
-    const invitations = await prisma.userGroupInvitation.findMany({
+    const invitations = await prisma.teamInvitation.findMany({
       where: {
         userId,
         status: 'pending',
       },
       include: {
-        group: {
+        team: {
           include: {
             owner: { select: { id: true, name: true, image: true } },
             _count: { select: { members: true } },
@@ -37,12 +37,12 @@ export async function GET() {
     return NextResponse.json({
       invitations: invitations.map(inv => ({
         id: inv.id,
-        group: {
-          id: inv.group.id,
-          name: inv.group.name,
-          description: inv.group.description,
-          owner: inv.group.owner,
-          memberCount: inv.group._count.members,
+        team: {
+          id: inv.team.id,
+          name: inv.team.name,
+          description: inv.team.description,
+          owner: inv.team.owner,
+          memberCount: inv.team._count.members,
         },
         status: inv.status,
         createdAt: inv.createdAt.toISOString(),

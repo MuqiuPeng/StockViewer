@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 
-interface UserGroup {
+interface Team {
   id: string;
   name: string;
   description: string | null;
@@ -25,7 +25,7 @@ interface UserGroup {
 
 interface Invitation {
   id: string;
-  group: {
+  team: {
     id: string;
     name: string;
     description: string | null;
@@ -68,7 +68,7 @@ interface Message {
     dependencies: Dependency[];
     isImported: boolean;
   } | null;
-  stockGroup: {
+  stockTeam: {
     id: string;
     name: string;
     description: string | null;
@@ -83,24 +83,24 @@ interface Message {
   createdAt: string;
 }
 
-export default function GroupsPage() {
-  const [groups, setGroups] = useState<UserGroup[]>([]);
+export default function TeamsPage() {
+  const [teams, setTeams] = useState<Team[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Selected group and chat
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  // Selected team and chat
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [newMessage, setNewMessage] = useState('');
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Create group form
+  // Create team form
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [newGroupName, setNewGroupName] = useState('');
-  const [newGroupDescription, setNewGroupDescription] = useState('');
+  const [newTeamName, setNewTeamName] = useState('');
+  const [newTeamDescription, setNewTeamDescription] = useState('');
   const [creating, setCreating] = useState(false);
 
   // Invite form
@@ -110,13 +110,13 @@ export default function GroupsPage() {
 
   // Share resource modal
   const [showShareModal, setShowShareModal] = useState(false);
-  const [shareType, setShareType] = useState<'indicator' | 'strategy' | 'stockGroup' | 'viewSetting'>('indicator');
+  const [shareType, setShareType] = useState<'indicator' | 'strategy' | 'stockTeam' | 'viewSetting'>('indicator');
   const [availableResources, setAvailableResources] = useState<any[]>([]);
   const [selectedResourceId, setSelectedResourceId] = useState<string>('');
   const [loadingResources, setLoadingResources] = useState(false);
 
   // Left panel tab
-  const [leftTab, setLeftTab] = useState<'groups' | 'invitations'>('groups');
+  const [leftTab, setLeftTab] = useState<'teams' | 'invitations'>('teams');
 
   // Expanded dependencies tracking
   const [expandedDeps, setExpandedDeps] = useState<Set<string>>(new Set());
@@ -133,18 +133,18 @@ export default function GroupsPage() {
     });
   };
 
-  const selectedGroup = groups.find(g => g.id === selectedGroupId);
+  const selectedTeam = teams.find(g => g.id === selectedTeamId);
 
   useEffect(() => {
-    loadGroups();
+    loadTeams();
     loadInvitations();
   }, []);
 
   useEffect(() => {
-    if (selectedGroupId) {
+    if (selectedTeamId) {
       loadMessages();
     }
-  }, [selectedGroupId]);
+  }, [selectedTeamId]);
 
   useEffect(() => {
     scrollToBottom();
@@ -154,23 +154,23 @@ export default function GroupsPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const loadGroups = async () => {
+  const loadTeams = async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch('/api/user-groups');
+      const response = await fetch('/api/teams');
       const data = await response.json();
       if (data.error) {
-        setError(data.message || 'Failed to load groups');
+        setError(data.message || 'Failed to load teams');
       } else {
-        setGroups(data.groups || []);
-        // Auto-select first group if none selected
-        if (!selectedGroupId && data.groups?.length > 0) {
-          setSelectedGroupId(data.groups[0].id);
+        setTeams(data.teams || []);
+        // Auto-select first team if none selected
+        if (!selectedTeamId && data.teams?.length > 0) {
+          setSelectedTeamId(data.teams[0].id);
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load groups');
+      setError(err instanceof Error ? err.message : 'Failed to load teams');
     } finally {
       setLoading(false);
     }
@@ -189,10 +189,10 @@ export default function GroupsPage() {
   };
 
   const loadMessages = async () => {
-    if (!selectedGroupId) return;
+    if (!selectedTeamId) return;
     setMessagesLoading(true);
     try {
-      const response = await fetch(`/api/user-groups/${selectedGroupId}/messages`);
+      const response = await fetch(`/api/teams/${selectedTeamId}/messages`);
       const data = await response.json();
       if (!data.error) {
         setMessages(data.messages || []);
@@ -204,54 +204,54 @@ export default function GroupsPage() {
     }
   };
 
-  const handleCreateGroup = async () => {
-    if (!newGroupName.trim()) return;
+  const handleCreateTeam = async () => {
+    if (!newTeamName.trim()) return;
     setCreating(true);
     try {
-      const response = await fetch('/api/user-groups', {
+      const response = await fetch('/api/teams', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: newGroupName,
-          description: newGroupDescription || null,
+          name: newTeamName,
+          description: newTeamDescription || null,
         }),
       });
       const data = await response.json();
       if (data.error) {
-        alert(data.message || 'Failed to create group');
+        alert(data.message || 'Failed to create team');
       } else {
-        setNewGroupName('');
-        setNewGroupDescription('');
+        setNewTeamName('');
+        setNewTeamDescription('');
         setShowCreateForm(false);
-        loadGroups();
-        setSelectedGroupId(data.group.id);
+        loadTeams();
+        setSelectedTeamId(data.team.id);
       }
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to create group');
+      alert(err instanceof Error ? err.message : 'Failed to create team');
     } finally {
       setCreating(false);
     }
   };
 
-  const handleDeleteGroup = async (group: UserGroup) => {
-    const message = group.isOwner
-      ? `Are you sure you want to dissolve "${group.name}"? This will remove all members.`
-      : `Are you sure you want to leave "${group.name}"?`;
+  const handleDeleteTeam = async (team: Team) => {
+    const message = team.isOwner
+      ? `Are you sure you want to dissolve "${team.name}"? This will remove all members.`
+      : `Are you sure you want to leave "${team.name}"?`;
     if (!confirm(message)) return;
 
     try {
-      const response = await fetch(`/api/user-groups/${group.id}`, {
+      const response = await fetch(`/api/teams/${team.id}`, {
         method: 'DELETE',
       });
       const data = await response.json();
       if (data.error) {
         alert(data.message || 'Operation failed');
       } else {
-        if (selectedGroupId === group.id) {
-          setSelectedGroupId(null);
+        if (selectedTeamId === team.id) {
+          setSelectedTeamId(null);
           setMessages([]);
         }
-        loadGroups();
+        loadTeams();
       }
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Operation failed');
@@ -259,10 +259,10 @@ export default function GroupsPage() {
   };
 
   const handleInvite = async () => {
-    if (!selectedGroupId || !inviteEmail.trim()) return;
+    if (!selectedTeamId || !inviteEmail.trim()) return;
     setInviting(true);
     try {
-      const response = await fetch(`/api/user-groups/${selectedGroupId}/invite`, {
+      const response = await fetch(`/api/teams/${selectedTeamId}/invite`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: inviteEmail }),
@@ -295,7 +295,7 @@ export default function GroupsPage() {
       } else {
         loadInvitations();
         if (action === 'accept') {
-          loadGroups();
+          loadTeams();
         }
       }
     } catch (err) {
@@ -304,10 +304,10 @@ export default function GroupsPage() {
   };
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !selectedGroupId) return;
+    if (!newMessage.trim() || !selectedTeamId) return;
     setSending(true);
     try {
-      const response = await fetch(`/api/user-groups/${selectedGroupId}/messages`, {
+      const response = await fetch(`/api/teams/${selectedTeamId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: newMessage }),
@@ -333,12 +333,12 @@ export default function GroupsPage() {
       switch (type) {
         case 'indicator': endpoint = '/api/indicators'; break;
         case 'strategy': endpoint = '/api/strategies'; break;
-        case 'stockGroup': endpoint = '/api/groups'; break;
+        case 'stockTeam': endpoint = '/api/teams'; break;
         case 'viewSetting': endpoint = '/api/view-settings'; break;
       }
       const response = await fetch(endpoint);
       const data = await response.json();
-      const owned = (data.indicators || data.strategies || data.groups || data.settings || [])
+      const owned = (data.indicators || data.strategies || data.teams || data.settings || [])
         .filter((r: any) => r.isOwner);
       setAvailableResources(owned);
     } catch (err) {
@@ -350,17 +350,17 @@ export default function GroupsPage() {
   };
 
   const handleShareResource = async () => {
-    if (!selectedResourceId || !selectedGroupId) return;
+    if (!selectedResourceId || !selectedTeamId) return;
     setSending(true);
     try {
       const body: any = { content: null };
       switch (shareType) {
         case 'indicator': body.indicatorId = selectedResourceId; break;
         case 'strategy': body.strategyId = selectedResourceId; break;
-        case 'stockGroup': body.stockGroupId = selectedResourceId; break;
+        case 'stockTeam': body.stockTeamId = selectedResourceId; break;
         case 'viewSetting': body.viewSettingId = selectedResourceId; break;
       }
-      const response = await fetch(`/api/user-groups/${selectedGroupId}/messages`, {
+      const response = await fetch(`/api/teams/${selectedTeamId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -381,9 +381,9 @@ export default function GroupsPage() {
   };
 
   const handleImportResource = async (type: string, resourceId: string) => {
-    if (!selectedGroupId) return;
+    if (!selectedTeamId) return;
     try {
-      const response = await fetch(`/api/user-groups/${selectedGroupId}/import`, {
+      const response = await fetch(`/api/teams/${selectedTeamId}/import`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ type, resourceId }),
@@ -401,11 +401,11 @@ export default function GroupsPage() {
   };
 
   const handleRetractMessage = async (messageId: string) => {
-    if (!selectedGroupId) return;
+    if (!selectedTeamId) return;
     if (!confirm('Are you sure you want to retract this share?')) return;
     try {
       const response = await fetch(
-        `/api/user-groups/${selectedGroupId}/messages?messageId=${messageId}`,
+        `/api/teams/${selectedTeamId}/messages?messageId=${messageId}`,
         { method: 'DELETE' }
       );
       const data = await response.json();
@@ -564,14 +564,14 @@ export default function GroupsPage() {
       );
     }
 
-    if (message.stockGroup) {
+    if (message.stockTeam) {
       return (
         <div className="bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded p-3 mt-2">
           <div className="flex justify-between items-start">
             <div className="flex-1 min-w-0">
               <span className="text-xs text-green-600 dark:text-green-400 font-medium">STOCK GROUP</span>
-              <h4 className="font-semibold text-green-800 dark:text-green-200">{message.stockGroup.name}</h4>
-              <p className="text-sm text-green-600 dark:text-green-400">{message.stockGroup.stockIds.length} stocks</p>
+              <h4 className="font-semibold text-green-800 dark:text-green-200">{message.stockTeam.name}</h4>
+              <p className="text-sm text-green-600 dark:text-green-400">{message.stockTeam.stockIds.length} stocks</p>
             </div>
             <div className="flex items-center gap-2 ml-2">
               {message.isOwn && (
@@ -583,9 +583,9 @@ export default function GroupsPage() {
                   Retract
                 </button>
               )}
-              {!message.stockGroup.isImported && !message.isOwn ? (
+              {!message.stockTeam.isImported && !message.isOwn ? (
                 <button
-                  onClick={() => handleImportResource('stockGroup', message.stockGroup!.id)}
+                  onClick={() => handleImportResource('stockTeam', message.stockTeam!.id)}
                   className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
                 >
                   Import
@@ -638,16 +638,16 @@ export default function GroupsPage() {
 
   return (
     <div className="h-screen bg-gray-50 dark:bg-gray-900 pt-14 flex">
-      {/* Left Panel - Group List */}
+      {/* Left Panel - Team List */}
       <div className="w-80 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 flex flex-col">
         {/* Left Panel Header */}
         <div className="p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold dark:text-white">Groups</h2>
+            <h2 className="text-lg font-semibold dark:text-white">Teams</h2>
             <button
               onClick={() => setShowCreateForm(true)}
               className="p-2 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded"
-              title="Create new group"
+              title="Create new team"
             >
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -657,14 +657,14 @@ export default function GroupsPage() {
           {/* Tabs */}
           <div className="flex gap-2">
             <button
-              onClick={() => setLeftTab('groups')}
+              onClick={() => setLeftTab('teams')}
               className={`flex-1 py-1.5 text-sm rounded ${
-                leftTab === 'groups'
+                leftTab === 'teams'
                   ? 'bg-blue-600 text-white'
                   : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
               }`}
             >
-              My Groups ({groups.length})
+              My Teams ({teams.length})
             </button>
             <button
               onClick={() => setLeftTab('invitations')}
@@ -684,28 +684,28 @@ export default function GroupsPage() {
           </div>
         </div>
 
-        {/* Create Group Form */}
+        {/* Create Team Form */}
         {showCreateForm && (
           <div className="p-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700">
             <input
               type="text"
-              placeholder="Group name"
-              value={newGroupName}
-              onChange={(e) => setNewGroupName(e.target.value)}
+              placeholder="Team name"
+              value={newTeamName}
+              onChange={(e) => setNewTeamName(e.target.value)}
               className="w-full p-2 text-sm border dark:border-gray-600 rounded mb-2 dark:bg-gray-800 dark:text-white"
               autoFocus
             />
             <input
               type="text"
               placeholder="Description (optional)"
-              value={newGroupDescription}
-              onChange={(e) => setNewGroupDescription(e.target.value)}
+              value={newTeamDescription}
+              onChange={(e) => setNewTeamDescription(e.target.value)}
               className="w-full p-2 text-sm border dark:border-gray-600 rounded mb-2 dark:bg-gray-800 dark:text-white"
             />
             <div className="flex gap-2">
               <button
-                onClick={handleCreateGroup}
-                disabled={creating || !newGroupName.trim()}
+                onClick={handleCreateTeam}
+                disabled={creating || !newTeamName.trim()}
                 className="flex-1 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
               >
                 {creating ? 'Creating...' : 'Create'}
@@ -713,8 +713,8 @@ export default function GroupsPage() {
               <button
                 onClick={() => {
                   setShowCreateForm(false);
-                  setNewGroupName('');
-                  setNewGroupDescription('');
+                  setNewTeamName('');
+                  setNewTeamDescription('');
                 }}
                 className="flex-1 py-1.5 text-sm bg-gray-500 text-white rounded hover:bg-gray-600"
               >
@@ -724,41 +724,41 @@ export default function GroupsPage() {
           </div>
         )}
 
-        {/* Group List */}
+        {/* Team List */}
         <div className="flex-1 overflow-y-auto">
           {loading ? (
             <div className="p-4 text-center text-gray-500">Loading...</div>
-          ) : leftTab === 'groups' ? (
-            groups.length === 0 ? (
+          ) : leftTab === 'teams' ? (
+            teams.length === 0 ? (
               <div className="p-4 text-center text-gray-500 dark:text-gray-400">
-                <p>No groups yet</p>
+                <p>No teams yet</p>
                 <button
                   onClick={() => setShowCreateForm(true)}
                   className="mt-2 text-blue-600 hover:underline"
                 >
-                  Create your first group
+                  Create your first team
                 </button>
               </div>
             ) : (
-              groups.map((group) => (
+              teams.map((team) => (
                 <div
-                  key={group.id}
-                  onClick={() => setSelectedGroupId(group.id)}
+                  key={team.id}
+                  onClick={() => setSelectedTeamId(team.id)}
                   className={`p-3 border-b border-gray-100 dark:border-gray-700 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 ${
-                    selectedGroupId === group.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''
+                    selectedTeamId === team.id ? 'bg-blue-50 dark:bg-blue-900/30' : ''
                   }`}
                 >
                   <div className="flex items-center justify-between">
-                    <h3 className="font-medium dark:text-white truncate">{group.name}</h3>
-                    {group.isOwner && (
+                    <h3 className="font-medium dark:text-white truncate">{team.name}</h3>
+                    {team.isOwner && (
                       <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300 text-xs rounded">
                         Owner
                       </span>
                     )}
                   </div>
                   <div className="flex items-center gap-3 mt-1 text-xs text-gray-500 dark:text-gray-400">
-                    <span>{group.memberCount} members</span>
-                    <span>{group.messageCount} messages</span>
+                    <span>{team.memberCount} members</span>
+                    <span>{team.messageCount} messages</span>
                   </div>
                 </div>
               ))
@@ -774,9 +774,9 @@ export default function GroupsPage() {
                   key={invitation.id}
                   className="p-3 border-b border-gray-100 dark:border-gray-700"
                 >
-                  <h3 className="font-medium dark:text-white">{invitation.group.name}</h3>
+                  <h3 className="font-medium dark:text-white">{invitation.team.name}</h3>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    From: {invitation.group.owner.name || 'Unknown'}
+                    From: {invitation.team.owner.name || 'Unknown'}
                   </p>
                   <div className="flex gap-2 mt-2">
                     <button
@@ -801,19 +801,19 @@ export default function GroupsPage() {
 
       {/* Right Panel - Chat */}
       <div className="flex-1 flex flex-col bg-white dark:bg-gray-800">
-        {selectedGroup ? (
+        {selectedTeam ? (
           <>
             {/* Chat Header */}
             <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold dark:text-white">{selectedGroup.name}</h2>
+                <h2 className="text-lg font-semibold dark:text-white">{selectedTeam.name}</h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {selectedGroup.memberCount} members
-                  {selectedGroup.description && ` · ${selectedGroup.description}`}
+                  {selectedTeam.memberCount} members
+                  {selectedTeam.description && ` · ${selectedTeam.description}`}
                 </p>
               </div>
               <div className="flex gap-2">
-                {selectedGroup.isOwner && (
+                {selectedTeam.isOwner && (
                   <button
                     onClick={() => setShowInviteForm(!showInviteForm)}
                     className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700"
@@ -822,12 +822,12 @@ export default function GroupsPage() {
                   </button>
                 )}
                 <button
-                  onClick={() => handleDeleteGroup(selectedGroup)}
+                  onClick={() => handleDeleteTeam(selectedTeam)}
                   className={`px-3 py-1.5 text-sm text-white rounded ${
-                    selectedGroup.isOwner ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-600 hover:bg-orange-700'
+                    selectedTeam.isOwner ? 'bg-red-600 hover:bg-red-700' : 'bg-orange-600 hover:bg-orange-700'
                   }`}
                 >
-                  {selectedGroup.isOwner ? 'Dissolve' : 'Leave'}
+                  {selectedTeam.isOwner ? 'Dissolve' : 'Leave'}
                 </button>
               </div>
             </div>
@@ -928,7 +928,7 @@ export default function GroupsPage() {
               <svg className="w-16 h-16 mx-auto mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
-              <p className="text-lg">Select a group to start chatting</p>
+              <p className="text-lg">Select a team to start chatting</p>
               <p className="text-sm mt-2">or create a new one</p>
             </div>
           </div>
@@ -943,7 +943,7 @@ export default function GroupsPage() {
             <h4 className="text-lg font-semibold dark:text-white mb-4">Share Resource</h4>
 
             <div className="flex gap-2 mb-4">
-              {(['indicator', 'strategy', 'stockGroup', 'viewSetting'] as const).map((type) => (
+              {(['indicator', 'strategy', 'stockTeam', 'viewSetting'] as const).map((type) => (
                 <button
                   key={type}
                   onClick={() => {
@@ -957,7 +957,7 @@ export default function GroupsPage() {
                       : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                   }`}
                 >
-                  {type === 'stockGroup' ? 'Group' : type === 'viewSetting' ? 'View' : type.charAt(0).toUpperCase() + type.slice(1)}
+                  {type === 'stockTeam' ? 'Team' : type === 'viewSetting' ? 'View' : type.charAt(0).toUpperCase() + type.slice(1)}
                 </button>
               ))}
             </div>

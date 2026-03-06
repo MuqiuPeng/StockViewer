@@ -1,6 +1,6 @@
 /**
- * Transfer Group Ownership API
- * POST /api/user-groups/:id/transfer - Transfer ownership to another member
+ * Transfer Team Ownership API
+ * POST /api/teams/:id/transfer - Transfer ownership to another member
  */
 
 import { NextResponse } from 'next/server';
@@ -9,7 +9,7 @@ import { getApiStorage } from '@/lib/api-auth';
 
 export const runtime = 'nodejs';
 
-// POST /api/user-groups/:id/transfer - Transfer ownership
+// POST /api/teams/:id/transfer - Transfer ownership
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
@@ -21,20 +21,20 @@ export async function POST(
     }
     const { userId } = authResult;
 
-    const group = await prisma.userGroup.findUnique({
+    const team = await prisma.team.findUnique({
       where: { id: params.id },
       include: { members: true },
     });
 
-    if (!group) {
+    if (!team) {
       return NextResponse.json(
-        { error: 'Group not found' },
+        { error: 'Team not found' },
         { status: 404 }
       );
     }
 
     // Only owner can transfer
-    if (group.ownerId !== userId) {
+    if (team.ownerId !== userId) {
       return NextResponse.json(
         { error: 'Permission denied', message: 'Only the owner can transfer ownership' },
         { status: 403 }
@@ -60,7 +60,7 @@ export async function POST(
     }
 
     // New owner must be a member
-    const isMember = group.members.some(m => m.userId === newOwnerId);
+    const isMember = team.members.some(m => m.userId === newOwnerId);
     if (!isMember) {
       return NextResponse.json(
         { error: 'Invalid target', message: 'New owner must be an existing member' },
@@ -70,24 +70,24 @@ export async function POST(
 
     // Transfer ownership in a transaction
     await prisma.$transaction([
-      // Update group owner
-      prisma.userGroup.update({
+      // Update team owner
+      prisma.team.update({
         where: { id: params.id },
         data: { ownerId: newOwnerId },
       }),
       // Remove new owner from members (owner is not in members)
-      prisma.userGroupMember.delete({
+      prisma.teamMember.delete({
         where: {
-          groupId_userId: {
-            groupId: params.id,
+          teamId_userId: {
+            teamId: params.id,
             userId: newOwnerId,
           },
         },
       }),
       // Add old owner as a member
-      prisma.userGroupMember.create({
+      prisma.teamMember.create({
         data: {
-          groupId: params.id,
+          teamId: params.id,
           userId,
         },
       }),

@@ -1,7 +1,7 @@
 /**
- * User Groups API
- * GET /api/user-groups - List user's groups (owned + member)
- * POST /api/user-groups - Create new group
+ * Teams API
+ * GET /api/teams - List user's teams (owned + member)
+ * POST /api/teams - Create new team
  */
 
 import { NextResponse } from 'next/server';
@@ -10,7 +10,7 @@ import { getApiStorage } from '@/lib/api-auth';
 
 export const runtime = 'nodejs';
 
-// GET /api/user-groups - List user's groups
+// GET /api/teams - List user's teams
 export async function GET() {
   try {
     const authResult = await getApiStorage();
@@ -19,8 +19,8 @@ export async function GET() {
     }
     const { userId } = authResult;
 
-    // Get groups where user is owner
-    const ownedGroups = await prisma.userGroup.findMany({
+    // Get teams where user is owner
+    const ownedTeams = await prisma.team.findMany({
       where: { ownerId: userId },
       include: {
         owner: { select: { id: true, name: true, image: true } },
@@ -32,8 +32,8 @@ export async function GET() {
       orderBy: { name: 'asc' },
     });
 
-    // Get groups where user is a member (but not owner)
-    const memberGroups = await prisma.userGroup.findMany({
+    // Get teams where user is a member (but not owner)
+    const memberTeams = await prisma.team.findMany({
       where: {
         members: { some: { userId } },
         ownerId: { not: userId },
@@ -48,44 +48,44 @@ export async function GET() {
       orderBy: { name: 'asc' },
     });
 
-    const groups = [
-      ...ownedGroups.map(g => ({
-        id: g.id,
-        name: g.name,
-        description: g.description,
+    const teams = [
+      ...ownedTeams.map(t => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
         isOwner: true,
-        owner: g.owner,
-        memberCount: g._count.members,
-        messageCount: g._count.messages,
-        members: g.members.map(m => m.user),
-        createdAt: g.createdAt.toISOString(),
-        updatedAt: g.updatedAt.toISOString(),
+        owner: t.owner,
+        memberCount: t._count.members,
+        messageCount: t._count.messages,
+        members: t.members.map(m => m.user),
+        createdAt: t.createdAt.toISOString(),
+        updatedAt: t.updatedAt.toISOString(),
       })),
-      ...memberGroups.map(g => ({
-        id: g.id,
-        name: g.name,
-        description: g.description,
+      ...memberTeams.map(t => ({
+        id: t.id,
+        name: t.name,
+        description: t.description,
         isOwner: false,
-        owner: g.owner,
-        memberCount: g._count.members,
-        messageCount: g._count.messages,
-        members: g.members.map(m => m.user),
-        createdAt: g.createdAt.toISOString(),
-        updatedAt: g.updatedAt.toISOString(),
+        owner: t.owner,
+        memberCount: t._count.members,
+        messageCount: t._count.messages,
+        members: t.members.map(m => m.user),
+        createdAt: t.createdAt.toISOString(),
+        updatedAt: t.updatedAt.toISOString(),
       })),
     ];
 
-    return NextResponse.json({ groups });
+    return NextResponse.json({ teams });
   } catch (error) {
-    console.error('Error loading user groups:', error);
+    console.error('Error loading teams:', error);
     return NextResponse.json(
-      { error: 'Failed to load groups', message: error instanceof Error ? error.message : 'Unknown error' },
+      { error: 'Failed to load teams', message: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }
 }
 
-// POST /api/user-groups - Create new group
+// POST /api/teams - Create new team
 export async function POST(request: Request) {
   try {
     const authResult = await getApiStorage();
@@ -104,8 +104,8 @@ export async function POST(request: Request) {
       );
     }
 
-    // Create the group
-    const group = await prisma.userGroup.create({
+    // Create the team
+    const team = await prisma.team.create({
       data: {
         name: name.trim(),
         description: description?.trim() || null,
@@ -118,23 +118,23 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      group: {
-        id: group.id,
-        name: group.name,
-        description: group.description,
+      team: {
+        id: team.id,
+        name: team.name,
+        description: team.description,
         isOwner: true,
-        owner: group.owner,
+        owner: team.owner,
         memberCount: 0,
         messageCount: 0,
         members: [],
-        createdAt: group.createdAt.toISOString(),
-        updatedAt: group.updatedAt.toISOString(),
+        createdAt: team.createdAt.toISOString(),
+        updatedAt: team.updatedAt.toISOString(),
       },
     });
   } catch (error) {
-    console.error('Error creating user group:', error);
+    console.error('Error creating team:', error);
     return NextResponse.json(
-      { error: 'Failed to create group', message: error instanceof Error ? error.message : 'Unknown error' },
+      { error: 'Failed to create team', message: error instanceof Error ? error.message : 'Unknown error' },
       { status: 500 }
     );
   }

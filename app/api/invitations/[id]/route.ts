@@ -22,10 +22,10 @@ export async function POST(
     }
     const { userId } = authResult;
 
-    const invitation = await prisma.userGroupInvitation.findUnique({
+    const invitation = await prisma.teamInvitation.findUnique({
       where: { id: params.id },
       include: {
-        group: { select: { id: true, name: true } },
+        team: { select: { id: true, name: true } },
       },
     });
 
@@ -64,13 +64,13 @@ export async function POST(
     if (action === 'accept') {
       // Accept: update invitation status and add user as member
       await prisma.$transaction([
-        prisma.userGroupInvitation.update({
+        prisma.teamInvitation.update({
           where: { id: params.id },
           data: { status: 'accepted' },
         }),
-        prisma.userGroupMember.create({
+        prisma.teamMember.create({
           data: {
-            groupId: invitation.groupId,
+            teamId: invitation.teamId,
             userId,
           },
         }),
@@ -79,12 +79,12 @@ export async function POST(
       return NextResponse.json({
         success: true,
         action: 'accepted',
-        message: `You have joined "${invitation.group.name}"`,
-        groupId: invitation.groupId,
+        message: `You have joined "${invitation.team.name}"`,
+        teamId: invitation.teamId,
       });
     } else {
       // Reject: just update invitation status
-      await prisma.userGroupInvitation.update({
+      await prisma.teamInvitation.update({
         where: { id: params.id },
         data: { status: 'rejected' },
       });
@@ -92,7 +92,7 @@ export async function POST(
       return NextResponse.json({
         success: true,
         action: 'rejected',
-        message: `Invitation to "${invitation.group.name}" declined`,
+        message: `Invitation to "${invitation.team.name}" declined`,
       });
     }
   } catch (error) {
@@ -116,10 +116,10 @@ export async function DELETE(
     }
     const { userId } = authResult;
 
-    const invitation = await prisma.userGroupInvitation.findUnique({
+    const invitation = await prisma.teamInvitation.findUnique({
       where: { id: params.id },
       include: {
-        group: { select: { ownerId: true } },
+        team: { select: { ownerId: true } },
       },
     });
 
@@ -131,14 +131,14 @@ export async function DELETE(
     }
 
     // Only group owner can cancel invitations
-    if (invitation.group.ownerId !== userId) {
+    if (invitation.team.ownerId !== userId) {
       return NextResponse.json(
         { error: 'Permission denied', message: 'Only the group owner can cancel invitations' },
         { status: 403 }
       );
     }
 
-    await prisma.userGroupInvitation.delete({
+    await prisma.teamInvitation.delete({
       where: { id: params.id },
     });
 

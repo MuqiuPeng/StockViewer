@@ -1,6 +1,6 @@
 /**
- * User Group Invitation API
- * POST /api/user-groups/:id/invite - Send invitation (owner only)
+ * Team Invitation API
+ * POST /api/teams/:id/invite - Send invitation (owner only)
  */
 
 import { NextResponse } from 'next/server';
@@ -9,7 +9,7 @@ import { getApiStorage } from '@/lib/api-auth';
 
 export const runtime = 'nodejs';
 
-// POST /api/user-groups/:id/invite - Send invitation
+// POST /api/teams/:id/invite - Send invitation
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
@@ -21,20 +21,20 @@ export async function POST(
     }
     const { userId } = authResult;
 
-    const group = await prisma.userGroup.findUnique({
+    const team = await prisma.team.findUnique({
       where: { id: params.id },
       include: { members: true },
     });
 
-    if (!group) {
+    if (!team) {
       return NextResponse.json(
-        { error: 'Group not found' },
+        { error: 'Team not found' },
         { status: 404 }
       );
     }
 
     // Only owner can invite
-    if (group.ownerId !== userId) {
+    if (team.ownerId !== userId) {
       return NextResponse.json(
         { error: 'Permission denied', message: 'Only the owner can invite members' },
         { status: 403 }
@@ -72,7 +72,7 @@ export async function POST(
     }
 
     // Check if already a member
-    const isMember = group.members.some(m => m.userId === targetUser.id);
+    const isMember = team.members.some(m => m.userId === targetUser.id);
     if (isMember) {
       return NextResponse.json(
         { error: 'Already a member', message: `${targetUser.name || email} is already a member` },
@@ -81,10 +81,10 @@ export async function POST(
     }
 
     // Check if invitation already exists
-    const existingInvitation = await prisma.userGroupInvitation.findUnique({
+    const existingInvitation = await prisma.teamInvitation.findUnique({
       where: {
-        groupId_userId: {
-          groupId: params.id,
+        teamId_userId: {
+          teamId: params.id,
           userId: targetUser.id,
         },
       },
@@ -98,7 +98,7 @@ export async function POST(
         );
       }
       // Update existing invitation (if rejected before)
-      const updated = await prisma.userGroupInvitation.update({
+      const updated = await prisma.teamInvitation.update({
         where: { id: existingInvitation.id },
         data: { status: 'pending', createdAt: new Date() },
         include: {
@@ -118,9 +118,9 @@ export async function POST(
     }
 
     // Create new invitation
-    const invitation = await prisma.userGroupInvitation.create({
+    const invitation = await prisma.teamInvitation.create({
       data: {
-        groupId: params.id,
+        teamId: params.id,
         userId: targetUser.id,
         status: 'pending',
       },

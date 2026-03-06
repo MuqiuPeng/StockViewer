@@ -1,7 +1,7 @@
 /**
- * User Group Messages API
- * GET /api/user-groups/:id/messages - Get group chat messages
- * POST /api/user-groups/:id/messages - Send message or share resource
+ * Team Messages API
+ * GET /api/teams/:id/messages - Get team chat messages
+ * POST /api/teams/:id/messages - Send message or share resource
  */
 
 import { NextResponse } from 'next/server';
@@ -10,7 +10,7 @@ import { getApiStorage } from '@/lib/api-auth';
 
 export const runtime = 'nodejs';
 
-// GET /api/user-groups/:id/messages - Get group chat messages
+// GET /api/teams/:id/messages - Get team chat messages
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
@@ -22,21 +22,21 @@ export async function GET(
     }
     const { userId } = authResult;
 
-    const group = await prisma.userGroup.findUnique({
+    const team = await prisma.team.findUnique({
       where: { id: params.id },
       include: { members: true },
     });
 
-    if (!group) {
+    if (!team) {
       return NextResponse.json(
-        { error: 'Group not found' },
+        { error: 'Team not found' },
         { status: 404 }
       );
     }
 
     // Check access
-    const isOwner = group.ownerId === userId;
-    const isMember = group.members.some(m => m.userId === userId);
+    const isOwner = team.ownerId === userId;
+    const isMember = team.members.some(m => m.userId === userId);
 
     if (!isOwner && !isMember) {
       return NextResponse.json(
@@ -50,12 +50,12 @@ export async function GET(
     const limit = Math.min(parseInt(searchParams.get('limit') || '50', 10), 100);
     const before = searchParams.get('before'); // cursor for pagination
 
-    const where: any = { groupId: params.id };
+    const where: any = { teamId: params.id };
     if (before) {
       where.createdAt = { lt: new Date(before) };
     }
 
-    const messages = await prisma.userGroupMessage.findMany({
+    const messages = await prisma.teamMessage.findMany({
       where,
       include: {
         user: { select: { id: true, name: true, image: true } },
@@ -203,7 +203,7 @@ export async function GET(
   }
 }
 
-// DELETE /api/user-groups/:id/messages - Delete/retract a message
+// DELETE /api/teams/:id/messages - Delete/retract a message
 export async function DELETE(
   request: Request,
   { params }: { params: { id: string } }
@@ -226,9 +226,9 @@ export async function DELETE(
     }
 
     // Find the message
-    const message = await prisma.userGroupMessage.findUnique({
+    const message = await prisma.teamMessage.findUnique({
       where: { id: messageId },
-      include: { group: true },
+      include: { team: true },
     });
 
     if (!message) {
@@ -247,15 +247,15 @@ export async function DELETE(
     }
 
     // Check if message belongs to the specified group
-    if (message.groupId !== params.id) {
+    if (message.teamId !== params.id) {
       return NextResponse.json(
-        { error: 'Invalid request', message: 'Message does not belong to this group' },
+        { error: 'Invalid request', message: 'Message does not belong to this team' },
         { status: 400 }
       );
     }
 
     // Delete the message
-    await prisma.userGroupMessage.delete({
+    await prisma.teamMessage.delete({
       where: { id: messageId },
     });
 
@@ -272,7 +272,7 @@ export async function DELETE(
   }
 }
 
-// POST /api/user-groups/:id/messages - Send message or share resource
+// POST /api/teams/:id/messages - Send message or share resource
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
@@ -284,21 +284,21 @@ export async function POST(
     }
     const { userId } = authResult;
 
-    const group = await prisma.userGroup.findUnique({
+    const team = await prisma.team.findUnique({
       where: { id: params.id },
       include: { members: true },
     });
 
-    if (!group) {
+    if (!team) {
       return NextResponse.json(
-        { error: 'Group not found' },
+        { error: 'Team not found' },
         { status: 404 }
       );
     }
 
     // Check access
-    const isOwner = group.ownerId === userId;
-    const isMember = group.members.some(m => m.userId === userId);
+    const isOwner = team.ownerId === userId;
+    const isMember = team.members.some(m => m.userId === userId);
 
     if (!isOwner && !isMember) {
       return NextResponse.json(
@@ -357,9 +357,9 @@ export async function POST(
       }
     }
 
-    const message = await prisma.userGroupMessage.create({
+    const message = await prisma.teamMessage.create({
       data: {
-        groupId: params.id,
+        teamId: params.id,
         userId,
         content: content?.trim() || null,
         indicatorId: indicatorId || null,

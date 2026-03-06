@@ -1,6 +1,6 @@
 /**
  * Import Shared Resource API
- * POST /api/user-groups/:id/import - Import a shared resource from group chat
+ * POST /api/teams/:id/import - Import a shared resource from team chat
  *
  * When importing indicators or strategies, all dependencies are automatically imported as well.
  */
@@ -65,7 +65,7 @@ async function collectStrategyDependencies(strategyId: string): Promise<Set<stri
   return indicatorIds;
 }
 
-// POST /api/user-groups/:id/import - Import a shared resource
+// POST /api/teams/:id/import - Import a shared resource
 export async function POST(
   request: Request,
   { params }: { params: { id: string } }
@@ -77,21 +77,21 @@ export async function POST(
     }
     const { userId } = authResult;
 
-    const group = await prisma.userGroup.findUnique({
+    const team = await prisma.team.findUnique({
       where: { id: params.id },
       include: { members: true },
     });
 
-    if (!group) {
+    if (!team) {
       return NextResponse.json(
-        { error: 'Group not found' },
+        { error: 'Team not found' },
         { status: 404 }
       );
     }
 
     // Check access
-    const isOwner = group.ownerId === userId;
-    const isMember = group.members.some(m => m.userId === userId);
+    const isOwner = team.ownerId === userId;
+    const isMember = team.members.some(m => m.userId === userId);
 
     if (!isOwner && !isMember) {
       return NextResponse.json(
@@ -110,10 +110,10 @@ export async function POST(
       );
     }
 
-    // Verify the resource was shared in this group
-    const sharedMessage = await prisma.userGroupMessage.findFirst({
+    // Verify the resource was shared in this team
+    const sharedMessage = await prisma.teamMessage.findFirst({
       where: {
-        groupId: params.id,
+        teamId: params.id,
         ...(type === 'indicator' && { indicatorId: resourceId }),
         ...(type === 'strategy' && { strategyId: resourceId }),
         ...(type === 'stockGroup' && { stockGroupId: resourceId }),
@@ -123,7 +123,7 @@ export async function POST(
 
     if (!sharedMessage) {
       return NextResponse.json(
-        { error: 'Resource not found', message: 'This resource has not been shared in this group' },
+        { error: 'Resource not found', message: 'This resource has not been shared in this team' },
         { status: 404 }
       );
     }

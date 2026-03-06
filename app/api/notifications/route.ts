@@ -30,14 +30,14 @@ export async function GET() {
     });
 
     // Get pending invitations
-    const invitations = await prisma.userGroupInvitation.findMany({
+    const invitations = await prisma.teamInvitation.findMany({
       where: {
         userId,
         status: 'pending',
       },
       orderBy: { createdAt: 'desc' },
       include: {
-        group: {
+        team: {
           include: {
             owner: {
               select: { id: true, name: true, image: true },
@@ -67,11 +67,11 @@ export async function GET() {
     const formattedInvitations = invitations.map(inv => ({
       id: inv.id,
       group: {
-        id: inv.group.id,
-        name: inv.group.name,
-        description: inv.group.description,
-        owner: inv.group.owner,
-        memberCount: inv.group._count.members + 1, // +1 for owner
+        id: inv.team.id,
+        name: inv.team.name,
+        description: inv.team.description,
+        owner: inv.team.owner,
+        memberCount: inv.team._count.members + 1, // +1 for owner
       },
       createdAt: inv.createdAt.toISOString(),
     }));

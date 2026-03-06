@@ -84,11 +84,11 @@ model User {
   sharePosts SharePost[]
   posts      Post[]
 
-  // User Groups
-  ownedGroups       UserGroup[]           @relation("GroupOwner")
-  groupMemberships  UserGroupMember[]
-  groupInvitations  UserGroupInvitation[]
-  groupMessages     UserGroupMessage[]
+  // Teams (user collaboration groups)
+  ownedTeams        Team[]           @relation("TeamOwner")
+  teamMemberships   TeamMember[]
+  teamInvitations   TeamInvitation[]
+  teamMessages      TeamMessage[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -224,7 +224,7 @@ model Indicator {
   indicatorValues IndicatorValue[]
   stockIndicators StockIndicator[]
   sharePosts      SharePost[]
-  groupMessages   UserGroupMessage[]
+  teamMessages   TeamMessage[]
 
   @@unique([name, createdBy]) // Each user's indicators must have unique names
   @@index([createdBy])
@@ -310,7 +310,7 @@ model Strategy {
   userStrategies  UserStrategy[]
   backtestHistory BacktestHistoryEntry[]
   sharePosts      SharePost[]
-  groupMessages   UserGroupMessage[]
+  teamMessages   TeamMessage[]
 
   @@unique([name]) // Globally unique names for shared strategies
   @@index([createdBy])
@@ -385,7 +385,7 @@ model StockGroup {
 
   creator       User               @relation("GroupCreator", fields: [createdBy], references: [id], onDelete: Cascade)
   userGroups    UserStockGroup[]
-  groupMessages UserGroupMessage[]
+  teamMessages TeamMessage[]
 
   @@unique([name]) // Globally unique names for shared groups
   @@index([createdBy])
@@ -428,7 +428,7 @@ model ViewSetting {
 
   creator          User               @relation("ViewSettingCreator", fields: [createdBy], references: [id], onDelete: Cascade)
   userViewSettings UserViewSetting[]
-  groupMessages    UserGroupMessage[]
+  teamMessages    TeamMessage[]
 
   @@unique([name]) // Globally unique names for shared presets
   @@index([createdBy])
@@ -636,63 +636,66 @@ model SharePost {
 }
 
 // ============================================================================
-// USER GROUPS
+// TEAMS (User collaboration groups)
 // ============================================================================
 
-/// User groups for team collaboration
-model UserGroup {
+/// Teams for user collaboration
+model Team {
   id          String @id @default(cuid())
   name        String
   description String? @db.Text
   ownerId     String
 
-  owner       User                  @relation("GroupOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  members     UserGroupMember[]
-  invitations UserGroupInvitation[]
-  messages    UserGroupMessage[]
+  owner       User              @relation("TeamOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members     TeamMember[]
+  invitations TeamInvitation[]
+  messages    TeamMessage[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@map("UserGroup")
   @@index([ownerId])
 }
 
-/// User group membership
-model UserGroupMember {
+/// Team membership
+model TeamMember {
   id       String @id @default(cuid())
-  groupId  String
+  teamId   String @map("groupId")
   userId   String
   joinedAt DateTime @default(now())
 
-  group UserGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([groupId, userId])
-  @@index([groupId])
+  @@unique([teamId, userId])
+  @@map("UserGroupMember")
+  @@index([teamId])
   @@index([userId])
 }
 
-/// User group invitations
-model UserGroupInvitation {
+/// Team invitations
+model TeamInvitation {
   id        String @id @default(cuid())
-  groupId   String
+  teamId    String @map("groupId")
   userId    String
   status    String @default("pending") // pending | accepted | rejected
   createdAt DateTime @default(now())
 
-  group UserGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([groupId, userId])
-  @@index([groupId])
+  @@unique([teamId, userId])
+  @@map("UserGroupInvitation")
+  @@index([teamId])
   @@index([userId])
   @@index([status])
 }
 
-/// User group messages (chat + resource sharing)
-model UserGroupMessage {
+/// Team messages (chat + resource sharing)
+model TeamMessage {
   id      String  @id @default(cuid())
-  groupId String
+  teamId  String  @map("groupId")
   userId  String
   content String? @db.Text
 
@@ -702,7 +705,7 @@ model UserGroupMessage {
   stockGroupId  String?
   viewSettingId String?
 
-  group       UserGroup    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  team        Team         @relation(fields: [teamId], references: [id], onDelete: Cascade)
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   indicator   Indicator?   @relation(fields: [indicatorId], references: [id], onDelete: SetNull)
   strategy    Strategy?    @relation(fields: [strategyId], references: [id], onDelete: SetNull)
@@ -711,7 +714,8 @@ model UserGroupMessage {
 
   createdAt DateTime @default(now())
 
-  @@index([groupId])
+  @@map("UserGroupMessage")
+  @@index([teamId])
   @@index([userId])
-  @@index([groupId, createdAt])
+  @@index([teamId, createdAt])
 }

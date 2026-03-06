@@ -1,7 +1,7 @@
 /**
- * User Group Members API
- * GET /api/user-groups/:id/members - Get members list
- * DELETE /api/user-groups/:id/members - Remove a member (owner only)
+ * Team Members API
+ * GET /api/teams/:id/members - Get members list
+ * DELETE /api/teams/:id/members - Remove a member (owner only)
  */
 
 import { NextResponse } from 'next/server';
@@ -10,7 +10,7 @@ import { getApiStorage } from '@/lib/api-auth';
 
 export const runtime = 'nodejs';
 
-// GET /api/user-groups/:id/members - Get members list
+// GET /api/teams/:id/members - Get members list
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
@@ -22,7 +22,7 @@ export async function GET(
     }
     const { userId } = authResult;
 
-    const group = await prisma.userGroup.findUnique({
+    const team = await prisma.team.findUnique({
       where: { id: params.id },
       include: {
         owner: { select: { id: true, name: true, email: true, image: true } },
@@ -33,16 +33,16 @@ export async function GET(
       },
     });
 
-    if (!group) {
+    if (!team) {
       return NextResponse.json(
-        { error: 'Group not found' },
+        { error: 'Team not found' },
         { status: 404 }
       );
     }
 
     // Check access
-    const isOwner = group.ownerId === userId;
-    const isMember = group.members.some(m => m.userId === userId);
+    const isOwner = team.ownerId === userId;
+    const isMember = team.members.some(m => m.userId === userId);
 
     if (!isOwner && !isMember) {
       return NextResponse.json(
@@ -54,8 +54,8 @@ export async function GET(
     // Get pending invitations (only visible to owner)
     let pendingInvitations: any[] = [];
     if (isOwner) {
-      const invitations = await prisma.userGroupInvitation.findMany({
-        where: { groupId: params.id, status: 'pending' },
+      const invitations = await prisma.teamInvitation.findMany({
+        where: { teamId: params.id, status: 'pending' },
         include: { user: { select: { id: true, name: true, email: true, image: true } } },
         orderBy: { createdAt: 'desc' },
       });
@@ -68,8 +68,8 @@ export async function GET(
     }
 
     return NextResponse.json({
-      owner: group.owner,
-      members: group.members.map(m => ({
+      owner: team.owner,
+      members: team.members.map(m => ({
         ...m.user,
         joinedAt: m.joinedAt.toISOString(),
       })),
@@ -84,7 +84,7 @@ export async function GET(
   }
 }
 
-// DELETE /api/user-groups/:id/members - Remove a member (owner only)
+// DELETE /api/teams/:id/members - Remove a member (owner only)
 export async function DELETE(
   request: Request,
   { params }: { params: { id: string } }
@@ -96,19 +96,19 @@ export async function DELETE(
     }
     const { userId } = authResult;
 
-    const group = await prisma.userGroup.findUnique({
+    const team = await prisma.team.findUnique({
       where: { id: params.id },
     });
 
-    if (!group) {
+    if (!team) {
       return NextResponse.json(
-        { error: 'Group not found' },
+        { error: 'Team not found' },
         { status: 404 }
       );
     }
 
     // Only owner can remove members
-    if (group.ownerId !== userId) {
+    if (team.ownerId !== userId) {
       return NextResponse.json(
         { error: 'Permission denied', message: 'Only the owner can remove members' },
         { status: 403 }
@@ -134,9 +134,9 @@ export async function DELETE(
     }
 
     // Remove the member
-    const deleted = await prisma.userGroupMember.deleteMany({
+    const deleted = await prisma.teamMember.deleteMany({
       where: {
-        groupId: params.id,
+        teamId: params.id,
         userId: memberId,
       },
     });

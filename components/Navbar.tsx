@@ -50,7 +50,7 @@ export default function Navbar() {
     { href: '/viewer', label: 'Viewer' },
     { href: '/backtest', label: 'Backtest' },
     { href: '/datasets', label: 'Datasets' },
-    { href: '/groups', label: 'Groups' },
+    { href: '/teams', label: 'Teams' },
     { href: '/posts', label: 'Posts' },
     { href: '/dependencies', label: 'Dependencies' },
     { href: '/docs', label: 'Docs' },
