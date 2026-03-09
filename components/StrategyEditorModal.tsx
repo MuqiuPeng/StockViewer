@@ -401,556 +401,402 @@ export default function StrategyEditorModal({
         className="absolute inset-0 bg-black bg-opacity-50"
         onClick={onClose}
       />
-      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl p-6 w-full max-w-6xl max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold dark:text-white">
+
+      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl w-[95vw] max-w-[1400px] h-[90vh] flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+          <h2 className="text-lg font-bold dark:text-white">
             {readOnly ? 'View Strategy' : (strategy ? 'Edit Strategy' : 'Create New Strategy')}
           </h2>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-2xl"
-          >
-            ×
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={handleValidate}
+              disabled={isValidating || !pythonCode}
+              className="px-3 py-1.5 text-sm bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
+            >
+              {isValidating ? 'Validating...' : 'Validate'}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+            >
+              Cancel
+            </button>
+            {!readOnly && (
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={isLoading || !name || !description || !pythonCode}
+                className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {isLoading ? 'Saving...' : strategy ? 'Update' : 'Create'}
+              </button>
+            )}
+          </div>
         </div>
 
+        {/* Error/Success Messages */}
         {error && (
-          <div className="mb-4 p-3 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-400 rounded">
-            <div className="font-semibold mb-2">{error}</div>
-            {errorDetails?.details?.warnings && errorDetails.details.warnings.length > 0 && (
-              <div className="mt-2 p-2 bg-yellow-50 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-600 rounded">
-                <div className="font-semibold text-yellow-800 dark:text-yellow-400 text-xs mb-1">⚠️ Warnings:</div>
-                {errorDetails.details.warnings.map((warning: string, i: number) => (
-                  <div key={i} className="text-xs text-yellow-700 dark:text-yellow-400">
-                    • {warning}
-                  </div>
-                ))}
-              </div>
-            )}
-            {errorDetails?.details?.code_line && (
-              <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/20 border border-red-300 dark:border-red-600 rounded text-sm font-mono">
-                Code: {errorDetails.details.code_line}
-              </div>
-            )}
-            {errorDetails?.details?.hints && errorDetails.details.hints.length > 0 && (
-              <div className="mt-2 space-y-1">
-                {errorDetails.details.hints.map((hint: string, i: number) => (
-                  <div key={i} className="text-sm text-blue-700 dark:text-blue-400">
-                    💡 {hint}
-                  </div>
-                ))}
-              </div>
-            )}
+          <div className="mx-4 mt-2 p-2 bg-red-100 dark:bg-red-900/30 border border-red-400 dark:border-red-600 text-red-700 dark:text-red-400 rounded text-sm flex-shrink-0">
+            <div className="font-semibold">{error}</div>
             {errorDetails?.details?.traceback && (
-              <details className="mt-2 text-xs">
-                <summary className="cursor-pointer text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200">
-                  Show full error details
-                </summary>
-                <pre className="mt-1 p-2 bg-gray-50 dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded overflow-x-auto max-h-40 dark:text-gray-300">
+              <details className="mt-1 text-xs">
+                <summary className="cursor-pointer">Show details</summary>
+                <pre className="mt-1 p-2 bg-gray-50 dark:bg-gray-900 rounded overflow-x-auto max-h-20">
                   {errorDetails.details.traceback}
                 </pre>
               </details>
             )}
           </div>
         )}
-
         {validationSuccess && (
-          <div className="mb-4 p-3 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-600 text-green-700 dark:text-green-400 rounded">
+          <div className="mx-4 mt-2 p-2 bg-green-100 dark:bg-green-900/30 border border-green-400 dark:border-green-600 text-green-700 dark:text-green-400 rounded text-sm flex-shrink-0">
             {validationSuccess}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-2 dark:text-white">Strategy Type</label>
-            <div className="flex space-x-4">
-              <label className="flex items-center cursor-pointer dark:text-white">
-                <input
-                  type="radio"
-                  value="single"
-                  checked={strategyType === 'single'}
-                  onChange={(e) => setStrategyType(e.target.value as 'single')}
-                  className="mr-2"
-                  disabled={!!strategy || readOnly}
-                />
-                <span>Single Stock</span>
-              </label>
-              <label className="flex items-center cursor-pointer dark:text-white">
-                <input
-                  type="radio"
-                  value="portfolio"
-                  checked={strategyType === 'portfolio'}
-                  onChange={(e) => setStrategyType(e.target.value as 'portfolio')}
-                  className="mr-2"
-                  disabled={!!strategy || readOnly}
-                />
-                <span>Portfolio (Multi-Stock)</span>
-              </label>
-            </div>
-            {!!strategy && (
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Strategy type cannot be changed after creation
-              </p>
-            )}
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1 dark:text-white">Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
-              required
-              disabled={readOnly}
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium mb-1 dark:text-white">Description</label>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
-              rows={3}
-              required
-              disabled={readOnly}
-            />
-          </div>
-
-          {/* Dependencies Selector */}
-          <div>
-            <label className="block text-sm font-medium mb-1 dark:text-white">
-              Dependencies (Indicators)
-            </label>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-              Select indicators that this strategy requires. These must be applied to datasets before running the strategy.
-            </p>
-            {indicators.length === 0 ? (
-              <p className="text-sm text-gray-400 dark:text-gray-500 italic">
-                No indicators available. Create indicators first.
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-2 p-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 max-h-32 overflow-y-auto">
-                {indicators.map((indicator) => (
-                  <label
-                    key={indicator.id}
-                    className={`flex items-center px-3 py-1 rounded cursor-pointer text-sm transition-colors ${
-                      dependencies.includes(indicator.name)
-                        ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-600'
-                        : 'bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-500 hover:bg-gray-200 dark:hover:bg-gray-500'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={dependencies.includes(indicator.name)}
-                      onChange={(e) => {
-                        if (e.target.checked) {
-                          setDependencies([...dependencies, indicator.name]);
-                        } else {
-                          setDependencies(dependencies.filter((d) => d !== indicator.name));
-                        }
-                      }}
-                      className="sr-only"
-                    />
-                    {indicator.name}
-                  </label>
-                ))}
-              </div>
-            )}
-            {dependencies.length > 0 && (
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                Selected: {dependencies.join(', ')}
-              </p>
-            )}
-          </div>
-
-          {/* External Datasets Selector */}
-          <div className="border border-gray-300 dark:border-gray-600 rounded p-4 bg-gray-50 dark:bg-gray-700">
-            <h3 className="font-medium mb-2 dark:text-white">External Datasets (Optional)</h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-              Include additional datasets (e.g., market indices, reference stocks) in your strategy.
-            </p>
-
-            {/* Help Box */}
-            <div className="mb-3 p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-600 rounded">
-              <div className="flex items-start justify-between mb-1">
-                <div className="text-xs font-medium text-blue-800 dark:text-blue-300">💡 How to use:</div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const template = strategyType === 'portfolio'
-                      ? `def calculate(data_map, parameters):
-    """
-    Strategy using external dataset.
-
-    Args:
-        data_map: Dict[str, pd.DataFrame] - {symbol: OHLC data}
-        parameters: Dict containing external datasets
-
-    Returns:
-        List of signals
-    """
-    import pandas as pd
-
-    # Access external dataset (e.g., market index)
-    # Replace 'index' with your parameter name
-    index_data = parameters.get('index')
-
-    if index_data is not None:
-        # Example: Use index data for market timing
-        # Merge with first symbol to check market conditions
-        first_symbol = list(data_map.keys())[0]
-        stock_data = data_map[first_symbol]
-
-        # Merge on date
-        merged = stock_data.merge(
-            index_data[['date', 'close']],
-            on='date',
-            how='left',
-            suffixes=('', '_index')
-        )
-
-        # Your strategy logic here...
-
-    signals = []
-    # Add your trading logic here
-
-    return signals`
-                      : `def calculate(data, parameters):
-    """
-    Strategy using external dataset.
-
-    Args:
-        data: pandas DataFrame with OHLC data
-        parameters: Dict containing external datasets
-
-    Returns:
-        List of signals
-    """
-    import pandas as pd
-
-    # Access external dataset (e.g., market index)
-    # Replace 'index' with your parameter name
-    index_data = parameters.get('index')
-
-    signals = []
-
-    if index_data is not None:
-        # Merge with main data on date
-        merged = data.merge(
-            index_data[['date', 'close']],
-            on='date',
-            how='left',
-            suffixes=('', '_index')
-        )
-
-        # Calculate relative strength
-        merged['relative_strength'] = merged['close'] / merged['close_index']
-
-        # Example: Buy when stock outperforms index
-        for i in range(20, len(merged)):
-            if merged['relative_strength'].iloc[i] > 1.05:
-                signals.append({
-                    'date': merged['date'].iloc[i],
-                    'type': 'v',
-                    'amount': 10000,
-                    'execution': 'close'
-                })
-
-    return signals`;
-                    setPythonCode(template);
-                  }}
-                  className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
-                >
-                  📝 Insert Template
-                </button>
-              </div>
-              <div className="text-xs text-blue-700 dark:text-blue-300 space-y-1">
-                <div>1. Click &quot;+ Add External Dataset&quot; below</div>
-                <div>2. Choose a parameter name (e.g., <code className="bg-blue-100 dark:bg-blue-800 px-1">index</code>)</div>
-                <div>3. Select group and dataset</div>
-                <div>4. Click &quot;Insert Template&quot; to see example code</div>
-              </div>
+        {/* Main Content - Three Columns */}
+        <div className="flex flex-1 overflow-hidden p-4 gap-4">
+          {/* Left Panel - Basic Settings */}
+          <div className="w-64 flex-shrink-0 overflow-y-auto space-y-3">
+            {/* Type */}
+            <div>
+              <label className="block text-xs font-medium mb-1 dark:text-white">Type</label>
+              <select
+                value={strategyType}
+                onChange={(e) => setStrategyType(e.target.value as 'single' | 'portfolio')}
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
+                disabled={isLoading || !!strategy || readOnly}
+              >
+                <option value="single">Single Stock</option>
+                <option value="portfolio">Portfolio (Multi-Stock)</option>
+              </select>
+              {!!strategy && (
+                <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
+                  Cannot change after creation
+                </p>
+              )}
             </div>
 
-            {Object.entries(externalDatasets).map(([paramName, dataset]) => {
-              const isEditing = editingDataset === paramName;
-              const config = isEditing && tempDatasetConfig ? tempDatasetConfig : { paramName, ...dataset };
-              const selectedGroup = groups.find(g => g.id === config.groupId);
+            {/* Name */}
+            <div>
+              <label className="block text-xs font-medium mb-1 dark:text-white">Name *</label>
+              <input
+                type="text"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
+                placeholder="e.g., MA_Crossover"
+                disabled={isLoading || readOnly}
+              />
+            </div>
 
-              return (
-                <div key={paramName} className="mb-3 p-3 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-sm font-medium dark:text-white">Parameter Name:</label>
-                    <div className="flex gap-2">
-                      {isEditing ? (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (tempDatasetConfig) {
-                                const updated = { ...externalDatasets };
-                                // Remove old key if name changed
-                                if (tempDatasetConfig.paramName !== paramName) {
-                                  delete updated[paramName];
-                                }
-                                // Add/update with new configuration
-                                updated[tempDatasetConfig.paramName] = {
-                                  groupId: tempDatasetConfig.groupId,
-                                  datasetName: tempDatasetConfig.datasetName
-                                };
-                                setExternalDatasets(updated);
-                              }
-                              setEditingDataset(null);
-                              setTempDatasetConfig(null);
-                            }}
-                            className="text-green-600 hover:text-green-700 text-sm font-medium"
-                          >
-                            Confirm
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingDataset(null);
-                              setTempDatasetConfig(null);
-                            }}
-                            className="text-gray-500 hover:text-gray-700 text-sm"
-                          >
-                            Cancel
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setEditingDataset(paramName);
-                              setTempDatasetConfig({ paramName, ...dataset });
-                            }}
-                            className="text-blue-500 hover:text-blue-700 text-sm"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const updated = { ...externalDatasets };
-                              delete updated[paramName];
-                              setExternalDatasets(updated);
-                            }}
-                            className="text-red-500 hover:text-red-700 text-sm"
-                          >
-                            Remove
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                  <input
-                    type="text"
-                    value={config.paramName}
-                    onChange={(e) => {
-                      if (isEditing) {
-                        setTempDatasetConfig({
-                          ...tempDatasetConfig!,
-                          paramName: e.target.value
-                        });
-                      }
-                    }}
-                    className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm mb-2 bg-white dark:bg-gray-700 dark:text-white"
-                    placeholder="e.g., index_data"
-                    disabled={!isEditing}
-                  />
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-xs text-gray-600 dark:text-gray-400">Group:</label>
-                      <select
-                        value={config.groupId}
+            {/* Description */}
+            <div>
+              <label className="block text-xs font-medium mb-1 dark:text-white">Description *</label>
+              <textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
+                placeholder="Brief description"
+                rows={2}
+                disabled={isLoading || readOnly}
+              />
+            </div>
+
+            {/* Dependencies */}
+            <div>
+              <label className="block text-xs font-medium mb-1 dark:text-white">Dependencies</label>
+              <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+                Required indicators for this strategy
+              </p>
+              {indicators.length === 0 ? (
+                <p className="text-xs text-gray-400 italic">No indicators</p>
+              ) : (
+                <div className="flex flex-wrap gap-1 p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 max-h-24 overflow-y-auto">
+                  {indicators.map((indicator) => (
+                    <label
+                      key={indicator.id}
+                      className={`flex items-center px-2 py-0.5 rounded cursor-pointer text-xs transition-colors ${
+                        dependencies.includes(indicator.name)
+                          ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200'
+                          : 'bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-500'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={dependencies.includes(indicator.name)}
                         onChange={(e) => {
-                          if (isEditing) {
-                            setTempDatasetConfig({
-                              ...tempDatasetConfig!,
-                              groupId: e.target.value,
-                              datasetName: ''
-                            });
+                          if (e.target.checked) {
+                            setDependencies([...dependencies, indicator.name]);
+                          } else {
+                            setDependencies(dependencies.filter((d) => d !== indicator.name));
                           }
                         }}
-                        className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 dark:text-white"
-                        disabled={!isEditing}
-                      >
-                        <option value="">Select group</option>
-                        {groups.map((g) => (
-                          <option key={g.id} value={g.id}>{g.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-xs text-gray-600 dark:text-gray-400">Dataset:</label>
-                      <select
-                        value={config.datasetName}
-                        onChange={(e) => {
-                          if (isEditing) {
-                            setTempDatasetConfig({
-                              ...tempDatasetConfig!,
-                              datasetName: e.target.value
-                            });
-                          }
-                        }}
-                        className="w-full px-2 py-1 border border-gray-300 dark:border-gray-600 rounded text-sm bg-white dark:bg-gray-700 dark:text-white"
-                        disabled={!isEditing || !config.groupId}
-                      >
-                        <option value="">Select dataset</option>
-                        {selectedGroup?.stockIds?.map((ds: string) => (
-                          <option key={ds} value={ds}>{ds}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
+                        className="sr-only"
+                        disabled={readOnly}
+                      />
+                      {indicator.name}
+                    </label>
+                  ))}
                 </div>
-              );
-            })}
+              )}
+            </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                const newName = `dataset_${Object.keys(externalDatasets).length + 1}`;
-                const updated = {
-                  ...externalDatasets,
-                  [newName]: { groupId: '', datasetName: '' }
-                };
-                setExternalDatasets(updated);
-                // Auto-edit the newly added dataset
-                setEditingDataset(newName);
-                setTempDatasetConfig({ paramName: newName, groupId: '', datasetName: '' });
-              }}
-              className="mt-2 px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
-              title="Add an external dataset to use in your strategy. Access columns via data['dataset_name@column_name']"
-            >
-              + Add External Dataset
-            </button>
+            {/* Template Button */}
+            <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={() => setPythonCode(strategyType === 'portfolio' ? PORTFOLIO_CODE_TEMPLATE : CODE_TEMPLATE)}
+                className="w-full px-3 py-1.5 text-sm bg-gray-600 text-white rounded hover:bg-gray-700"
+                disabled={readOnly}
+              >
+                Insert Template
+              </button>
+            </div>
           </div>
 
-          {strategyType === 'portfolio' && (
-            <div className="border border-gray-300 dark:border-gray-600 rounded p-4 bg-gray-50 dark:bg-gray-700">
-              <h3 className="font-medium mb-3 dark:text-white">Portfolio Constraints</h3>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm font-medium mb-1 dark:text-white">
-                    Max Concurrent Positions
-                  </label>
-                  <input
-                    type="number"
-                    value={constraints.maxPositions}
-                    onChange={(e) => setConstraints({
-                      ...constraints,
-                      maxPositions: parseInt(e.target.value) || 0
-                    })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 dark:text-white"
-                    min="1"
-                    max="50"
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Maximum number of stocks to hold simultaneously
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-1 dark:text-white">
-                    Reserve Cash (%)
-                  </label>
-                  <input
-                    type="number"
-                    value={constraints.reserveCash}
-                    onChange={(e) => setConstraints({
-                      ...constraints,
-                      reserveCash: parseInt(e.target.value) || 0
-                    })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 dark:text-white"
-                    min="0"
-                    max="100"
-                  />
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Percentage of capital to keep as cash reserve
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium mb-1 dark:text-white">
-                    Position Sizing
-                  </label>
-                  <select
-                    value={constraints.positionSizing}
-                    onChange={(e) => setConstraints({
-                      ...constraints,
-                      positionSizing: e.target.value as 'equal' | 'custom'
-                    })}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 dark:text-white"
-                  >
-                    <option value="equal">Equal Weight</option>
-                    <option value="custom">Custom (Strategy Controlled)</option>
-                  </select>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    How to distribute capital across positions
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div>
-            <label className="block text-sm font-medium mb-1 dark:text-white">Python Code</label>
-            <div className="border border-gray-300 dark:border-gray-600 rounded" style={{ height: '600px' }}>
+          {/* Center - Code Editor */}
+          <div className="flex-1 min-w-0">
+            <div className="h-full border border-gray-300 dark:border-gray-600 rounded overflow-hidden">
               <Editor
-                height="600px"
+                height="100%"
                 defaultLanguage="python"
                 value={pythonCode}
                 onChange={(value) => setPythonCode(value || '')}
                 theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
                 options={{
                   minimap: { enabled: false },
-                  fontSize: 14,
-                  readOnly: readOnly,
+                  fontSize: 13,
+                  lineNumbers: 'on',
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                  tabSize: 4,
+                  insertSpaces: true,
+                  wordWrap: 'off',
+                  readOnly: isLoading || readOnly,
+                  formatOnPaste: true,
+                  formatOnType: true,
+                  suggestOnTriggerCharacters: true,
+                  quickSuggestions: true,
+                  parameterHints: { enabled: true },
+                  folding: true,
+                  bracketPairColorization: { enabled: true },
+                  guides: {
+                    indentation: true,
+                    bracketPairs: true
+                  }
                 }}
+                loading={<div className="p-4 text-gray-500">Loading editor...</div>}
               />
             </div>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-              Strategy must define: <code className="dark:text-gray-300">def calculate(data, parameters)</code> returning list of signals
-            </p>
           </div>
 
-          <div className="flex justify-between gap-2">
-            {!readOnly && (
+          {/* Right Panel - External Datasets & Portfolio Constraints */}
+          <div className="w-64 flex-shrink-0 overflow-y-auto space-y-3">
+            {/* External Datasets */}
+            <div className="border border-gray-300 dark:border-gray-600 rounded p-3 bg-gray-50 dark:bg-gray-700">
+              <h3 className="text-xs font-medium mb-2 dark:text-white">External Datasets</h3>
+              <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-2">
+                Include additional datasets (e.g., index data)
+              </p>
+
+              {Object.entries(externalDatasets).map(([paramName, dataset]) => {
+                const isEditing = editingDataset === paramName;
+                const config = isEditing && tempDatasetConfig ? tempDatasetConfig : { paramName, ...dataset };
+                const selectedGroup = groups.find(g => g.id === config.groupId);
+
+                return (
+                  <div key={paramName} className="mb-2 p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 text-xs">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-medium dark:text-white truncate">{config.paramName}</span>
+                      <div className="flex gap-1">
+                        {isEditing ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (tempDatasetConfig) {
+                                  const updated = { ...externalDatasets };
+                                  if (tempDatasetConfig.paramName !== paramName) {
+                                    delete updated[paramName];
+                                  }
+                                  updated[tempDatasetConfig.paramName] = {
+                                    groupId: tempDatasetConfig.groupId,
+                                    datasetName: tempDatasetConfig.datasetName
+                                  };
+                                  setExternalDatasets(updated);
+                                }
+                                setEditingDataset(null);
+                                setTempDatasetConfig(null);
+                              }}
+                              className="text-green-600 hover:text-green-700"
+                            >
+                              ✓
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingDataset(null);
+                                setTempDatasetConfig(null);
+                              }}
+                              className="text-gray-500 hover:text-gray-700"
+                            >
+                              ✕
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingDataset(paramName);
+                                setTempDatasetConfig({ paramName, ...dataset });
+                              }}
+                              className="text-blue-500 hover:text-blue-700"
+                              disabled={readOnly}
+                            >
+                              ✎
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = { ...externalDatasets };
+                                delete updated[paramName];
+                                setExternalDatasets(updated);
+                              }}
+                              className="text-red-500 hover:text-red-700"
+                              disabled={readOnly}
+                            >
+                              ✕
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    {isEditing && (
+                      <>
+                        <input
+                          type="text"
+                          value={config.paramName}
+                          onChange={(e) => setTempDatasetConfig({ ...tempDatasetConfig!, paramName: e.target.value })}
+                          className="w-full px-1.5 py-1 border border-gray-300 dark:border-gray-600 rounded text-xs mb-1 bg-white dark:bg-gray-700 dark:text-white"
+                          placeholder="Parameter name"
+                        />
+                        <select
+                          value={config.groupId}
+                          onChange={(e) => setTempDatasetConfig({ ...tempDatasetConfig!, groupId: e.target.value, datasetName: '' })}
+                          className="w-full px-1.5 py-1 border border-gray-300 dark:border-gray-600 rounded text-xs mb-1 bg-white dark:bg-gray-700 dark:text-white"
+                        >
+                          <option value="">Select group</option>
+                          {groups.map((g) => (
+                            <option key={g.id} value={g.id}>{g.name}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={config.datasetName}
+                          onChange={(e) => setTempDatasetConfig({ ...tempDatasetConfig!, datasetName: e.target.value })}
+                          className="w-full px-1.5 py-1 border border-gray-300 dark:border-gray-600 rounded text-xs bg-white dark:bg-gray-700 dark:text-white"
+                          disabled={!config.groupId}
+                        >
+                          <option value="">Select dataset</option>
+                          {selectedGroup?.stockIds?.map((ds: string) => (
+                            <option key={ds} value={ds}>{ds}</option>
+                          ))}
+                        </select>
+                      </>
+                    )}
+                    {!isEditing && (
+                      <div className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
+                        {dataset.datasetName || 'Not configured'}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
               <button
                 type="button"
-                onClick={handleValidate}
-                disabled={isValidating || isLoading}
-                className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
+                onClick={() => {
+                  const newName = `dataset_${Object.keys(externalDatasets).length + 1}`;
+                  setExternalDatasets({ ...externalDatasets, [newName]: { groupId: '', datasetName: '' } });
+                  setEditingDataset(newName);
+                  setTempDatasetConfig({ paramName: newName, groupId: '', datasetName: '' });
+                }}
+                className="w-full px-2 py-1 text-xs bg-blue-500 text-white rounded hover:bg-blue-600"
+                disabled={readOnly}
               >
-                {isValidating ? 'Validating...' : 'Validate Code'}
+                + Add Dataset
               </button>
+            </div>
+
+            {/* Portfolio Constraints */}
+            {strategyType === 'portfolio' && (
+              <div className="border border-gray-300 dark:border-gray-600 rounded p-3 bg-gray-50 dark:bg-gray-700">
+                <h3 className="text-xs font-medium mb-2 dark:text-white">Portfolio Constraints</h3>
+
+                <div className="space-y-2">
+                  <div>
+                    <label className="block text-[10px] text-gray-600 dark:text-gray-400 mb-0.5">
+                      Max Positions
+                    </label>
+                    <input
+                      type="number"
+                      value={constraints.maxPositions}
+                      onChange={(e) => setConstraints({ ...constraints, maxPositions: parseInt(e.target.value) || 0 })}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 dark:text-white"
+                      min="1"
+                      max="50"
+                      disabled={readOnly}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] text-gray-600 dark:text-gray-400 mb-0.5">
+                      Reserve Cash (%)
+                    </label>
+                    <input
+                      type="number"
+                      value={constraints.reserveCash}
+                      onChange={(e) => setConstraints({ ...constraints, reserveCash: parseInt(e.target.value) || 0 })}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 dark:text-white"
+                      min="0"
+                      max="100"
+                      disabled={readOnly}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] text-gray-600 dark:text-gray-400 mb-0.5">
+                      Position Sizing
+                    </label>
+                    <select
+                      value={constraints.positionSizing}
+                      onChange={(e) => setConstraints({ ...constraints, positionSizing: e.target.value as 'equal' | 'custom' })}
+                      className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 dark:text-white"
+                      disabled={readOnly}
+                    >
+                      <option value="equal">Equal Weight</option>
+                      <option value="custom">Custom</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
             )}
-            <div className="flex gap-2 ml-auto">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white"
-              >
-                {readOnly ? 'Close' : 'Cancel'}
-              </button>
-              {!readOnly && (
-                <button
-                  type="submit"
-                  disabled={isLoading || isValidating}
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {isLoading ? 'Saving...' : strategy ? 'Update' : 'Create'}
-                </button>
-              )}
+
+            {/* Usage Help */}
+            <div className="border border-gray-300 dark:border-gray-600 rounded p-3 bg-blue-50 dark:bg-blue-900/30">
+              <h3 className="text-xs font-medium mb-1 text-blue-800 dark:text-blue-300">💡 Tips</h3>
+              <div className="text-[10px] text-blue-700 dark:text-blue-300 space-y-1">
+                <div>• Use <code className="bg-blue-100 dark:bg-blue-800 px-0.5">parameters.get(&apos;name&apos;)</code> to access external datasets</div>
+                <div>• Return signals with: date, type, amount, execution</div>
+                <div>• Portfolio strategies need &apos;symbol&apos; in each signal</div>
+              </div>
             </div>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
