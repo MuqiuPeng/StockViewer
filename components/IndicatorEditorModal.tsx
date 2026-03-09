@@ -1410,7 +1410,7 @@ export default function IndicatorEditorModal({
         onClick={onClose}
       />
 
-      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl w-[95vw] max-w-[1400px] h-[90vh] flex flex-col">
+      <div className="relative bg-white dark:bg-gray-800 rounded-lg shadow-xl w-[80vw] h-[90vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <h2 className="text-lg font-bold dark:text-white">
