@@ -35,8 +35,6 @@ services:
       - DATA_SERVICE_URL=http://data-service:8000
       - DATA_SERVICE_TIMEOUT_MS=60000
       - DATA_SERVICE_RETRIES=2
-      # Legacy (for backward compatibility)
-      - NEXT_PUBLIC_AKTOOLS_API_URL=http://127.0.0.1:8080
       - NEXT_PUBLIC_STORAGE_MODE=database
       - NEXT_PUBLIC_BASE_PATH=/stockviewer
       - PYTHON_EXECUTABLE=/opt/venv/bin/python

@@ -31,8 +31,6 @@ services:
       - DATA_SERVICE_URL=http://data-service:8000
       - DATA_SERVICE_TIMEOUT_MS=60000
       - DATA_SERVICE_RETRIES=2
-      # Legacy AKTools (for backward compatibility during migration)
-      - NEXT_PUBLIC_AKTOOLS_API_URL=http://aktools:8080
       - PYTHON_EXECUTABLE=python3
       - PYTHON_TIMEOUT_MS=300000
     volumes:
@@ -50,25 +48,6 @@ services:
     restart: unless-stopped
     networks:
       - stockviewer-network
-
-  # Legacy AKTools API Service (可选，迁移完成后可移除)
-  aktools:
-    build:
-      context: .
-      dockerfile: Dockerfile.aktools
-    ports:
-      - "8080:8080"
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    networks:
-      - stockviewer-network
-    profiles:
-      - legacy  # 只有指定 --profile legacy 才会启动
 
 networks:
   stockviewer-network:
