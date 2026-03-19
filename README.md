@@ -102,31 +102,43 @@ StockViewer is a powerful Next.js application that enables you to:
 
 **New to this project?** See [SETUP.md](SETUP.md) for detailed installation instructions.
 
-### Fast Setup (5 minutes)
+### Docker 部署（推荐）
 
 ```bash
-# 1. Clone and install
+# 1. 克隆项目
 git clone <repository-url>
 cd StockViewer
+
+# 2. 配置环境变量
+cp .env.docker.example .env.docker
+# 编辑 .env.docker 填写必要配置
+
+# 3. 启动服务
+docker compose --env-file .env.docker up -d --build
+
+# 访问 http://localhost:3000
+```
+
+### 本地开发
+
+```bash
+# 1. 安装依赖
 npm install
 
-# 2. Run setup script
+# 2. 运行 setup 脚本
 npm run setup
 
-# 3. Set up Python (in project venv)
+# 3. 设置 Python 环境
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install pandas numpy
 
-# 4. Set up AKTools (in separate terminal)
-python -m venv aktools-env
-source aktools-env/bin/activate
-pip install aktools
-python -m aktools  # Keep this running
+# 4. 启动数据服务（需要先启动）
+docker compose up data-service -d
 
-# 5. Start dev server (in main terminal with venv activated)
+# 5. 启动开发服务器
 npm run dev
-# Open http://localhost:3000
+# 访问 http://localhost:3000
 ```
 
 See [SETUP.md](SETUP.md) for troubleshooting and detailed instructions.
@@ -212,9 +224,38 @@ Comprehensive documentation is organized by topic:
 - **Editor**: Monaco Editor (VS Code engine)
 - **Theming**: Dark/Light mode with system preference detection
 - **Backend**: Next.js API Routes, Node.js
+- **Data Service**: Python FastAPI + AKShare (独立 Docker 服务)
 - **Data Processing**: Python 3.8+, pandas, numpy, MyTT library
-- **Data Sources**: AKShare API (aktools) for multi-market data
-- **Storage**: CSV files, JSON (no database required)
+- **Database**: PostgreSQL 16 (用户、团队、数据集管理)
+- **Deployment**: Docker Compose (支持 Cloudflare Tunnel)
+
+## Docker Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    stockviewer-network                       │
+│                                                             │
+│  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐│
+│  │     app      │────▶│ data-service │     │      db      ││
+│  │   (Next.js)  │     │   (FastAPI)  │     │ (PostgreSQL) ││
+│  │    :3000     │     │    :8000     │     │    :5432     ││
+│  └──────┬───────┘     └──────────────┘     └──────────────┘│
+│         │                                         ▲         │
+│         └─────────────────────────────────────────┘         │
+│                                                             │
+│  ┌──────────────┐                                          │
+│  │    tunnel    │  (可选: --profile tunnel)                 │
+│  │ (Cloudflare) │                                          │
+│  └──────────────┘                                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+| 服务 | 端口 | 用途 |
+|------|------|------|
+| **app** | 3000 | Next.js 主应用 |
+| **data-service** | 8000 | Python FastAPI 数据服务 (AKShare) |
+| **db** | 5432 | PostgreSQL 数据库 |
+| **tunnel** | - | Cloudflare Tunnel (可选) |
 
 ## Project Structure
 
@@ -315,21 +356,28 @@ date,open,high,low,close,volume
 
 ## Configuration
 
-Configure via `.env.local`:
+Configure via `.env.local` (本地开发) 或 `.env.docker` (Docker 部署):
 
 ```bash
-# AKTools API
-NEXT_PUBLIC_AKTOOLS_API_URL=http://127.0.0.1:8080
+# Data Service (股票数据服务)
+DATA_SERVICE_URL=http://localhost:8000
+DATA_SERVICE_TIMEOUT_MS=60000
+DATA_SERVICE_RETRIES=2
 
-# Python execution
+# Python execution (指标计算)
 PYTHON_EXECUTABLE=python3
 PYTHON_TIMEOUT_MS=300000  # 5 minutes
 
-# CSV data folder (optional - defaults to ./data/csv)
-CSV_DATA_PATH=/path/to/your/stock-data
-
 # Storage mode: local | online | database
-NEXT_PUBLIC_STORAGE_MODE=local
+NEXT_PUBLIC_STORAGE_MODE=database
+
+# Database (database 模式必需)
+DATABASE_URL=postgresql://user:pass@localhost:5432/stockviewer
+
+# Authentication (database 模式必需)
+AUTH_SECRET=your-secret-key
+AUTH_GITHUB_ID=your-github-oauth-id
+AUTH_GITHUB_SECRET=your-github-oauth-secret
 ```
 
 See [Architecture](docs/ARCHITECTURE.md) for complete configuration options.
@@ -345,21 +393,21 @@ See [Architecture](docs/ARCHITECTURE.md) for security details.
 
 ## Troubleshooting
 
+### Data Service 连接失败
+```
+Error: Failed to fetch stock data
+```
+**Solution**: 确保 data-service 正在运行
+```bash
+docker compose up data-service -d
+curl http://localhost:8000/api/v1/health
+```
+
 ### Python Not Found
 ```
 Error: Python 3 required
 ```
 **Solution**: Install Python 3.8+ and ensure it's in PATH
-
-### AKTools API Connection Failed
-```
-Error: Failed to fetch stock data
-```
-**Solution**: Ensure aktools is running at http://127.0.0.1:8080
-```bash
-source aktools-env/bin/activate
-python -m aktools
-```
 
 ### Indicator Timeout
 ```
@@ -370,28 +418,19 @@ Error: Python execution timeout
 PYTHON_TIMEOUT_MS=600000  # 10 minutes
 ```
 
-### Negative Stock Price Error
+### Database Connection Failed
 ```
-❌ DATA ERROR: Stock XXX has invalid price (-X.XX) on YYYY-MM-DD
+Error: Can't reach database server
 ```
-**Solution**: The stock data is corrupted. Re-fetch the stock data from the Datasets page:
-1. Navigate to **Datasets** page
-2. Find the problematic stock
-3. Click the refresh/update button
-4. Data will be re-downloaded from aktools API
+**Solution**: 确保 PostgreSQL 正在运行
+```bash
+docker compose up db -d
+```
 
 ### Backtest Equity Curve Drops Suddenly
 **Cause**: Missing stock data for certain dates (trading suspensions, delisting, data gaps)
 
-**Solution**: The system now automatically uses the last known price when data is missing. Check the console for warnings:
-```
-Warning: Using last known price for XXXXXX on YYYY-MM-DD
-```
-
-If you see too many warnings, consider:
-- Updating the stock data
-- Excluding the problematic stock from your portfolio
-- Adjusting your date range to avoid gaps
+**Solution**: The system now automatically uses the last known price when data is missing. Check the console for warnings.
 
 See [SETUP.md](SETUP.md) and individual documentation files for more troubleshooting.
 
@@ -415,5 +454,6 @@ MIT License - See LICENSE file for details
 - [TradingView Lightweight Charts](https://www.tradingview.com/lightweight-charts/)
 - [Next.js](https://nextjs.org/)
 - [Monaco Editor](https://microsoft.github.io/monaco-editor/)
+- [FastAPI](https://fastapi.tiangolo.com/)
+- [AKShare](https://github.com/akfamily/akshare) - Chinese stock data API
 - [pandas](https://pandas.pydata.org/)
-- [aktools](https://github.com/akfamily/akshare) - Chinese stock data API
