@@ -158,27 +158,15 @@ export async function POST(request: Request) {
     const startDate = parameters.startDate ? new Date(parameters.startDate) : undefined;
     const endDate = parameters.endDate ? new Date(parameters.endDate) : undefined;
 
-    // Build backtest input based on target type
-    let backtestInput: BacktestInput;
-    let stockIds: string[] = [];
-    let symbols: string[] = [];
-
-    if (target.type === 'single') {
-      if (!target.stockId) {
-        return NextResponse.json(
-          { error: 'Invalid request', message: 'stockId is required for single backtest' },
-          { status: 400 }
-        );
-      }
-
-      // Get stock info - try by ID first, then by filename (symbol_dataSource), then by symbol
+    // Helper: find stock by ID, filename, or symbol
+    const findStock = async (stockId: string) => {
       let stock = await prisma.stock.findUnique({
-        where: { id: target.stockId },
+        where: { id: stockId },
       });
 
       // If not found by ID, try to parse as filename (symbol_dataSource)
       if (!stock) {
-        const parts = target.stockId.split('_');
+        const parts = stockId.split('_');
         if (parts.length >= 2) {
           const symbol = parts[0];
           const dataSource = parts.slice(1).join('_');
@@ -191,9 +179,46 @@ export async function POST(request: Request) {
       // Try by symbol only
       if (!stock) {
         stock = await prisma.stock.findFirst({
-          where: { symbol: target.stockId },
+          where: { symbol: stockId },
         });
       }
+
+      return stock;
+    };
+
+    // Helper: run a single-stock backtest and return the result
+    const runSingleStockBacktest = async (stockId: string) => {
+      const data = await buildDataRecords(stockId, startDate, endDate);
+      if (data.length === 0) {
+        throw new Error('No data available');
+      }
+
+      const input: BacktestInput = {
+        strategyCode: strategy.pythonCode,
+        data,
+        strategyType: 'single',
+        initialCash: parameters.initialCash || 100000,
+        commission: parameters.commission || 0.001,
+        parameters: parameters.strategyParameters || strategy.parameters as Record<string, any> || {},
+        externalDatasets: strategy.externalDatasets as Record<string, { groupId: string; datasetName: string }> | undefined,
+      };
+
+      return { result: await executeBacktest(input), dataPoints: data.length };
+    };
+
+    // Build backtest input based on target type
+    let stockIds: string[] = [];
+    let symbols: string[] = [];
+
+    if (target.type === 'single') {
+      if (!target.stockId) {
+        return NextResponse.json(
+          { error: 'Invalid request', message: 'stockId is required for single backtest' },
+          { status: 400 }
+        );
+      }
+
+      const stock = await findStock(target.stockId);
 
       if (!stock) {
         return NextResponse.json(
@@ -203,44 +228,257 @@ export async function POST(request: Request) {
       }
 
       stockIds = [stock.id];
-
       symbols = [stock.symbol];
 
-      // Build data records
-      const data = await buildDataRecords(stock.id, startDate, endDate);
-
-      if (data.length === 0) {
+      let rawResult: BacktestResult;
+      try {
+        const { result } = await runSingleStockBacktest(stock.id);
+        rawResult = result;
+      } catch (err) {
         return NextResponse.json(
           { error: 'No data available for backtest' },
           { status: 400 }
         );
       }
 
-      backtestInput = {
-        strategyCode: strategy.pythonCode,
-        data,
-        strategyType: 'single',
-        initialCash: parameters.initialCash || 100000,
-        commission: parameters.commission || 0.001,
-        parameters: parameters.strategyParameters || strategy.parameters as Record<string, any> || {},
-        externalDatasets: strategy.externalDatasets as Record<string, { groupId: string; datasetName: string }> | undefined,
+      // Build dateRange from equity curve or parameters
+      const firstDate = rawResult.equityCurve?.[0]?.date;
+      const lastDate = rawResult.equityCurve?.[rawResult.equityCurve.length - 1]?.date;
+      const dateRange = {
+        startDate: firstDate || parameters.startDate,
+        endDate: lastDate || parameters.endDate,
+        dataPoints: rawResult.equityCurve?.length || 0,
       };
-    } else if (target.type === 'portfolio' || target.type === 'group') {
-      // Get stock IDs from group or direct list
-      if (target.type === 'group' && target.groupId) {
-        const group = await prisma.stockGroup.findUnique({
-          where: { id: target.groupId },
-        });
 
-        if (!group) {
-          return NextResponse.json(
-            { error: 'Group not found' },
-            { status: 404 }
-          );
+      const result = {
+        ...rawResult,
+        type: 'single' as const,
+        dateRange,
+        symbols,
+      };
+
+      // Save to history
+      let historyEntry: BacktestHistoryEntry | null = null;
+      if (saveToHistory && result.success && result.metrics) {
+        const duration = firstDate && lastDate
+          ? Math.ceil((new Date(lastDate).getTime() - new Date(firstDate).getTime()) / (1000 * 60 * 60 * 24))
+          : 0;
+
+        historyEntry = await createBacktestHistoryEntry({
+          strategyId: strategy.id,
+          strategyName: strategy.name,
+          strategyType: strategy.strategyType as 'single' | 'portfolio',
+          target: { type: 'single', stockId: target.stockId, symbols },
+          parameters: {
+            initialCash: parameters.initialCash || 100000,
+            commission: parameters.commission || 0.001,
+            startDate: parameters.startDate,
+            endDate: parameters.endDate,
+            strategyParameters: parameters.strategyParameters,
+          },
+          result,
+          starred: false,
+          summary: {
+            totalReturn: result.metrics.totalReturn,
+            totalReturnPct: result.metrics.totalReturnPct,
+            sharpeRatio: result.metrics.sharpeRatio,
+            tradeCount: result.metrics.tradeCount,
+            duration,
+          },
+        }, storage);
+      }
+
+      return NextResponse.json({
+        success: result.success,
+        result,
+        historyEntry: historyEntry ? { id: historyEntry.id } : null,
+      });
+
+    } else if (target.type === 'group') {
+      // Group backtest: run single-stock strategy independently on each stock
+      if (!target.groupId) {
+        return NextResponse.json(
+          { error: 'Invalid request', message: 'groupId is required for group backtest' },
+          { status: 400 }
+        );
+      }
+
+      const group = await prisma.stockGroup.findUnique({
+        where: { id: target.groupId },
+      });
+
+      if (!group) {
+        return NextResponse.json(
+          { error: 'Group not found' },
+          { status: 404 }
+        );
+      }
+
+      stockIds = group.stockIds;
+
+      if (stockIds.length === 0) {
+        return NextResponse.json(
+          { error: 'Invalid request', message: 'Group has no stocks' },
+          { status: 400 }
+        );
+      }
+
+      // Get stock info
+      const stocks = await prisma.stock.findMany({
+        where: { id: { in: stockIds } },
+      });
+      symbols = stocks.map(s => s.symbol);
+
+      // Run single-stock backtest independently for each stock
+      const stockResults: Array<{
+        stockId: string;
+        metrics: any;
+        equityCurve?: any[];
+        tradeMarkers?: any[];
+        dataPoints: number;
+      }> = [];
+      const errors: Array<{ stockId: string; error: string }> = [];
+
+      for (const stock of stocks) {
+        try {
+          const { result: stockResult, dataPoints } = await runSingleStockBacktest(stock.id);
+
+          if (stockResult.success && stockResult.metrics) {
+            stockResults.push({
+              stockId: stock.symbol,
+              metrics: stockResult.metrics,
+              equityCurve: stockResult.equityCurve,
+              tradeMarkers: stockResult.tradeMarkers,
+              dataPoints,
+            });
+          } else {
+            errors.push({
+              stockId: stock.symbol,
+              error: stockResult.error || 'Backtest failed',
+            });
+          }
+        } catch (err) {
+          errors.push({
+            stockId: stock.symbol,
+            error: err instanceof Error ? err.message : 'Unknown error',
+          });
         }
+      }
 
-        stockIds = group.stockIds;
-      } else if (target.stockIds) {
+      if (stockResults.length === 0) {
+        return NextResponse.json(
+          { error: 'All stock backtests failed', message: errors.map(e => `${e.stockId}: ${e.error}`).join('; ') },
+          { status: 400 }
+        );
+      }
+
+      // Aggregate metrics across all successful stock results
+      const successCount = stockResults.length;
+      const aggregatedMetrics = {
+        totalReturn: stockResults.reduce((sum, r) => sum + r.metrics.totalReturn, 0),
+        totalReturnPct: stockResults.reduce((sum, r) => sum + r.metrics.totalReturnPct, 0) / successCount,
+        avgFinalValue: stockResults.reduce((sum, r) => sum + r.metrics.finalValue, 0) / successCount,
+        avgMaxDrawdownPct: stockResults.reduce((sum, r) => sum + r.metrics.maxDrawdownPct, 0) / successCount,
+        avgSharpeRatio: stockResults.reduce((sum, r) => sum + r.metrics.sharpeRatio, 0) / successCount,
+        avgSortinoRatio: stockResults.reduce((sum, r) => sum + r.metrics.sortinoRatio, 0) / successCount,
+        avgWinRate: stockResults.reduce((sum, r) => sum + r.metrics.winRate, 0) / successCount,
+        totalTrades: stockResults.reduce((sum, r) => sum + r.metrics.tradeCount, 0),
+        stockCount: successCount,
+      };
+
+      // Build dateRange from all equity curves
+      let earliestDate: string | undefined;
+      let latestDate: string | undefined;
+      let totalDataPoints = 0;
+      for (const sr of stockResults) {
+        if (sr.equityCurve && sr.equityCurve.length > 0) {
+          const first = sr.equityCurve[0].date;
+          const last = sr.equityCurve[sr.equityCurve.length - 1].date;
+          if (!earliestDate || first < earliestDate) earliestDate = first;
+          if (!latestDate || last > latestDate) latestDate = last;
+          totalDataPoints = Math.max(totalDataPoints, sr.equityCurve.length);
+        }
+      }
+
+      const dateRange = {
+        startDate: earliestDate || parameters.startDate,
+        endDate: latestDate || parameters.endDate,
+        dataPoints: totalDataPoints,
+      };
+
+      const result = {
+        success: true,
+        type: 'group' as const,
+        groupName: group.name,
+        aggregatedMetrics,
+        stockResults,
+        errors: errors.length > 0 ? errors : undefined,
+        dateRange,
+        symbols,
+        // Include a combined metrics for history saving
+        metrics: {
+          totalReturn: aggregatedMetrics.totalReturn,
+          totalReturnPct: aggregatedMetrics.totalReturnPct,
+          finalValue: aggregatedMetrics.avgFinalValue,
+          initialValue: parameters.initialCash || 100000,
+          maxDrawdown: 0,
+          maxDrawdownPct: aggregatedMetrics.avgMaxDrawdownPct,
+          sharpeRatio: aggregatedMetrics.avgSharpeRatio,
+          sortinoRatio: aggregatedMetrics.avgSortinoRatio,
+          calmarRatio: 0,
+          winRate: aggregatedMetrics.avgWinRate,
+          avgWin: 0,
+          avgLoss: 0,
+          profitFactor: 0,
+          tradeCount: aggregatedMetrics.totalTrades,
+        },
+      };
+
+      // Save to history
+      let historyEntry: BacktestHistoryEntry | null = null;
+      if (saveToHistory) {
+        const duration = earliestDate && latestDate
+          ? Math.ceil((new Date(latestDate).getTime() - new Date(earliestDate).getTime()) / (1000 * 60 * 60 * 24))
+          : 0;
+
+        historyEntry = await createBacktestHistoryEntry({
+          strategyId: strategy.id,
+          strategyName: strategy.name,
+          strategyType: strategy.strategyType as 'single' | 'portfolio',
+          target: {
+            type: 'group',
+            symbols,
+            groupId: target.groupId,
+            groupName: group.name,
+          },
+          parameters: {
+            initialCash: parameters.initialCash || 100000,
+            commission: parameters.commission || 0.001,
+            startDate: parameters.startDate,
+            endDate: parameters.endDate,
+            strategyParameters: parameters.strategyParameters,
+          },
+          result: result as any,
+          starred: false,
+          summary: {
+            totalReturn: aggregatedMetrics.totalReturn,
+            totalReturnPct: aggregatedMetrics.totalReturnPct,
+            sharpeRatio: aggregatedMetrics.avgSharpeRatio,
+            tradeCount: aggregatedMetrics.totalTrades,
+            duration,
+          },
+        }, storage);
+      }
+
+      return NextResponse.json({
+        success: true,
+        result,
+        historyEntry: historyEntry ? { id: historyEntry.id } : null,
+      });
+
+    } else if (target.type === 'portfolio') {
+      // Portfolio backtest: shared capital across multiple stocks
+      if (target.stockIds) {
         stockIds = target.stockIds;
       }
 
@@ -274,7 +512,7 @@ export async function POST(request: Request) {
         );
       }
 
-      backtestInput = {
+      const backtestInput: BacktestInput = {
         strategyCode: strategy.pythonCode,
         dataMap,
         strategyType: 'portfolio',
@@ -284,89 +522,70 @@ export async function POST(request: Request) {
         constraints: parameters.constraints || strategy.constraints as any || {},
         externalDatasets: strategy.externalDatasets as Record<string, { groupId: string; datasetName: string }> | undefined,
       };
+
+      // Execute backtest
+      const rawResult: BacktestResult = await executeBacktest(backtestInput);
+
+      // Build dateRange from equity curve or parameters
+      const firstDate = rawResult.equityCurve?.[0]?.date;
+      const lastDate = rawResult.equityCurve?.[rawResult.equityCurve.length - 1]?.date;
+      const dateRange = {
+        startDate: firstDate || parameters.startDate,
+        endDate: lastDate || parameters.endDate,
+        dataPoints: rawResult.equityCurve?.length || 0,
+      };
+
+      const result = {
+        ...rawResult,
+        type: 'portfolio' as const,
+        dateRange,
+        symbols,
+      };
+
+      // Save to history
+      let historyEntry: BacktestHistoryEntry | null = null;
+      if (saveToHistory && result.success && result.metrics) {
+        const duration = firstDate && lastDate
+          ? Math.ceil((new Date(lastDate).getTime() - new Date(firstDate).getTime()) / (1000 * 60 * 60 * 24))
+          : 0;
+
+        historyEntry = await createBacktestHistoryEntry({
+          strategyId: strategy.id,
+          strategyName: strategy.name,
+          strategyType: strategy.strategyType as 'single' | 'portfolio',
+          target: { type: 'portfolio', symbols },
+          parameters: {
+            initialCash: parameters.initialCash || 100000,
+            commission: parameters.commission || 0.001,
+            startDate: parameters.startDate,
+            endDate: parameters.endDate,
+            strategyParameters: parameters.strategyParameters,
+            constraints: parameters.constraints,
+          },
+          result,
+          starred: false,
+          summary: {
+            totalReturn: result.metrics.totalReturn,
+            totalReturnPct: result.metrics.totalReturnPct,
+            sharpeRatio: result.metrics.sharpeRatio,
+            tradeCount: result.metrics.tradeCount,
+            duration,
+          },
+        }, storage);
+      }
+
+      return NextResponse.json({
+        success: result.success,
+        result,
+        historyEntry: historyEntry ? { id: historyEntry.id } : null,
+      });
+
     } else {
       return NextResponse.json(
         { error: 'Invalid request', message: 'Invalid target type' },
         { status: 400 }
       );
     }
-
-    // Execute backtest
-    const rawResult: BacktestResult = await executeBacktest(backtestInput);
-
-    // Build dateRange from equity curve or parameters
-    const firstDate = rawResult.equityCurve?.[0]?.date;
-    const lastDate = rawResult.equityCurve?.[rawResult.equityCurve.length - 1]?.date;
-    const dateRange = {
-      startDate: firstDate || parameters.startDate,
-      endDate: lastDate || parameters.endDate,
-      dataPoints: rawResult.equityCurve?.length || 0,
-    };
-
-    // Build the enhanced result with type and dateRange
-    // This ensures the result can be properly displayed when loaded from history
-    const result = {
-      ...rawResult,
-      type: target.type, // 'single', 'portfolio', or 'group'
-      dateRange,
-      symbols, // Include symbols for portfolio/group display
-    };
-
-    // Save to history if requested and successful
-    let historyEntry: BacktestHistoryEntry | null = null;
-
-    if (saveToHistory && result.success && result.metrics) {
-      // Calculate duration in days
-      const duration = firstDate && lastDate
-        ? Math.ceil((new Date(lastDate).getTime() - new Date(firstDate).getTime()) / (1000 * 60 * 60 * 24))
-        : 0;
-
-      // Fetch group name if this is a group backtest
-      let groupName: string | undefined;
-      if (target.type === 'group' && target.groupId) {
-        const group = await prisma.stockGroup.findUnique({
-          where: { id: target.groupId },
-          select: { name: true },
-        });
-        groupName = group?.name;
-      }
-
-      historyEntry = await createBacktestHistoryEntry({
-        strategyId: strategy.id,
-        strategyName: strategy.name,
-        strategyType: strategy.strategyType as 'single' | 'portfolio',
-        target: {
-          type: target.type,
-          stockId: target.stockId,
-          symbols,
-          groupId: target.groupId,
-          groupName,
-        },
-        parameters: {
-          initialCash: parameters.initialCash || 100000,
-          commission: parameters.commission || 0.001,
-          startDate: parameters.startDate,
-          endDate: parameters.endDate,
-          strategyParameters: parameters.strategyParameters,
-          constraints: parameters.constraints,
-        },
-        result, // Save the enhanced result with type and dateRange
-        starred: false,
-        summary: {
-          totalReturn: result.metrics.totalReturn,
-          totalReturnPct: result.metrics.totalReturnPct,
-          sharpeRatio: result.metrics.sharpeRatio,
-          tradeCount: result.metrics.tradeCount,
-          duration,
-        },
-      }, storage);
-    }
-
-    return NextResponse.json({
-      success: result.success,
-      result,
-      historyEntry: historyEntry ? { id: historyEntry.id } : null,
-    });
   } catch (error) {
     console.error('Error running backtest:', error);
     return NextResponse.json(
