@@ -196,8 +196,8 @@ model Indicator {
   createdBy String
 
   name         String
-  description  String @db.Text
-  pythonCode   String @db.Text
+  description  String? @db.Text
+  pythonCode   String  @db.Text
   outputColumn String
 
   // Versioning for cache invalidation
@@ -295,7 +295,7 @@ model Strategy {
   createdBy String
 
   name             String
-  description      String   @db.Text
+  description      String?  @db.Text
   pythonCode       String   @db.Text
   strategyType     String   @default("single")
   constraints      Json?

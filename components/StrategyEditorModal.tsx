@@ -235,6 +235,7 @@ export default function StrategyEditorModal({
   const [editingDataset, setEditingDataset] = useState<string | null>(null);
   const [tempDatasetConfig, setTempDatasetConfig] = useState<{ paramName: string; groupId: string; datasetName: string } | null>(null);
   const [groups, setGroups] = useState<any[]>([]);
+  const [datasets, setDatasets] = useState<Array<{ id: string; name: string; code: string; filename: string }>>([]);
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [dependencies, setDependencies] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -243,7 +244,18 @@ export default function StrategyEditorModal({
   const [isValidating, setIsValidating] = useState(false);
   const [validationSuccess, setValidationSuccess] = useState<string | null>(null);
 
-  // Load groups and indicators on mount
+  // Build a lookup from stock DB id to stock info
+  const stockLookup = new Map(datasets.map(ds => [ds.id, ds]));
+
+  // Get displayable stock list for a group
+  const getGroupStocks = (group: any) => {
+    if (!group?.stockIds) return [];
+    return group.stockIds
+      .map((id: string) => stockLookup.get(id))
+      .filter(Boolean) as Array<{ id: string; name: string; code: string; filename: string }>;
+  };
+
+  // Load groups, datasets, and indicators on mount
   useEffect(() => {
     if (isOpen) {
       fetch('/api/groups')
@@ -253,6 +265,17 @@ export default function StrategyEditorModal({
         })
         .catch((err) => {
           console.error('Failed to load groups:', err);
+        });
+
+      fetch('/api/datasets')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.datasets) {
+            setDatasets(data.datasets);
+          }
+        })
+        .catch((err) => {
+          console.error('Failed to load datasets:', err);
         });
 
       fetch('/api/indicators')
@@ -428,7 +451,7 @@ export default function StrategyEditorModal({
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={isLoading || !name || !description || !pythonCode}
+                disabled={isLoading || !name || !pythonCode}
                 className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
               >
                 {isLoading ? 'Saving...' : strategy ? 'Update' : 'Create'}
@@ -495,7 +518,7 @@ export default function StrategyEditorModal({
 
             {/* Description */}
             <div>
-              <label className="block text-xs font-medium mb-1 dark:text-white">Description *</label>
+              <label className="block text-xs font-medium mb-1 dark:text-white">Description</label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -702,15 +725,20 @@ export default function StrategyEditorModal({
                           disabled={!config.groupId}
                         >
                           <option value="">Select dataset</option>
-                          {selectedGroup?.stockIds?.map((ds: string) => (
-                            <option key={ds} value={ds}>{ds}</option>
+                          {getGroupStocks(selectedGroup).map((stock) => (
+                            <option key={stock.id} value={stock.filename}>{stock.code} - {stock.name}</option>
                           ))}
                         </select>
                       </>
                     )}
                     {!isEditing && (
                       <div className="text-[10px] text-gray-500 dark:text-gray-400 truncate">
-                        {dataset.datasetName || 'Not configured'}
+                        {dataset.datasetName ? (
+                          (() => {
+                            const group = groups.find(g => g.id === dataset.groupId);
+                            return `${group?.name || dataset.groupId} / ${dataset.datasetName}`;
+                          })()
+                        ) : 'Not configured'}
                       </div>
                     )}
                   </div>

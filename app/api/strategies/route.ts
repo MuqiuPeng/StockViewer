@@ -66,9 +66,9 @@ export async function POST(request: Request) {
     const { name, description, pythonCode, parameters, strategyType, constraints, externalDatasets } = body;
 
     // Validate required fields
-    if (!name || !description || !pythonCode) {
+    if (!name || !pythonCode) {
       return NextResponse.json(
-        { error: 'Missing required fields', message: 'name, description, and pythonCode are required' },
+        { error: 'Missing required fields', message: 'name and pythonCode are required' },
         { status: 400 }
       );
     }

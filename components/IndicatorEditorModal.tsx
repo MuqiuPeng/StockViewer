@@ -1035,7 +1035,7 @@ export default function IndicatorEditorModal({
     setError(null);
     setValidationMessage(null);
 
-    if (!name || !description || !pythonCode) {
+    if (!name || !pythonCode) {
       setError('Please fill in all required fields');
       return;
     }
@@ -1436,7 +1436,7 @@ export default function IndicatorEditorModal({
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={isLoading || !name || !description || !pythonCode}
+                disabled={isLoading || !name || !pythonCode}
                 className="px-3 py-1.5 text-sm text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50"
               >
                 {isLoading ? 'Saving...' : indicator ? 'Update' : 'Create'}
@@ -1490,7 +1490,7 @@ export default function IndicatorEditorModal({
 
             {/* Description */}
             <div>
-              <label className="block text-xs font-medium mb-1 dark:text-white">Description *</label>
+              <label className="block text-xs font-medium mb-1 dark:text-white">Description</label>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
