@@ -24,6 +24,9 @@ COPY docker/next.config.docker.js ./next.config.js
 # Install Python dependencies (no venv needed in container)
 RUN pip install --no-cache-dir --break-system-packages pandas numpy
 
+# Generate Prisma client (dummy URL for type generation only)
+RUN DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" npx prisma generate
+
 # Build Next.js application
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
@@ -45,6 +48,10 @@ RUN pip install --no-cache-dir --break-system-packages pandas numpy
 # Copy built application
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+
+# Copy Prisma schema and generated client
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
 # Create public folder if needed
 RUN mkdir -p ./public

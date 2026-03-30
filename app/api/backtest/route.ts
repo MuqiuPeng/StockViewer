@@ -18,6 +18,7 @@ interface BacktestRequest {
     type: 'single' | 'portfolio' | 'group';
     stockId?: string;
     stockIds?: string[];
+    symbols?: string[];
     groupId?: string;
   };
   parameters: {
@@ -480,6 +481,8 @@ export async function POST(request: Request) {
       // Portfolio backtest: shared capital across multiple stocks
       if (target.stockIds) {
         stockIds = target.stockIds;
+      } else if (target.symbols) {
+        stockIds = target.symbols;
       }
 
       if (stockIds.length === 0) {
