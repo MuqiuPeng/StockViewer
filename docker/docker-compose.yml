@@ -28,6 +28,7 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
+      - AUTH_TRUST_HOST=true
       - DATA_SERVICE_URL=http://data-service:8000
       - DATA_SERVICE_TIMEOUT_MS=60000
       - DATA_SERVICE_RETRIES=2

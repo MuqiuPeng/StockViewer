@@ -96,7 +96,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       // Include user info in session from JWT token
       if (session.user) {
         if (token.id) session.user.id = token.id as string;
-        if (token.image) session.user.image = token.image as string;
+        // NextAuth v5 stores image as 'picture' in JWT standard claims
+        const image = (token.image || token.picture) as string | undefined;
+        if (image) session.user.image = image;
         if (token.name) session.user.name = token.name as string;
         if (token.email) session.user.email = token.email as string;
         if (token.status) session.user.status = token.status as string;
