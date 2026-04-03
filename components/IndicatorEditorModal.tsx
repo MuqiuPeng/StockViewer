@@ -1,10 +1,20 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
 import { useTheme } from './ThemeProvider';
-
-type Period = 'daily' | 'weekly' | 'monthly' | 'quarterly';
+import {
+  transformPlaceholdersToCode,
+  transformCodeToPlaceholders,
+  wrapCodeBody,
+  extractCodeBody,
+  BASE_COLUMNS,
+} from './editor/placeholder-utils';
+import type { Period } from './editor/types';
+import { useDataSourceFetcher } from '@/hooks/useDataSourceFetcher';
+import { useMonacoVisualBlocks } from '@/hooks/useMonacoVisualBlocks';
+import DataSourcePicker from './editor/DataSourcePicker';
+import './editor/DataSourceChip.css';
 
 interface Indicator {
   id: string;
@@ -27,247 +37,7 @@ interface IndicatorEditorModalProps {
   readOnly?: boolean;
 }
 
-// Import panel interfaces
-interface ImportableIndicator {
-  id: string;
-  name: string;
-  ownerEmail: string;
-  description: string;
-  isOwner: boolean;
-  outputColumn: string;
-  isGroup?: boolean;
-  groupName?: string;
-  expectedOutputs?: string[];
-}
-
-// Flattened indicator item for import panel (group indicators expanded to columns)
-interface ImportableItem {
-  id: string;
-  indicatorName: string;  // Original indicator name
-  columnName: string;     // Column to access (for group: specific output, for single: 'value')
-  displayName: string;    // Display name in UI
-  ownerEmail: string;
-  isOwner: boolean;
-  isGroupColumn: boolean; // Whether this is a column from a group indicator
-}
-
-// Dataset column item for import panel
-interface ImportableDatasetColumn {
-  datasetSymbol: string;  // e.g., "000002"
-  datasetName: string;    // e.g., "000002 沪深300"
-  column: string;         // e.g., "close"
-  displayName: string;    // e.g., "000002@close"
-}
-
-interface PlaceholderInfo {
-  type: 'indicator' | 'dataset';
-  id: string;
-  displayName: string;  // Display name shown in tag
-  // Position in editor
-  startOffset: number;
-  endOffset: number;
-  lineNumber: number;
-  column: number;
-  length: number;
-}
-
-// Placeholder formats:
-// - ◈name◈ for base columns (OHLCV) -> data['name']
-// - ◈IND:name◈ for single indicators -> data.import_('name')['value']
-// - ◈IND:name:column◈ for group indicator columns -> data.import_('name')['column']
-// - ◈DS:symbol@column◈ for dataset columns -> data.import_('symbol', type='dataset')['column']
-
-// Base columns that are always available
-const BASE_COLUMNS = ['open', 'high', 'low', 'close', 'volume'];
-
-// Transform visual placeholders to actual Python code (before save/validate)
-const transformPlaceholdersToCode = (code: string): string => {
-  let result = code;
-
-  // Transform base column placeholders: ◈close◈ -> data['close']
-  for (const col of BASE_COLUMNS) {
-    result = result.replace(new RegExp(`◈${col}◈`, 'g'), `data['${col}']`);
-  }
-
-  // Transform dataset column placeholders: ◈DS:symbol@column◈ -> data.import_('symbol', type='dataset')['column']
-  result = result.replace(/◈DS:([^@◈]+)@([^◈]+)◈/g, (_, symbol, column) => {
-    return `data.import_('${symbol}', type='dataset')['${column}']`;
-  });
-
-  // Transform group indicator column placeholders: ◈IND:name:column◈ -> data.import_('name')['column']
-  result = result.replace(/◈IND:([^:◈]+):([^◈]+)◈/g, (_, name, column) => {
-    return `data.import_('${name}')['${column}']`;
-  });
-
-  // Transform single indicator placeholders: ◈IND:name◈ -> data.import_('name')['value']
-  result = result.replace(/◈IND:([^◈]+)◈/g, (_, name) => {
-    return `data.import_('${name}')['value']`;
-  });
-
-  return result;
-};
-
-// Transform Python code to visual placeholders (when loading for editing)
-const transformCodeToPlaceholders = (code: string): string => {
-  let result = code;
-
-  // Transform base column access: data['close'] -> ◈close◈
-  for (const col of BASE_COLUMNS) {
-    result = result.replace(new RegExp(`data\\['${col}'\\]`, 'g'), `◈${col}◈`);
-    result = result.replace(new RegExp(`data\\["${col}"\\]`, 'g'), `◈${col}◈`);
-  }
-
-  // Transform dataset imports: data.import_('symbol', type='dataset')['column'] -> ◈DS:symbol@column◈
-  result = result.replace(
-    /data\.import_\(\s*['"]([^'"]+)['"]\s*,\s*type\s*=\s*['"]dataset['"]\s*\)\s*\['([^']+)'\]/g,
-    (_, symbol, column) => `◈DS:${symbol}@${column}◈`
-  );
-
-  // Handle user-specific imports: data.import_(user='email', indicator='name')['column'] -> ◈IND:name:column◈
-  result = result.replace(
-    /data\.import_\(\s*user\s*=\s*['"][^'"]+['"]\s*,\s*indicator\s*=\s*['"]([^'"]+)['"]\s*\)\s*\['([^']+)'\]/g,
-    (_, name, column) => column === 'value' ? `◈IND:${name}◈` : `◈IND:${name}:${column}◈`
-  );
-
-  // Match indicator imports with column access: data.import_('name')['column'] -> ◈IND:name:column◈ or ◈IND:name◈
-  result = result.replace(
-    /data\.import_\(\s*['"]([^'"]+)['"]\s*\)\s*\['([^']+)'\]/g,
-    (_, name, column) => column === 'value' ? `◈IND:${name}◈` : `◈IND:${name}:${column}◈`
-  );
-
-  // Match imports without column access (backward compatibility): data.import_('name') -> ◈IND:name◈
-  result = result.replace(
-    /data\.import_\(\s*['"]([^'"]+)['"]\s*\)/g,
-    (_, name) => `◈IND:${name}◈`
-  );
-
-  return result;
-};
-
-// Wrap user code body with def calculate(data):
-const wrapCodeBody = (body: string): string => {
-  const lines = body.split('\n');
-  const indentedLines = lines.map(line => line ? '    ' + line : '');
-  return `def calculate(data):\n${indentedLines.join('\n')}`;
-};
-
-// Extract body from full function code
-const extractCodeBody = (fullCode: string): string => {
-  const lines = fullCode.split('\n');
-
-  // Find the line with def calculate(data):
-  let startIdx = -1;
-  for (let i = 0; i < lines.length; i++) {
-    if (lines[i].trim().startsWith('def calculate(data)')) {
-      startIdx = i + 1;
-      break;
-    }
-  }
-
-  if (startIdx === -1) {
-    // No wrapper found, return as-is
-    return fullCode;
-  }
-
-  // Skip docstring if present
-  let bodyStart = startIdx;
-  const firstBodyLine = lines[bodyStart]?.trim();
-  if (firstBodyLine?.startsWith('"""') || firstBodyLine?.startsWith("'''")) {
-    const quote = firstBodyLine.startsWith('"""') ? '"""' : "'''";
-    // Find end of docstring
-    if (firstBodyLine.slice(3).includes(quote)) {
-      // Single line docstring
-      bodyStart++;
-    } else {
-      // Multi-line docstring
-      for (let i = bodyStart + 1; i < lines.length; i++) {
-        if (lines[i].includes(quote)) {
-          bodyStart = i + 1;
-          break;
-        }
-      }
-    }
-  }
-
-  // Extract and dedent the body
-  const bodyLines = lines.slice(bodyStart);
-  const dedentedLines = bodyLines.map(line => {
-    // Remove 4 spaces or 1 tab of indentation
-    if (line.startsWith('    ')) return line.slice(4);
-    if (line.startsWith('\t')) return line.slice(1);
-    return line;
-  });
-
-  return dedentedLines.join('\n').trim();
-};
-
-// Find all visual placeholders in code
-const findPlaceholders = (code: string): PlaceholderInfo[] => {
-  const placeholders: PlaceholderInfo[] = [];
-  const lines = code.split('\n');
-  let offset = 0;
-
-  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
-    const line = lines[lineIdx];
-
-    // Find base column placeholders ◈close◈ (not ◈IND:...◈)
-    for (const col of BASE_COLUMNS) {
-      const colRegex = new RegExp(`◈${col}◈`, 'g');
-      let match;
-      while ((match = colRegex.exec(line)) !== null) {
-        placeholders.push({
-          type: 'indicator',
-          id: col,
-          displayName: col,
-          startOffset: offset + match.index,
-          endOffset: offset + match.index + match[0].length,
-          lineNumber: lineIdx + 1,
-          column: match.index + 1,
-          length: match[0].length,
-        });
-      }
-    }
-
-    // Find indicator placeholders ◈IND:name◈ or ◈IND:name:column◈
-    const indRegex = /◈IND:([^◈]+)◈/g;
-    let indMatch;
-    while ((indMatch = indRegex.exec(line)) !== null) {
-      placeholders.push({
-        type: 'indicator',
-        id: '',
-        displayName: indMatch[1],
-        startOffset: offset + indMatch.index,
-        endOffset: offset + indMatch.index + indMatch[0].length,
-        lineNumber: lineIdx + 1,
-        column: indMatch.index + 1,
-        length: indMatch[0].length,
-      });
-    }
-
-    // Find dataset placeholders ◈DS:symbol@column◈
-    const dsRegex = /◈DS:([^@◈]+)@([^◈]+)◈/g;
-    let dsMatch;
-    while ((dsMatch = dsRegex.exec(line)) !== null) {
-      placeholders.push({
-        type: 'dataset',
-        id: dsMatch[1], // symbol
-        displayName: `${dsMatch[1]}@${dsMatch[2]}`, // symbol@column
-        startOffset: offset + dsMatch.index,
-        endOffset: offset + dsMatch.index + dsMatch[0].length,
-        lineNumber: lineIdx + 1,
-        column: dsMatch.index + 1,
-        length: dsMatch[0].length,
-      });
-    }
-
-    offset += line.length + 1; // +1 for newline
-  }
-
-  return placeholders;
-};
-
-// Templates now show only the body (auto-wrapped when saving)
-// Use placeholders for columns: ◈close◈ instead of data['close']
+// Templates - use placeholders for columns
 const CODE_TEMPLATE = `# Example: 20-day Simple Moving Average
 return ◈close◈.rolling(20).mean()`;
 
@@ -297,9 +67,6 @@ export default function IndicatorEditorModal({
   const [pythonCode, setPythonCode] = useState('');
   const [externalDatasets, setExternalDatasets] = useState<Record<string, { groupId: string; datasetName: string }>>({});
   const [period, setPeriod] = useState<Period>('daily');
-  const [editingDataset, setEditingDataset] = useState<string | null>(null);
-  const [tempDatasetConfig, setTempDatasetConfig] = useState<{ paramName: string; groupId: string; datasetName: string } | null>(null);
-  const [groups, setGroups] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<'text' | 'upload'>('text');
   const [isLoading, setIsLoading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
@@ -307,7 +74,6 @@ export default function IndicatorEditorModal({
   const [errorDetails, setErrorDetails] = useState<any>(null);
   const [validationMessage, setValidationMessage] = useState<string | null>(null);
   const [syntaxWarnings, setSyntaxWarnings] = useState<string[]>([]);
-  const [showSyntaxHelp, setShowSyntaxHelp] = useState(false);
   const [editorInstance, setEditorInstance] = useState<any>(null);
   const [monacoInstance, setMonacoInstance] = useState<any>(null);
 
@@ -323,583 +89,31 @@ export default function IndicatorEditorModal({
   const [showColumnRenameModal, setShowColumnRenameModal] = useState(false);
   const [columnRenameData, setColumnRenameData] = useState<{
     columnRenames: { column: string; newColumn: string; indicators: { id: string; name: string }[] }[];
-    pendingSubmit: any; // Store the pending request body
+    pendingSubmit: any;
   } | null>(null);
 
-  // Import panel state - flat list of importable items (indicators expanded to columns)
-  const [importSearchQuery, setImportSearchQuery] = useState('');
-  const [availableIndicators, setAvailableIndicators] = useState<ImportableIndicator[]>([]);
-  const [importableItems, setImportableItems] = useState<ImportableItem[]>([]);
-  const [availableDatasetColumns, setAvailableDatasetColumns] = useState<ImportableDatasetColumn[]>([]);
-  const [expandedDatasets, setExpandedDatasets] = useState<Set<string>>(new Set());
-  const [loadingImportData, setLoadingImportData] = useState(false);
-  const [selectedPlaceholder, setSelectedPlaceholder] = useState<PlaceholderInfo | null>(null);
-  const [placeholderDecorations, setPlaceholderDecorations] = useState<string[]>([]);
   // Track if outputColumn was manually edited by user
   const [outputColumnManuallyEdited, setOutputColumnManuallyEdited] = useState(false);
 
-  // Group dataset columns by dataset symbol
-  const groupedDatasetColumns = useMemo(() => {
-    const groups: Record<string, { name: string; columns: ImportableDatasetColumn[] }> = {};
-    for (const dsCol of availableDatasetColumns) {
-      if (!groups[dsCol.datasetSymbol]) {
-        groups[dsCol.datasetSymbol] = {
-          name: dsCol.datasetName,
-          columns: []
-        };
-      }
-      groups[dsCol.datasetSymbol].columns.push(dsCol);
-    }
-    return groups;
-  }, [availableDatasetColumns]);
-
-  // Toggle dataset expansion
-  const toggleDatasetExpansion = useCallback((symbol: string) => {
-    setExpandedDatasets(prev => {
-      const next = new Set(prev);
-      if (next.has(symbol)) {
-        next.delete(symbol);
-      } else {
-        next.add(symbol);
-      }
-      return next;
-    });
-  }, []);
-
-  // Search function supporting & (AND) and | (OR) operators
-  // Operators must have spaces on both sides to be recognized
-  const matchesSearch = useCallback((target: string, query: string): boolean => {
-    if (!query.trim()) return true;
-
-    const targetLower = target.toLowerCase();
-    const queryLower = query.toLowerCase();
-
-    // Check for OR operator first (lower precedence)
-    if (queryLower.includes(' | ')) {
-      const orTerms = queryLower.split(' | ');
-      return orTerms.some(term => matchesSearch(target, term.trim()));
-    }
-
-    // Check for AND operator
-    if (queryLower.includes(' & ')) {
-      const andTerms = queryLower.split(' & ');
-      return andTerms.every(term => matchesSearch(target, term.trim()));
-    }
-
-    // Simple substring match
-    return targetLower.includes(queryLower.trim());
-  }, []);
-
-  // Get display info for a placeholder - uses embedded displayName
-  const getPlaceholderDisplayInfo = useCallback((placeholder: PlaceholderInfo): { label: string; detail: string } => {
-    // Look up by display name in importable items
-    const item = importableItems.find(i => i.displayName === placeholder.displayName);
-    return {
-      label: placeholder.displayName,
-      detail: item?.ownerEmail || ''
-    };
-  }, [importableItems]);
-
-  // Update placeholder decorations in Monaco editor
-  const updatePlaceholderDecorations = useCallback(() => {
-    if (!editorInstance || !monacoInstance) return;
-
-    const model = editorInstance.getModel();
-    if (!model) return;
-
-    const placeholders = findPlaceholders(pythonCode);
-    const decorations: any[] = [];
-
-    for (const placeholder of placeholders) {
-      const startPos = model.getPositionAt(placeholder.startOffset);
-      const endPos = model.getPositionAt(placeholder.endOffset);
-      const displayInfo = getPlaceholderDisplayInfo(placeholder);
-      const isSelected = selectedPlaceholder &&
-        selectedPlaceholder.startOffset === placeholder.startOffset &&
-        selectedPlaceholder.endOffset === placeholder.endOffset;
-
-      const baseClass = 'import-placeholder-indicator';
-      const className = isSelected ? `${baseClass}-selected` : baseClass;
-
-      decorations.push({
-        range: new monacoInstance.Range(
-          startPos.lineNumber, startPos.column,
-          endPos.lineNumber, endPos.column
-        ),
-        options: {
-          inlineClassName: className,
-          hoverMessage: {
-            value: `**Indicator**: ${displayInfo.label}${displayInfo.detail ? `\n**From**: ${displayInfo.detail}` : ''}`
-          },
-          stickiness: monacoInstance.editor.TrackedRangeStickiness.NeverGrowsWhenTypingAtEdges
-        }
-      });
-    }
-
-    const newDecorations = editorInstance.deltaDecorations(placeholderDecorations, decorations);
-    setPlaceholderDecorations(newDecorations);
-  }, [editorInstance, monacoInstance, pythonCode, placeholderDecorations, getPlaceholderDisplayInfo, selectedPlaceholder]);
-
-  // Handle click on placeholder
-  const handleEditorClick = useCallback((e: any) => {
-    if (!editorInstance || !monacoInstance) return;
-
-    const position = e.target?.position;
-    if (!position) return;
-
-    const model = editorInstance.getModel();
-    if (!model) return;
-
-    const offset = model.getOffsetAt(position);
-    const placeholders = findPlaceholders(pythonCode);
-
-    // Find if click was on a placeholder
-    const clickedPlaceholder = placeholders.find(
-      p => offset >= p.startOffset && offset < p.endOffset
-    );
-
-    if (clickedPlaceholder) {
-      setSelectedPlaceholder(clickedPlaceholder);
-      // Select the entire placeholder in editor
-      const startPos = model.getPositionAt(clickedPlaceholder.startOffset);
-      const endPos = model.getPositionAt(clickedPlaceholder.endOffset);
-      editorInstance.setSelection(new monacoInstance.Range(
-        startPos.lineNumber, startPos.column,
-        endPos.lineNumber, endPos.column
-      ));
-    } else {
-      setSelectedPlaceholder(null);
-    }
-  }, [editorInstance, monacoInstance, pythonCode]);
-
-  // Insert base column placeholder at cursor (e.g., ◈close◈)
-  const insertColumnPlaceholder = useCallback((col: string) => {
-    if (!editorInstance || !monacoInstance) return;
-
-    const selection = editorInstance.getSelection();
-    if (!selection) return;
-
-    // Create a collapsed range at cursor position (insert, not replace)
-    const cursorPosition = selection.getPosition();
-    const insertRange = new monacoInstance.Range(
-      cursorPosition.lineNumber, cursorPosition.column,
-      cursorPosition.lineNumber, cursorPosition.column
-    );
-
-    // Insert visual placeholder
-    const placeholder = `◈${col}◈`;
-    editorInstance.executeEdits('insert-placeholder', [{
-      range: insertRange,
-      text: placeholder,
-      forceMoveMarkers: true
-    }]);
-    editorInstance.focus();
-
-    // Update decorations after a short delay
-    setTimeout(() => updatePlaceholderDecorations(), 100);
-  }, [editorInstance, monacoInstance, updatePlaceholderDecorations]);
-
-  // Insert indicator/column placeholder at cursor
-  const insertItemPlaceholder = useCallback((item: ImportableItem) => {
-    if (!editorInstance || !monacoInstance) return;
-
-    const selection = editorInstance.getSelection();
-    if (!selection) return;
-
-    // Create a collapsed range at cursor position (insert, not replace)
-    const cursorPosition = selection.getPosition();
-    const insertRange = new monacoInstance.Range(
-      cursorPosition.lineNumber, cursorPosition.column,
-      cursorPosition.lineNumber, cursorPosition.column
-    );
-
-    // Insert visual placeholder - include column for group indicators
-    const placeholder = item.isGroupColumn
-      ? `◈IND:${item.indicatorName}:${item.columnName}◈`
-      : `◈IND:${item.indicatorName}◈`;
-    editorInstance.executeEdits('insert-placeholder', [{
-      range: insertRange,
-      text: placeholder,
-      forceMoveMarkers: true
-    }]);
-    editorInstance.focus();
-
-    // Update decorations after a short delay
-    setTimeout(() => updatePlaceholderDecorations(), 100);
-  }, [editorInstance, monacoInstance, updatePlaceholderDecorations]);
-
-  // Replace selected placeholder with a new item (indicator)
-  const replaceWithItem = useCallback((item: ImportableItem) => {
-    if (!selectedPlaceholder || !editorInstance || !monacoInstance) return;
-
-    const model = editorInstance.getModel();
-    if (!model) return;
-
-    // Replace at placeholder position
-    const startPos = model.getPositionAt(selectedPlaceholder.startOffset);
-    const endPos = model.getPositionAt(selectedPlaceholder.endOffset);
-    const newPlaceholder = item.isGroupColumn
-      ? `◈IND:${item.indicatorName}:${item.columnName}◈`
-      : `◈IND:${item.indicatorName}◈`;
-
-    editorInstance.executeEdits('replace-placeholder', [{
-      range: new monacoInstance.Range(
-        startPos.lineNumber, startPos.column,
-        endPos.lineNumber, endPos.column
-      ),
-      text: newPlaceholder,
-      forceMoveMarkers: true
-    }]);
-
-    setSelectedPlaceholder(null);
-    setTimeout(() => updatePlaceholderDecorations(), 100);
-  }, [selectedPlaceholder, editorInstance, monacoInstance, updatePlaceholderDecorations]);
-
-  // Insert a dataset column placeholder at cursor position
-  const insertDatasetColumnPlaceholder = useCallback((dsCol: ImportableDatasetColumn) => {
-    if (!editorInstance || !monacoInstance) return;
-
-    const selection = editorInstance.getSelection();
-    if (!selection) return;
-
-    // Create a collapsed range at cursor position (insert, not replace)
-    const cursorPosition = selection.getPosition();
-    const insertRange = new monacoInstance.Range(
-      cursorPosition.lineNumber, cursorPosition.column,
-      cursorPosition.lineNumber, cursorPosition.column
-    );
-
-    // Insert visual placeholder: ◈DS:symbol@column◈
-    const placeholder = `◈DS:${dsCol.datasetSymbol}@${dsCol.column}◈`;
-    editorInstance.executeEdits('insert-placeholder', [{
-      range: insertRange,
-      text: placeholder,
-      forceMoveMarkers: true
-    }]);
-    editorInstance.focus();
-
-    // Update decorations after a short delay
-    setTimeout(() => updatePlaceholderDecorations(), 100);
-  }, [editorInstance, monacoInstance, updatePlaceholderDecorations]);
-
-  // Replace selected placeholder with a dataset column
-  const replaceWithDatasetColumn = useCallback((dsCol: ImportableDatasetColumn) => {
-    if (!selectedPlaceholder || !editorInstance || !monacoInstance) return;
-
-    const model = editorInstance.getModel();
-    if (!model) return;
-
-    // Replace at placeholder position
-    const startPos = model.getPositionAt(selectedPlaceholder.startOffset);
-    const endPos = model.getPositionAt(selectedPlaceholder.endOffset);
-    const newPlaceholder = `◈DS:${dsCol.datasetSymbol}@${dsCol.column}◈`;
-
-    editorInstance.executeEdits('replace-placeholder', [{
-      range: new monacoInstance.Range(
-        startPos.lineNumber, startPos.column,
-        endPos.lineNumber, endPos.column
-      ),
-      text: newPlaceholder,
-      forceMoveMarkers: true
-    }]);
-
-    setSelectedPlaceholder(null);
-    setTimeout(() => updatePlaceholderDecorations(), 100);
-  }, [selectedPlaceholder, editorInstance, monacoInstance, updatePlaceholderDecorations]);
-
-  // Update decorations when code changes
-  useEffect(() => {
-    if (editorInstance && monacoInstance) {
-      updatePlaceholderDecorations();
-    }
-  }, [pythonCode, editorInstance, monacoInstance]);
-
-  // Set up click listener for placeholder selection
-  useEffect(() => {
-    if (!editorInstance || !monacoInstance) return;
-
-    const clickDisposable = editorInstance.onMouseDown((e: any) => {
-      if (e.target?.type === monacoInstance.editor.MouseTargetType.CONTENT_TEXT) {
-        const position = e.target.position;
-        if (!position) return;
-
-        const model = editorInstance.getModel();
-        if (!model) return;
-
-        const code = model.getValue();
-        const offset = model.getOffsetAt(position);
-        const placeholders = findPlaceholders(code);
-
-        // Find if click was on a placeholder
-        const clickedPlaceholder = placeholders.find(
-          p => offset >= p.startOffset && offset < p.endOffset
-        );
-
-        if (clickedPlaceholder) {
-          setSelectedPlaceholder(clickedPlaceholder);
-          // Select the entire placeholder in editor
-          const startPos = model.getPositionAt(clickedPlaceholder.startOffset);
-          const endPos = model.getPositionAt(clickedPlaceholder.endOffset);
-          editorInstance.setSelection(new monacoInstance.Range(
-            startPos.lineNumber, startPos.column,
-            endPos.lineNumber, endPos.column
-          ));
-        } else {
-          setSelectedPlaceholder(null);
-        }
-      }
-    });
-
-    // Handle backspace/delete for atomic placeholder deletion
-    const keyDisposable = editorInstance.onKeyDown((e: any) => {
-      if (e.keyCode !== monacoInstance.KeyCode.Backspace && e.keyCode !== monacoInstance.KeyCode.Delete) {
-        return;
-      }
-
-      const model = editorInstance.getModel();
-      if (!model) return;
-
-      const selection = editorInstance.getSelection();
-      if (!selection) return;
-
-      const code = model.getValue();
-      const placeholders = findPlaceholders(code);
-
-      // If selection is empty (cursor position), check if cursor is adjacent to placeholder
-      if (selection.isEmpty()) {
-        const cursorOffset = model.getOffsetAt(selection.getStartPosition());
-
-        // For backspace, check if cursor is right after a placeholder
-        if (e.keyCode === monacoInstance.KeyCode.Backspace) {
-          const adjacentPlaceholder = placeholders.find(
-            p => cursorOffset > p.startOffset && cursorOffset <= p.endOffset
-          );
-
-          if (adjacentPlaceholder) {
-            e.preventDefault();
-            e.stopPropagation();
-
-            // First backspace: select the placeholder
-            if (!selectedPlaceholder || selectedPlaceholder.startOffset !== adjacentPlaceholder.startOffset) {
-              const startPos = model.getPositionAt(adjacentPlaceholder.startOffset);
-              const endPos = model.getPositionAt(adjacentPlaceholder.endOffset);
-              editorInstance.setSelection(new monacoInstance.Range(
-                startPos.lineNumber, startPos.column,
-                endPos.lineNumber, endPos.column
-              ));
-              setSelectedPlaceholder(adjacentPlaceholder);
-            } else {
-              // Second backspace: delete the placeholder
-              const startPos = model.getPositionAt(adjacentPlaceholder.startOffset);
-              const endPos = model.getPositionAt(adjacentPlaceholder.endOffset);
-              editorInstance.executeEdits('delete-placeholder', [{
-                range: new monacoInstance.Range(
-                  startPos.lineNumber, startPos.column,
-                  endPos.lineNumber, endPos.column
-                ),
-                text: '',
-                forceMoveMarkers: true
-              }]);
-              setSelectedPlaceholder(null);
-            }
-          }
-        }
-
-        // For delete, check if cursor is right before a placeholder
-        if (e.keyCode === monacoInstance.KeyCode.Delete) {
-          const adjacentPlaceholder = placeholders.find(
-            p => cursorOffset >= p.startOffset && cursorOffset < p.endOffset
-          );
-
-          if (adjacentPlaceholder) {
-            e.preventDefault();
-            e.stopPropagation();
-
-            // First delete: select the placeholder
-            if (!selectedPlaceholder || selectedPlaceholder.startOffset !== adjacentPlaceholder.startOffset) {
-              const startPos = model.getPositionAt(adjacentPlaceholder.startOffset);
-              const endPos = model.getPositionAt(adjacentPlaceholder.endOffset);
-              editorInstance.setSelection(new monacoInstance.Range(
-                startPos.lineNumber, startPos.column,
-                endPos.lineNumber, endPos.column
-              ));
-              setSelectedPlaceholder(adjacentPlaceholder);
-            } else {
-              // Second delete: delete the placeholder
-              const startPos = model.getPositionAt(adjacentPlaceholder.startOffset);
-              const endPos = model.getPositionAt(adjacentPlaceholder.endOffset);
-              editorInstance.executeEdits('delete-placeholder', [{
-                range: new monacoInstance.Range(
-                  startPos.lineNumber, startPos.column,
-                  endPos.lineNumber, endPos.column
-                ),
-                text: '',
-                forceMoveMarkers: true
-              }]);
-              setSelectedPlaceholder(null);
-            }
-          }
-        }
-      } else {
-        // If there's a selection and it contains a placeholder, delete the whole placeholder
-        const selStart = model.getOffsetAt(selection.getStartPosition());
-        const selEnd = model.getOffsetAt(selection.getEndPosition());
-
-        for (const placeholder of placeholders) {
-          // Check if selection partially overlaps with placeholder
-          const overlaps = (selStart < placeholder.endOffset && selEnd > placeholder.startOffset);
-          const fullyContains = (selStart <= placeholder.startOffset && selEnd >= placeholder.endOffset);
-
-          if (overlaps && !fullyContains) {
-            // Selection partially overlaps - extend selection to include full placeholder
-            e.preventDefault();
-            e.stopPropagation();
-
-            const newStart = Math.min(selStart, placeholder.startOffset);
-            const newEnd = Math.max(selEnd, placeholder.endOffset);
-            const startPos = model.getPositionAt(newStart);
-            const endPos = model.getPositionAt(newEnd);
-            editorInstance.setSelection(new monacoInstance.Range(
-              startPos.lineNumber, startPos.column,
-              endPos.lineNumber, endPos.column
-            ));
-            return;
-          }
-        }
-      }
-    });
-
-    return () => {
-      clickDisposable.dispose();
-      keyDisposable.dispose();
-    };
-  }, [editorInstance, monacoInstance, selectedPlaceholder]);
-
-  // Fetch available indicators and datasets when modal opens (always refresh)
-  useEffect(() => {
-    if (isOpen) {
-      setLoadingImportData(true);
-
-      // Fetch both indicators and datasets in parallel
-      Promise.all([
-        fetch('/api/indicators').then(res => res.json()),
-        fetch('/api/datasets').then(res => res.json())
-      ])
-        .then(([indicatorsData, datasetsData]) => {
-          // Process indicators
-          let indicators: ImportableIndicator[] = [];
-          if (indicatorsData.indicators) {
-            indicators = indicatorsData.indicators.map((ind: any) => ({
-              id: ind.id,
-              name: ind.name,
-              ownerEmail: ind.creatorEmail || 'me',
-              description: ind.description || '',
-              isOwner: ind.isOwner,
-              outputColumn: ind.outputColumn,
-              isGroup: ind.isGroup,
-              groupName: ind.groupName,
-              expectedOutputs: ind.expectedOutputs,
-            }));
-            setAvailableIndicators(indicators);
-
-            // Build flattened importable items (expand group indicators to columns)
-            const items: ImportableItem[] = [];
-            for (const ind of indicators) {
-              if (ind.isGroup && ind.expectedOutputs && ind.expectedOutputs.length > 0) {
-                // Group indicator - add each output column as separate item
-                for (const output of ind.expectedOutputs) {
-                  items.push({
-                    id: `${ind.id}:${output}`,
-                    indicatorName: ind.name,
-                    columnName: output,
-                    displayName: `${ind.name}:${output}`,
-                    ownerEmail: ind.ownerEmail,
-                    isOwner: ind.isOwner,
-                    isGroupColumn: true,
-                  });
-                }
-              } else {
-                // Single indicator - add as-is with 'value' column
-                items.push({
-                  id: ind.id,
-                  indicatorName: ind.name,
-                  columnName: 'value',
-                  displayName: ind.name,
-                  ownerEmail: ind.ownerEmail,
-                  isOwner: ind.isOwner,
-                  isGroupColumn: false,
-                });
-              }
-            }
-            setImportableItems(items);
-          }
-
-          // Process datasets - now we have indicators available
-          if (datasetsData?.datasets) {
-            // Build flattened dataset column items including all indicators
-            const dsColumns: ImportableDatasetColumn[] = [];
-            for (const ds of datasetsData.datasets) {
-              // Add base columns for each dataset
-              for (const col of BASE_COLUMNS) {
-                dsColumns.push({
-                  datasetSymbol: ds.code,
-                  datasetName: ds.name || ds.code,
-                  column: col,
-                  displayName: `${ds.code}@${col}`,
-                });
-              }
-              // Add all indicators for each dataset
-              // Single indicators: use indicator name as column
-              // Group indicators: add each output column as name:output
-              for (const ind of indicators) {
-                if (ind.isGroup && ind.expectedOutputs && ind.expectedOutputs.length > 0) {
-                  for (const output of ind.expectedOutputs) {
-                    dsColumns.push({
-                      datasetSymbol: ds.code,
-                      datasetName: ds.name || ds.code,
-                      column: `${ind.name}:${output}`,
-                      displayName: `${ds.code}@${ind.name}:${output}`,
-                    });
-                  }
-                } else {
-                  dsColumns.push({
-                    datasetSymbol: ds.code,
-                    datasetName: ds.name || ds.code,
-                    column: ind.name,
-                    displayName: `${ds.code}@${ind.name}`,
-                  });
-                }
-              }
-            }
-            setAvailableDatasetColumns(dsColumns);
-          }
-        })
-        .catch(err => {
-          console.error('Failed to load import data:', err);
-        })
-        .finally(() => {
-          setLoadingImportData(false);
-        });
-    }
-  }, [isOpen]);
-
-  // Load groups on mount (includes both custom and data source groups)
-  useEffect(() => {
-    if (isOpen) {
-      fetch('/api/groups')
-        .then((res) => res.json())
-        .then((data) => {
-          setGroups(data.groups || []);
-        })
-        .catch((err) => {
-          console.error('Failed to load groups:', err);
-        });
-    }
-  }, [isOpen]);
-
-  // Track the raw Python code before transformation (for when indicators aren't loaded yet)
+  // Track the raw Python code before transformation
   const [rawPythonCode, setRawPythonCode] = useState<string | null>(null);
 
+  // Shared hooks
+  const { importableItems, datasetColumns, isLoading: loadingData } = useDataSourceFetcher(isOpen);
+
+  const visualBlocks = useMonacoVisualBlocks({
+    code: pythonCode,
+    onCodeChange: setPythonCode,
+    dataSources: {
+      baseColumns: BASE_COLUMNS,
+      indicators: importableItems,
+      datasetColumns,
+    },
+    mode: 'indicator',
+    readOnly,
+  });
+
+  // Initialize form when indicator changes
   useEffect(() => {
     if (indicator) {
       setIndicatorType(indicator.isGroup ? 'mytt_group' : 'custom');
@@ -908,7 +122,6 @@ export default function IndicatorEditorModal({
       setOutputColumn(indicator.outputColumn);
       setGroupName(indicator.groupName || '');
       setExpectedOutputs(indicator.expectedOutputs || ['']);
-      // Store raw code - will be transformed when available data is loaded
       setRawPythonCode(indicator.pythonCode);
       setExternalDatasets(indicator.externalDatasets || {});
       setPeriod(indicator.period || 'daily');
@@ -928,35 +141,28 @@ export default function IndicatorEditorModal({
     setValidationMessage(null);
     setIsLoading(false);
     setIsValidating(false);
-    setEditingDataset(null);
-    setTempDatasetConfig(null);
-    // Reset manual edit tracking - for existing indicators, consider outputColumn as manually set
     setOutputColumnManuallyEdited(!!indicator);
   }, [indicator, isOpen]);
 
-  // Transform raw Python code to visual placeholders and extract body when loaded
+  // Transform raw Python code to visual placeholders
   useEffect(() => {
     if (rawPythonCode) {
-      // First transform import statements to placeholders
       const withPlaceholders = transformCodeToPlaceholders(rawPythonCode);
-      // Then extract just the body (remove def calculate wrapper)
       const bodyCode = extractCodeBody(withPlaceholders);
       setPythonCode(bodyCode);
-      setRawPythonCode(null); // Clear raw code after transformation
+      setRawPythonCode(null);
     }
   }, [rawPythonCode]);
 
-  // Auto-fill output column or groupName from name (sync until user manually edits)
+  // Auto-fill output column / groupName from name
   useEffect(() => {
     if (name) {
       const normalized = name.replace(/\s+/g, '_');
       if (indicatorType === 'mytt_group') {
-        // For group indicators, always sync groupName with name
         if (!indicator || !outputColumnManuallyEdited) {
           setGroupName(normalized);
         }
       } else if (indicatorType === 'custom') {
-        // For custom indicators, sync outputColumn with name until user manually edits
         if (!outputColumnManuallyEdited) {
           setOutputColumn(normalized);
         }
@@ -988,14 +194,12 @@ export default function IndicatorEditorModal({
     setError(null);
 
     try {
-      // Filter out incomplete external datasets
       const validExternalDatasets = Object.fromEntries(
         Object.entries(externalDatasets).filter(
           ([_, dataset]) => dataset.groupId && dataset.datasetName
         )
       );
 
-      // Transform placeholders to actual Python import code, then wrap with function
       const codeWithImports = transformPlaceholdersToCode(pythonCode);
       const codeToValidate = wrapCodeBody(codeWithImports);
 
@@ -1017,7 +221,7 @@ export default function IndicatorEditorModal({
       const data = await response.json();
 
       if (data.valid) {
-        setValidationMessage('✓ Code is valid!');
+        setValidationMessage('Code is valid!');
         setErrorDetails(null);
       } else {
         setError(data.error || 'Validation failed');
@@ -1040,13 +244,11 @@ export default function IndicatorEditorModal({
       return;
     }
 
-    // Validate group-specific fields
     if (indicatorType === 'mytt_group') {
       if (!groupName) {
         setError('Group name is required for MyTT indicators');
         return;
       }
-
       const filteredOutputs = expectedOutputs.filter(o => o.trim() !== '');
       if (filteredOutputs.length === 0) {
         setError('At least one expected output is required for MyTT indicators');
@@ -1062,7 +264,6 @@ export default function IndicatorEditorModal({
         : '/api/indicators';
       const method = indicator ? 'PUT' : 'POST';
 
-      // Transform placeholders to actual Python import code, then wrap with function
       const codeWithImports = transformPlaceholdersToCode(pythonCode);
       const codeToSave = wrapCodeBody(codeWithImports);
 
@@ -1082,15 +283,12 @@ export default function IndicatorEditorModal({
         requestBody.outputColumn = outputColumn || name;
       }
 
-      // Filter out incomplete external datasets
       const validExternalDatasets = Object.fromEntries(
         Object.entries(externalDatasets).filter(
           ([_, dataset]) => dataset.groupId && dataset.datasetName
         )
       );
 
-      // Always send externalDatasets (even if empty) so the API knows to clear it
-      // Use null to signal "clear all external datasets"
       requestBody.externalDatasets = Object.keys(validExternalDatasets).length > 0
         ? validExternalDatasets
         : null;
@@ -1104,9 +302,7 @@ export default function IndicatorEditorModal({
       const data = await response.json();
 
       if (!response.ok) {
-        // Check if this is a column rename that affects dependent indicators
         if (data.error === 'Column rename affects dependent indicators' && data.requiresAutoFix) {
-          // Store the pending request and show the modal
           setColumnRenameData({
             columnRenames: data.columnRenames,
             pendingSubmit: requestBody,
@@ -1116,33 +312,27 @@ export default function IndicatorEditorModal({
           return;
         }
 
-        // Check if this is a "columns have dependents" error
         if (data.error === 'Columns have dependent indicators' && data.dependentColumns) {
-          // Build confirmation message
           const dependentInfo = data.dependentColumns as { column: string; indicators: { id: string; name: string }[] }[];
           const lines = dependentInfo.map(({ column, indicators }) => {
             const indicatorNames = indicators.map(ind => ind.name).join(', ');
-            return `  • ${column} is used by: ${indicatorNames}`;
+            return `  ${column} is used by: ${indicatorNames}`;
           });
 
-          const confirmMessage = `The following columns are used by other indicators:\n${lines.join('\n')}\n\nDo you want to remove them anyway? This may break the dependent indicators.`;
+          const confirmMessage = `The following columns are used by other indicators:\n${lines.join('\n')}\n\nDo you want to remove them anyway?`;
 
           if (confirm(confirmMessage)) {
-            // Retry with force=true
             const forceResponse = await fetch(`${url}?force=true`, {
               method,
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(requestBody),
             });
-
             const forceData = await forceResponse.json();
-
             if (!forceResponse.ok) {
               setError(forceData.message || 'Failed to save indicator');
               setIsLoading(false);
               return;
             }
-
             setIsLoading(false);
             onSuccess(forceData.indicator || forceData, 'indicator');
             return;
@@ -1159,8 +349,6 @@ export default function IndicatorEditorModal({
 
       setIsLoading(false);
       onSuccess(data.indicator || data, 'indicator');
-
-      // Check for orphaned columns after successful save
       checkForOrphanedColumns();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error');
@@ -1168,12 +356,10 @@ export default function IndicatorEditorModal({
     }
   };
 
-  // Check for orphaned columns in CSV files
   const checkForOrphanedColumns = async () => {
     try {
       const response = await fetch('/api/check-orphaned-columns');
       const data = await response.json();
-
       if (data.hasOrphanedColumns && data.orphanedColumns.length > 0) {
         setOrphanedColumnsData({
           orphanedColumns: data.orphanedColumns,
@@ -1186,14 +372,10 @@ export default function IndicatorEditorModal({
     }
   };
 
-  // Handle orphaned columns cleanup
   const handleCleanupOrphanedColumns = async () => {
     if (!orphanedColumnsData) return;
-
     setIsCleaningOrphans(true);
-
     try {
-      // Collect all indicator IDs that need to be deleted
       const indicatorIdsToDelete: string[] = [];
       orphanedColumnsData.dependentIndicators.forEach(({ indicators }) => {
         indicators.forEach(ind => {
@@ -1213,12 +395,10 @@ export default function IndicatorEditorModal({
       });
 
       const data = await response.json();
-
       if (response.ok) {
-        console.log('Cleaned up orphaned columns:', data);
         setShowOrphanedColumnsModal(false);
         setOrphanedColumnsData(null);
-        onSuccess(); // Refresh the indicator list (no new item here, just cleanup)
+        onSuccess();
       } else {
         setError(data.message || 'Failed to cleanup orphaned columns');
       }
@@ -1229,29 +409,22 @@ export default function IndicatorEditorModal({
     }
   };
 
-  // Cancel orphaned columns cleanup
   const handleCancelOrphanedCleanup = () => {
     setShowOrphanedColumnsModal(false);
     setOrphanedColumnsData(null);
   };
 
-  // Handle column rename auto-fix
   const handleAutoFixColumnRename = async () => {
     if (!columnRenameData || !indicator) return;
-
     setIsLoading(true);
-
     try {
       const url = `/api/indicators/${indicator.id}?autoFix=true`;
-
       const response = await fetch(url, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(columnRenameData.pendingSubmit),
       });
-
       const data = await response.json();
-
       if (!response.ok) {
         setError(data.message || 'Failed to save indicator');
         setIsLoading(false);
@@ -1259,13 +432,10 @@ export default function IndicatorEditorModal({
         setColumnRenameData(null);
         return;
       }
-
       setIsLoading(false);
       setShowColumnRenameModal(false);
       setColumnRenameData(null);
       onSuccess(data.indicator || data, 'indicator');
-
-      // Check for orphaned columns after successful save
       checkForOrphanedColumns();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error');
@@ -1275,7 +445,6 @@ export default function IndicatorEditorModal({
     }
   };
 
-  // Cancel column rename
   const handleCancelColumnRename = () => {
     setShowColumnRenameModal(false);
     setColumnRenameData(null);
@@ -1289,7 +458,7 @@ export default function IndicatorEditorModal({
     setPythonCode(MYTT_TEMPLATE);
   };
 
-  // Basic syntax checking with line numbers
+  // Basic syntax checking
   const checkBasicSyntax = (code: string) => {
     const warnings: string[] = [];
     const markers: any[] = [];
@@ -1300,99 +469,67 @@ export default function IndicatorEditorModal({
 
     const lines = code.split('\n');
 
-    // Check for return statement (user writes body, so still need return)
     const hasReturn = code.includes('return');
     if (!hasReturn) {
       warnings.push('Missing return statement');
       const lastLine = lines.length;
       markers.push({
-        severity: 4, // Warning
-        startLineNumber: lastLine,
-        startColumn: 1,
-        endLineNumber: lastLine,
-        endColumn: lines[lastLine - 1]?.length || 1,
+        severity: 4,
+        startLineNumber: lastLine, startColumn: 1,
+        endLineNumber: lastLine, endColumn: lines[lastLine - 1]?.length || 1,
         message: 'Missing return statement'
       });
     }
 
-    // Check for balanced parentheses
     const openParen = (code.match(/\(/g) || []).length;
     const closeParen = (code.match(/\)/g) || []).length;
     if (openParen !== closeParen) {
       const msg = `Unbalanced parentheses: ${openParen} open, ${closeParen} close`;
       warnings.push(msg);
-
-      // Find line with imbalance
       let balance = 0;
       let errorLine = 1;
       for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        balance += (line.match(/\(/g) || []).length;
-        balance -= (line.match(/\)/g) || []).length;
-        if (balance < 0) {
-          errorLine = i + 1;
-          break;
-        }
+        balance += (lines[i].match(/\(/g) || []).length;
+        balance -= (lines[i].match(/\)/g) || []).length;
+        if (balance < 0) { errorLine = i + 1; break; }
       }
-
       markers.push({
-        severity: 8, // Error
-        startLineNumber: errorLine,
-        startColumn: 1,
-        endLineNumber: errorLine,
-        endColumn: lines[errorLine - 1]?.length || 1,
+        severity: 8,
+        startLineNumber: errorLine, startColumn: 1,
+        endLineNumber: errorLine, endColumn: lines[errorLine - 1]?.length || 1,
         message: msg
       });
     }
 
-    // Check for balanced brackets
     const openBracket = (code.match(/\[/g) || []).length;
     const closeBracket = (code.match(/\]/g) || []).length;
     if (openBracket !== closeBracket) {
       const msg = `Unbalanced brackets: ${openBracket} open, ${closeBracket} close`;
       warnings.push(msg);
-      markers.push({
-        severity: 8,
-        startLineNumber: 1,
-        startColumn: 1,
-        endLineNumber: 1,
-        endColumn: 100,
-        message: msg
-      });
+      markers.push({ severity: 8, startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 100, message: msg });
     }
 
-    // Check for balanced braces
     const openBrace = (code.match(/\{/g) || []).length;
     const closeBrace = (code.match(/\}/g) || []).length;
     if (openBrace !== closeBrace) {
       const msg = `Unbalanced braces: ${openBrace} open, ${closeBrace} close`;
       warnings.push(msg);
-      markers.push({
-        severity: 8,
-        startLineNumber: 1,
-        startColumn: 1,
-        endLineNumber: 1,
-        endColumn: 100,
-        message: msg
-      });
+      markers.push({ severity: 8, startLineNumber: 1, startColumn: 1, endLineNumber: 1, endColumn: 100, message: msg });
     }
 
     return { warnings, markers };
   };
 
-  // Check syntax when code changes and update editor markers
+  // Check syntax when code changes
   useEffect(() => {
     if (pythonCode && editorInstance && monacoInstance) {
       const { warnings, markers } = checkBasicSyntax(pythonCode);
       setSyntaxWarnings(warnings);
-
-      // Set markers in Monaco editor
       const model = editorInstance.getModel();
       if (model) {
         monacoInstance.editor.setModelMarkers(model, 'python-syntax', markers);
       }
     } else if (editorInstance && monacoInstance) {
-      // Clear markers if no code
       const model = editorInstance.getModel();
       if (model) {
         monacoInstance.editor.setModelMarkers(model, 'python-syntax', []);
@@ -1457,7 +594,7 @@ export default function IndicatorEditorModal({
           </div>
         )}
 
-        {/* Main Content - Three Columns */}
+        {/* Main Content - Two Columns (Settings + Editor) */}
         <div className="flex flex-1 overflow-hidden p-4 gap-4">
           {/* Left Panel - Settings */}
           <div className="w-64 flex-shrink-0 overflow-y-auto space-y-3">
@@ -1526,7 +663,7 @@ export default function IndicatorEditorModal({
                   value={outputColumn}
                   onChange={(e) => {
                     setOutputColumn(e.target.value);
-                    setOutputColumnManuallyEdited(true); // Mark as manually edited
+                    setOutputColumnManuallyEdited(true);
                   }}
                   className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
                   placeholder="Auto from name"
@@ -1569,7 +706,7 @@ export default function IndicatorEditorModal({
                           className="px-2 text-red-500 hover:text-red-700"
                           disabled={isLoading || readOnly}
                         >
-                          ×
+                          x
                         </button>
                       )}
                     </div>
@@ -1606,6 +743,11 @@ export default function IndicatorEditorModal({
                 </button>
               )}
             </div>
+
+            {/* Hint */}
+            <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-2">
+              Type <span className="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded">@</span> in the editor to insert data references
+            </div>
           </div>
 
           {/* Center - Code Editor */}
@@ -1619,6 +761,7 @@ export default function IndicatorEditorModal({
                 onMount={(editor, monaco) => {
                   setEditorInstance(editor);
                   setMonacoInstance(monaco);
+                  visualBlocks.onEditorMount(editor, monaco);
                 }}
                 theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
                 options={{
@@ -1647,193 +790,29 @@ export default function IndicatorEditorModal({
               />
             </div>
           </div>
-
-          {/* Right Panel - Import */}
-          <div className="w-64 flex-shrink-0 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-800 flex flex-col">
-            {/* Panel Header */}
-            <div className="p-2 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-              <div className="text-sm font-semibold dark:text-white">Import</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Insert columns or indicators</div>
-            </div>
-
-            {/* Search */}
-            <div className="p-2 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-              <input
-                type="text"
-                placeholder="Search..."
-                value={importSearchQuery}
-                onChange={(e) => setImportSearchQuery(e.target.value)}
-                className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
-              />
-            </div>
-
-            {/* Selected Placeholder Info */}
-            {selectedPlaceholder && (
-              <div className="p-2 border-b border-gray-200 dark:border-gray-700 bg-blue-50 dark:bg-blue-900/30 flex-shrink-0">
-                <div className="text-xs text-blue-700 dark:text-blue-300 mb-1">
-                  Selected: {getPlaceholderDisplayInfo(selectedPlaceholder).label}
-                </div>
-                <div className="text-xs text-gray-500 dark:text-gray-400">
-                  Click an item below to replace
-                </div>
-              </div>
-            )}
-
-            {/* Items List */}
-            <div className="flex-1 overflow-y-auto p-2">
-              {loadingImportData ? (
-                <div className="text-center text-gray-500 dark:text-gray-400 py-4">
-                  Loading...
-                </div>
-              ) : (
-                <>
-                  {/* Base Columns (OHLCV) */}
-                  <div className="text-xs text-gray-400 dark:text-gray-500 py-1 font-medium">Base Columns</div>
-                  {BASE_COLUMNS
-                    .filter(col => matchesSearch(col, importSearchQuery))
-                    .map(col => (
-                      <div
-                        key={col}
-                        className="flex items-center justify-between p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-xs"
-                      >
-                        <span className="text-gray-600 dark:text-gray-300 font-mono">{col}</span>
-                        <button
-                          type="button"
-                          onClick={() => insertColumnPlaceholder(col)}
-                          className="px-1.5 py-0.5 text-[10px] rounded bg-blue-500 hover:bg-blue-600 text-white"
-                        >
-                          +
-                        </button>
-                      </div>
-                    ))}
-
-                  {/* Indicators (flattened - group indicators expanded to columns) */}
-                  {importableItems.length > 0 && (
-                    <>
-                      <div className="text-xs text-gray-400 dark:text-gray-500 py-1 mt-3 font-medium">Indicators</div>
-                      {importableItems
-                        .filter(item => matchesSearch(item.displayName, importSearchQuery))
-                        .filter(item => !indicator || !item.id.startsWith(indicator.id)) // Exclude current indicator being edited
-                        .map(item => (
-                          <div
-                            key={item.id}
-                            className="flex items-center justify-between p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-xs"
-                          >
-                            <div className="flex-1 truncate">
-                              <span className="dark:text-white">{item.displayName}</span>
-                              {!item.isOwner && (
-                                <span className="text-[10px] text-gray-400 ml-1">({item.ownerEmail})</span>
-                              )}
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (selectedPlaceholder) {
-                                  replaceWithItem(item);
-                                } else {
-                                  insertItemPlaceholder(item);
-                                }
-                              }}
-                              className={`px-1.5 py-0.5 text-[10px] rounded ${
-                                selectedPlaceholder
-                                  ? 'bg-orange-500 hover:bg-orange-600 text-white'
-                                  : 'bg-purple-500 hover:bg-purple-600 text-white'
-                              }`}
-                            >
-                              {selectedPlaceholder ? '⟲' : '+'}
-                            </button>
-                          </div>
-                        ))}
-                    </>
-                  )}
-
-                  {importableItems.length === 0 && (
-                    <div className="text-xs text-gray-400 dark:text-gray-500 text-center py-2 mt-3">
-                      No indicators available
-                    </div>
-                  )}
-
-                  {/* Dataset Columns (from other datasets) - collapsible by dataset */}
-                  {Object.keys(groupedDatasetColumns).length > 0 && (
-                    <>
-                      <div className="text-xs text-gray-400 dark:text-gray-500 py-1 mt-3 font-medium">Other Datasets</div>
-                      {Object.entries(groupedDatasetColumns)
-                        .filter(([symbol, group]) =>
-                          matchesSearch(symbol, importSearchQuery) ||
-                          matchesSearch(group.name, importSearchQuery) ||
-                          group.columns.some(col => matchesSearch(col.column, importSearchQuery))
-                        )
-                        .map(([symbol, group]) => (
-                          <div key={symbol} className="mb-1">
-                            {/* Dataset header - clickable to expand/collapse */}
-                            <div
-                              className="flex items-center gap-1 p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded cursor-pointer text-xs"
-                              onClick={() => toggleDatasetExpansion(symbol)}
-                            >
-                              <span className="text-gray-400 dark:text-gray-500 w-3">
-                                {expandedDatasets.has(symbol) ? '▼' : '▶'}
-                              </span>
-                              <span className="dark:text-white font-medium">{symbol}</span>
-                              <span className="text-gray-400 dark:text-gray-500 text-[10px] truncate">
-                                {group.name !== symbol ? group.name : ''}
-                              </span>
-                            </div>
-                            {/* Columns - shown when expanded */}
-                            {expandedDatasets.has(symbol) && (
-                              <div className="ml-4 border-l border-gray-200 dark:border-gray-600 pl-2">
-                                {group.columns
-                                  .filter(dsCol => matchesSearch(dsCol.column, importSearchQuery))
-                                  .map(dsCol => (
-                                    <div
-                                      key={dsCol.displayName}
-                                      className="flex items-center justify-between p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-xs"
-                                    >
-                                      <span className="dark:text-gray-300 font-mono text-[11px]">{dsCol.column}</span>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          if (selectedPlaceholder) {
-                                            replaceWithDatasetColumn(dsCol);
-                                          } else {
-                                            insertDatasetColumnPlaceholder(dsCol);
-                                          }
-                                        }}
-                                        className={`px-1.5 py-0.5 text-[10px] rounded ${
-                                          selectedPlaceholder
-                                            ? 'bg-orange-500 hover:bg-orange-600 text-white'
-                                            : 'bg-green-500 hover:bg-green-600 text-white'
-                                        }`}
-                                      >
-                                        {selectedPlaceholder ? '⟲' : '+'}
-                                      </button>
-                                    </div>
-                                  ))}
-                              </div>
-                            )}
-                          </div>
-                        ))}
-                    </>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
         </div>
       </div>
+
+      {/* Inline DataSource Picker (rendered via Monaco ContentWidget) */}
+      <DataSourcePicker
+        container={visualBlocks.pickerContainerRef.current}
+        pickerState={visualBlocks.pickerState}
+        dataSources={visualBlocks.dataSources}
+        onSelect={visualBlocks.insertPlaceholder}
+        onClose={visualBlocks.closePicker}
+      />
 
       {/* Orphaned Columns Confirmation Modal */}
       {showOrphanedColumnsModal && orphanedColumnsData && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[80vh] overflow-hidden">
             <div className="p-6">
-              <h3 className="text-lg font-semibold text-orange-600 dark:text-orange-400 mb-4 flex items-center gap-2">
-                <span>⚠️</span> Orphaned Columns Detected
+              <h3 className="text-lg font-semibold text-orange-600 dark:text-orange-400 mb-4">
+                Orphaned Columns Detected
               </h3>
-
               <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
                 The following columns exist in your CSV files but don&apos;t correspond to any defined indicator:
               </p>
-
               <div className="bg-gray-50 dark:bg-gray-700 rounded p-3 mb-4 max-h-32 overflow-y-auto">
                 <div className="flex flex-wrap gap-2">
                   {orphanedColumnsData.orphanedColumns.map((col, idx) => (
@@ -1843,7 +822,6 @@ export default function IndicatorEditorModal({
                   ))}
                 </div>
               </div>
-
               {orphanedColumnsData.dependentIndicators.length > 0 && (
                 <>
                   <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
@@ -1867,11 +845,9 @@ export default function IndicatorEditorModal({
                   </div>
                 </>
               )}
-
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                 Do you want to remove these orphaned columns from all datasets?
               </p>
-
               <div className="flex justify-end gap-3">
                 <button
                   type="button"
@@ -1900,25 +876,21 @@ export default function IndicatorEditorModal({
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-lg w-full mx-4 max-h-[80vh] overflow-hidden">
             <div className="p-6">
-              <h3 className="text-lg font-semibold text-blue-600 dark:text-blue-400 mb-4 flex items-center gap-2">
-                <span>🔄</span> Column Name Change Detected
+              <h3 className="text-lg font-semibold text-blue-600 dark:text-blue-400 mb-4">
+                Column Name Change Detected
               </h3>
-
               <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
                 You are changing column names that are used by other indicators. Do you want to automatically update their code?
               </p>
-
               <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded p-3 mb-4 max-h-60 overflow-y-auto">
                 {columnRenameData.columnRenames.map(({ column, newColumn, indicators }, idx) => (
                   <div key={idx} className="mb-3 last:mb-0">
                     <div className="text-sm mb-2">
                       <span className="font-mono text-red-600 dark:text-red-400 line-through">{column}</span>
-                      <span className="mx-2 text-gray-500">→</span>
+                      <span className="mx-2 text-gray-500">&rarr;</span>
                       <span className="font-mono text-green-600 dark:text-green-400">{newColumn}</span>
                     </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                      Used by:
-                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mb-1">Used by:</div>
                     <div className="flex flex-wrap gap-1">
                       {indicators.map((ind, indIdx) => (
                         <span key={indIdx} className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 text-xs rounded">
@@ -1929,11 +901,9 @@ export default function IndicatorEditorModal({
                   </div>
                 ))}
               </div>
-
               <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                 Click &quot;Auto-Fix&quot; to update all references in the dependent indicators&apos; code automatically.
               </p>
-
               <div className="flex justify-end gap-3">
                 <button
                   type="button"
