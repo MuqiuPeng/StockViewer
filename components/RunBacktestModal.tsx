@@ -32,7 +32,7 @@ interface StockGroup {
 
 // Helper to format dataset display as {groupname}-{symbol}-{name}
 function formatDatasetDisplay(ds: DatasetInfo): string {
-  const sourceConfig = getDataSourceConfig(ds.dataSource || 'stock_zh_a_hist');
+  const sourceConfig = getDataSourceConfig(ds.dataSource || 'cn.stock');
   const groupName = sourceConfig?.name || ds.dataSource || '';
   return `${groupName}-${ds.code}-${ds.name}`;
 }

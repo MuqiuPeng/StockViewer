@@ -26,7 +26,7 @@ interface SymbolListItem {
 
 export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatasetModalProps) {
   const [symbol, setSymbol] = useState('');
-  const [dataSource, setDataSource] = useState('stock_zh_a_hist');
+  const [dataSource, setDataSource] = useState('cn.stock');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [results, setResults] = useState<AddResult[]>([]);
@@ -45,41 +45,9 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
   // Get the current data source config
   const currentConfig = getDataSourceConfig(dataSource);
 
-  // Map data source to listing API
+  // Look up listing API from the data source config (canonical IDs carry this directly)
   const getListingApiForDataSource = (dsId: string): string | null => {
-    // A-share stocks
-    if (dsId.startsWith('stock_zh_a_')) return '/api/stock-list?source=active';
-    if (dsId.startsWith('stock_zh_b_')) return '/api/stock-list?source=active';
-
-    // Hong Kong stocks
-    if (dsId.includes('_hk_') && dsId.includes('stock')) return '/api/hk-stock-list';
-
-    // US stocks
-    if (dsId.includes('_us_') && dsId.includes('stock')) return '/api/us-stock-list';
-
-    // Indices
-    if (dsId === 'index_zh_a_hist' || dsId === 'stock_zh_index_daily' ||
-        dsId === 'stock_zh_index_daily_tx' || dsId === 'stock_zh_index_daily_em') {
-      return '/api/index-list?source=zh';
-    }
-    if (dsId === 'stock_hk_index_daily_sina' || dsId === 'stock_hk_index_daily_em') {
-      return '/api/index-list?source=hk';
-    }
-    if (dsId === 'index_us_stock_sina') {
-      return '/api/index-list?source=us';
-    }
-    if (dsId === 'index_global_hist_em' || dsId === 'index_global_hist_sina') {
-      return '/api/index-list?source=global';
-    }
-
-    // Funds/ETFs
-    if (dsId.includes('fund_etf')) return '/api/fund-list?type=etf';
-    if (dsId.includes('fund_lof')) return '/api/fund-list?type=lof';
-
-    // Futures
-    if (dsId.includes('futures')) return '/api/futures-list';
-
-    return null;
+    return getDataSourceConfig(dsId)?.listingApi ?? null;
   };
 
   const canBrowseSymbols = (): boolean => {
@@ -254,14 +222,14 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
     // Clear input if all succeeded
     if (addResults.every(r => r.success)) {
       setSymbol('');
-      setDataSource('stock_zh_a_hist');
+      setDataSource('cn.stock');
     }
   };
 
   const handleClose = () => {
     if (!isLoading) {
       setSymbol('');
-      setDataSource('stock_zh_a_hist');
+      setDataSource('cn.stock');
       setError(null);
       setResults([]);
       setProgress(null);

@@ -96,7 +96,7 @@ function parseFilename(filename: string): { symbol: string; dataSource: string }
 
   return {
     symbol: parts[0],
-    dataSource: 'stock_zh_a_hist', // Default data source
+    dataSource: 'cn.stock', // Default data source
   };
 }
 

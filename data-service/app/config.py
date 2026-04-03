@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     cache_ttl: int = 300  # 5 minutes
     cache_max_size: int = 1000
 
+    # Active data provider (must match a registered provider name)
+    # Built-in: "akshare"
+    # Add more by registering them in app/providers/registry.py
+    data_provider: str = "akshare"
+
     # AKShare settings
     akshare_timeout: int = 60  # seconds
 

@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query, HTTPException
 from typing import Optional
 import time
 
-from ...services.akshare_service import akshare_service
+from ...providers.registry import get_provider
 from ...models.responses import ApiResponse, HistoryData, ErrorDetail, Meta
 
 router = APIRouter()
@@ -45,7 +45,7 @@ async def get_history(
     """
     start_time = time.time()
 
-    result = akshare_service.get_history(
+    result = get_provider().get_history(
         data_source=data_source,
         symbol=symbol,
         start_date=start_date,

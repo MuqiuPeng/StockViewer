@@ -27,18 +27,18 @@ const prisma = new PrismaClient({
 // Sample stocks to import
 const SAMPLE_STOCKS = [
   // A股
-  { symbol: '000001', dataSource: 'stock_zh_a_hist', name: '平安银行' },
-  { symbol: '600519', dataSource: 'stock_zh_a_hist', name: '贵州茅台' },
-  { symbol: '000858', dataSource: 'stock_zh_a_hist', name: '五粮液' },
-  { symbol: '601318', dataSource: 'stock_zh_a_hist', name: '中国平安' },
-  { symbol: '000333', dataSource: 'stock_zh_a_hist', name: '美的集团' },
+  { symbol: '000001', dataSource: 'cn.stock', name: '平安银行' },
+  { symbol: '600519', dataSource: 'cn.stock', name: '贵州茅台' },
+  { symbol: '000858', dataSource: 'cn.stock', name: '五粮液' },
+  { symbol: '601318', dataSource: 'cn.stock', name: '中国平安' },
+  { symbol: '000333', dataSource: 'cn.stock', name: '美的集团' },
   // A股指数
-  { symbol: '000001', dataSource: 'index_zh_a_hist', name: '上证指数' },
-  { symbol: '399001', dataSource: 'index_zh_a_hist', name: '深证成指' },
-  { symbol: '399006', dataSource: 'index_zh_a_hist', name: '创业板指' },
+  { symbol: '000001', dataSource: 'cn.index', name: '上证指数' },
+  { symbol: '399001', dataSource: 'cn.index', name: '深证成指' },
+  { symbol: '399006', dataSource: 'cn.index', name: '创业板指' },
   // ETF
-  { symbol: '510300', dataSource: 'fund_etf_hist_em', name: '沪深300ETF' },
-  { symbol: '510500', dataSource: 'fund_etf_hist_em', name: '中证500ETF' },
+  { symbol: '510300', dataSource: 'cn.etf', name: '沪深300ETF' },
+  { symbol: '510500', dataSource: 'cn.etf', name: '中证500ETF' },
 ];
 
 /**
@@ -89,15 +89,15 @@ end_date = "${endDate}"
 
 try:
     # Fetch data based on data source
-    if data_source == "stock_zh_a_hist":
+    if data_source == "cn.stock":
         df = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
-    elif data_source == "stock_hk_hist":
+    elif data_source == "hk.stock":
         df = ak.stock_hk_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
-    elif data_source == "stock_us_hist":
+    elif data_source == "us.stock":
         df = ak.stock_us_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
-    elif data_source == "fund_etf_hist_em":
+    elif data_source == "cn.etf":
         df = ak.fund_etf_hist_em(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
-    elif data_source == "index_zh_a_hist":
+    elif data_source == "cn.index":
         df = ak.index_zh_a_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date)
     else:
         raise ValueError(f"Unsupported data source: {data_source}")
