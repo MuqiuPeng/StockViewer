@@ -18,6 +18,7 @@ Set  DATA_PROVIDER=eastmoney  in the service's .env file.
 from __future__ import annotations
 
 import logging
+import socket as _socket
 import time
 from typing import Any, Dict, List, Optional
 
@@ -29,6 +30,31 @@ from .base import BaseDataProvider
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+# ---------------------------------------------------------------------------
+# IPv6-first DNS resolution
+#
+# In Docker on macOS the default DNS resolver returns EastMoney's IPv4
+# addresses, which refuse connections.  The host machine (and the container
+# if IPv6 routing is available) can reach EastMoney via IPv6.
+#
+# We patch socket.getaddrinfo once at import time so that httpcore (used
+# by httpx) picks up IPv6 addresses first.  Falls back to IPv4 silently
+# if no IPv6 addresses are returned.
+# ---------------------------------------------------------------------------
+_real_getaddrinfo = _socket.getaddrinfo
+
+
+def _getaddrinfo_prefer_ipv6(host, port, family=0, *args, **kwargs):
+    results = _real_getaddrinfo(host, port, family, *args, **kwargs)
+    if family == 0 and results:
+        ipv6 = [r for r in results if r[0] == _socket.AF_INET6]
+        ipv4 = [r for r in results if r[0] != _socket.AF_INET6]
+        return (ipv6 + ipv4) if ipv6 else results
+    return results
+
+
+_socket.getaddrinfo = _getaddrinfo_prefer_ipv6
 
 _cache: TTLCache = TTLCache(maxsize=settings.cache_max_size, ttl=settings.cache_ttl)
 
