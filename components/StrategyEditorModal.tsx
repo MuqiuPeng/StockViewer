@@ -1,8 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import { useTheme } from './ThemeProvider';
+import { BASE_COLUMNS } from './editor/placeholder-utils';
+import { useDataSourceFetcher } from '@/hooks/useDataSourceFetcher';
+import DataSourcePicker from './editor/DataSourcePicker';
+import type { PickerItem, PickerState, DataSourcesConfig } from './editor/types';
+import './editor/DataSourceChip.css';
 
 interface Strategy {
   id: string;
@@ -234,9 +239,6 @@ export default function StrategyEditorModal({
   const [externalDatasets, setExternalDatasets] = useState<Record<string, { groupId: string; datasetName: string }>>({});
   const [editingDataset, setEditingDataset] = useState<string | null>(null);
   const [tempDatasetConfig, setTempDatasetConfig] = useState<{ paramName: string; groupId: string; datasetName: string } | null>(null);
-  const [groups, setGroups] = useState<any[]>([]);
-  const [datasets, setDatasets] = useState<Array<{ id: string; name: string; code: string; filename: string }>>([]);
-  const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [dependencies, setDependencies] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -244,10 +246,35 @@ export default function StrategyEditorModal({
   const [isValidating, setIsValidating] = useState(false);
   const [validationSuccess, setValidationSuccess] = useState<string | null>(null);
 
+  // Editor refs for @ trigger
+  const editorRef = useRef<any>(null);
+  const monacoRef = useRef<any>(null);
+  const pickerContainerRef = useRef<HTMLDivElement | null>(null);
+  const pickerWidgetRef = useRef<any>(null);
+
+  const [pickerState, setPickerState] = useState<PickerState>({
+    isOpen: false,
+    mode: 'insert',
+    position: null,
+    anchorPlaceholder: null,
+  });
+
+  // Shared data fetcher
+  const {
+    indicators: fetchedIndicators,
+    importableItems,
+    datasetColumns,
+    groups,
+    isLoading: loadingData,
+  } = useDataSourceFetcher(isOpen);
+
+  // Local indicators for dependencies
+  const [indicators, setIndicators] = useState<Indicator[]>([]);
+
   // Build a lookup from stock DB id to stock info
+  const [datasets, setDatasets] = useState<Array<{ id: string; name: string; code: string; filename: string }>>([]);
   const stockLookup = new Map(datasets.map(ds => [ds.id, ds]));
 
-  // Get displayable stock list for a group
   const getGroupStocks = (group: any) => {
     if (!group?.stockIds) return [];
     return group.stockIds
@@ -255,37 +282,20 @@ export default function StrategyEditorModal({
       .filter(Boolean) as Array<{ id: string; name: string; code: string; filename: string }>;
   };
 
-  // Load groups, datasets, and indicators on mount
+  // Load datasets and indicators for dependencies
   useEffect(() => {
     if (isOpen) {
-      fetch('/api/groups')
-        .then((res) => res.json())
-        .then((data) => {
-          setGroups(data.groups || []);
-        })
-        .catch((err) => {
-          console.error('Failed to load groups:', err);
-        });
-
       fetch('/api/datasets')
         .then((res) => res.json())
         .then((data) => {
-          if (data.datasets) {
-            setDatasets(data.datasets);
-          }
+          if (data.datasets) setDatasets(data.datasets);
         })
-        .catch((err) => {
-          console.error('Failed to load datasets:', err);
-        });
+        .catch(console.error);
 
       fetch('/api/indicators')
         .then((res) => res.json())
-        .then((data) => {
-          setIndicators(data.indicators || []);
-        })
-        .catch((err) => {
-          console.error('Failed to load indicators:', err);
-        });
+        .then((data) => setIndicators(data.indicators || []))
+        .catch(console.error);
     }
   }, [isOpen]);
 
@@ -307,11 +317,7 @@ export default function StrategyEditorModal({
       setDescription('');
       setStrategyType('single');
       setPythonCode(CODE_TEMPLATE);
-      setConstraints({
-        maxPositions: 5,
-        positionSizing: 'equal',
-        reserveCash: 10,
-      });
+      setConstraints({ maxPositions: 5, positionSizing: 'equal', reserveCash: 10 });
       setExternalDatasets({});
       setDependencies([]);
     }
@@ -319,13 +325,148 @@ export default function StrategyEditorModal({
     setValidationSuccess(null);
   }, [strategy, isOpen]);
 
-  // Update code template when strategy type changes
   useEffect(() => {
-    // Only update template if creating new strategy (not editing)
     if (!strategy) {
       setPythonCode(strategyType === 'portfolio' ? PORTFOLIO_CODE_TEMPLATE : CODE_TEMPLATE);
     }
   }, [strategyType, strategy]);
+
+  // @ trigger handler for strategies - inserts raw data access code
+  useEffect(() => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!editor || !monaco || readOnly) return;
+
+    const typeDisposable = editor.onDidType((text: string) => {
+      if (text === '@') {
+        const selection = editor.getSelection();
+        if (!selection) return;
+        const pos = selection.getPosition();
+
+        // Create picker container if needed
+        if (!pickerContainerRef.current) {
+          pickerContainerRef.current = document.createElement('div');
+          pickerContainerRef.current.className = 'visual-block-picker-container';
+        }
+
+        // Remove existing widget
+        if (pickerWidgetRef.current) {
+          editor.removeContentWidget(pickerWidgetRef.current);
+        }
+
+        const widget = {
+          getId: () => 'strategy-data-source-picker',
+          getDomNode: () => pickerContainerRef.current!,
+          getPosition: () => ({
+            position: { lineNumber: pos.lineNumber, column: pos.column },
+            preference: [monaco.editor.ContentWidgetPositionPreference.BELOW],
+          }),
+        };
+
+        pickerWidgetRef.current = widget;
+        editor.addContentWidget(widget);
+
+        setPickerState({
+          isOpen: true,
+          mode: 'insert',
+          position: { lineNumber: pos.lineNumber, column: pos.column },
+          anchorPlaceholder: null,
+        });
+      }
+    });
+
+    // Escape handler
+    const keyDisposable = editor.onKeyDown((e: any) => {
+      if (e.keyCode === monaco.KeyCode.Escape && pickerState.isOpen) {
+        e.preventDefault();
+        e.stopPropagation();
+        closePicker();
+      }
+    });
+
+    return () => {
+      typeDisposable.dispose();
+      keyDisposable.dispose();
+    };
+  }, [readOnly, pickerState.isOpen]);
+
+  const closePicker = useCallback(() => {
+    setPickerState({
+      isOpen: false,
+      mode: 'insert',
+      position: null,
+      anchorPlaceholder: null,
+    });
+    const editor = editorRef.current;
+    if (editor && pickerWidgetRef.current) {
+      editor.removeContentWidget(pickerWidgetRef.current);
+      pickerWidgetRef.current = null;
+    }
+  }, []);
+
+  // Insert raw data access code when selecting from picker
+  const handlePickerSelect = useCallback((item: PickerItem) => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!editor || !monaco) return;
+
+    let codeToInsert = '';
+    if (item.type === 'base') {
+      codeToInsert = `data['${item.column}']`;
+    } else if (item.type === 'indicator') {
+      if (item.isGroupColumn) {
+        codeToInsert = `data['${item.indicatorName}:${item.columnName}']`;
+      } else {
+        codeToInsert = `data['${item.indicatorName}']`;
+      }
+    } else if (item.type === 'dataset') {
+      codeToInsert = `data['${item.datasetSymbol}@${item.datasetColumn}']`;
+    }
+
+    if (!codeToInsert) return;
+
+    // Remove the '@' trigger and insert the code
+    const model = editor.getModel();
+    if (!model) return;
+
+    const selection = editor.getSelection();
+    if (!selection) return;
+
+    const cursorPos = selection.getPosition();
+    const offset = model.getOffsetAt(cursorPos);
+    const textBefore = model.getValue().substring(Math.max(0, offset - 1), offset);
+
+    if (textBefore === '@') {
+      const startPos = model.getPositionAt(offset - 1);
+      editor.executeEdits('insert-data-ref', [{
+        range: new monaco.Range(
+          startPos.lineNumber, startPos.column,
+          cursorPos.lineNumber, cursorPos.column
+        ),
+        text: codeToInsert,
+        forceMoveMarkers: true,
+      }]);
+    } else {
+      const insertRange = new monaco.Range(
+        cursorPos.lineNumber, cursorPos.column,
+        cursorPos.lineNumber, cursorPos.column
+      );
+      editor.executeEdits('insert-data-ref', [{
+        range: insertRange,
+        text: codeToInsert,
+        forceMoveMarkers: true,
+      }]);
+    }
+
+    editor.focus();
+    closePicker();
+  }, [closePicker]);
+
+  const dataSources: DataSourcesConfig = {
+    baseColumns: BASE_COLUMNS,
+    indicators: importableItems,
+    datasetColumns,
+  };
 
   const handleValidate = async () => {
     setError(null);
@@ -345,7 +486,7 @@ export default function StrategyEditorModal({
         throw new Error(data.error + (data.details ? '\n\n' + data.details : ''));
       }
 
-      setValidationSuccess(`✓ Strategy is valid! Generated ${data.signalCount} signal(s) on test data.`);
+      setValidationSuccess(`Strategy is valid! Generated ${data.signalCount} signal(s) on test data.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Validation failed');
     } finally {
@@ -360,7 +501,6 @@ export default function StrategyEditorModal({
     setIsLoading(true);
 
     try {
-      // Validate before saving
       const validationResponse = await fetch('/api/validate-strategy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -376,11 +516,9 @@ export default function StrategyEditorModal({
         return;
       }
 
-      // Save strategy
       const url = strategy ? `/api/strategies/${strategy.id}` : '/api/strategies';
       const method = strategy ? 'PUT' : 'POST';
 
-      // Filter out incomplete external datasets
       const validExternalDatasets = Object.fromEntries(
         Object.entries(externalDatasets).filter(
           ([_, dataset]) => dataset.groupId && dataset.datasetName
@@ -579,6 +717,11 @@ export default function StrategyEditorModal({
                 Insert Template
               </button>
             </div>
+
+            {/* Hint */}
+            <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-2">
+              Type <span className="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded">@</span> in the editor to insert data references
+            </div>
           </div>
 
           {/* Center - Code Editor */}
@@ -589,6 +732,10 @@ export default function StrategyEditorModal({
                 defaultLanguage="python"
                 value={pythonCode}
                 onChange={(value) => setPythonCode(value || '')}
+                onMount={(editor, monaco) => {
+                  editorRef.current = editor;
+                  monacoRef.current = monaco;
+                }}
                 theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
                 options={{
                   minimap: { enabled: false },
@@ -657,7 +804,7 @@ export default function StrategyEditorModal({
                               }}
                               className="text-green-600 hover:text-green-700"
                             >
-                              ✓
+                              OK
                             </button>
                             <button
                               type="button"
@@ -667,7 +814,7 @@ export default function StrategyEditorModal({
                               }}
                               className="text-gray-500 hover:text-gray-700"
                             >
-                              ✕
+                              x
                             </button>
                           </>
                         ) : (
@@ -678,10 +825,10 @@ export default function StrategyEditorModal({
                                 setEditingDataset(paramName);
                                 setTempDatasetConfig({ paramName, ...dataset });
                               }}
-                              className="text-blue-500 hover:text-blue-700"
+                              className="text-blue-500 hover:text-blue-700 text-[10px]"
                               disabled={readOnly}
                             >
-                              ✎
+                              edit
                             </button>
                             <button
                               type="button"
@@ -690,10 +837,10 @@ export default function StrategyEditorModal({
                                 delete updated[paramName];
                                 setExternalDatasets(updated);
                               }}
-                              className="text-red-500 hover:text-red-700"
+                              className="text-red-500 hover:text-red-700 text-[10px]"
                               disabled={readOnly}
                             >
-                              ✕
+                              del
                             </button>
                           </>
                         )}
@@ -813,20 +960,18 @@ export default function StrategyEditorModal({
                 </div>
               </div>
             )}
-
-            {/* Usage Help */}
-            <div className="border border-gray-300 dark:border-gray-600 rounded p-3 bg-blue-50 dark:bg-blue-900/30">
-              <h3 className="text-xs font-medium mb-1 text-blue-800 dark:text-blue-300">💡 Tips</h3>
-              <div className="text-[10px] text-blue-700 dark:text-blue-300 space-y-1">
-                <div>• Use <code className="bg-blue-100 dark:bg-blue-800 px-0.5">parameters.get(&apos;name&apos;)</code> to access external datasets</div>
-                <div>• Return signals with: date, type, amount, execution</div>
-                <div>• Portfolio strategies need &apos;symbol&apos; in each signal</div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
+
+      {/* Inline DataSource Picker (rendered via Monaco ContentWidget) */}
+      <DataSourcePicker
+        container={pickerContainerRef.current}
+        pickerState={pickerState}
+        dataSources={dataSources}
+        onSelect={handlePickerSelect}
+        onClose={closePicker}
+      />
     </div>
   );
 }
-
