@@ -38,13 +38,20 @@ _KLINE_URL = "https://push2his.eastmoney.com/api/qt/stock/kline/get"
 _CLIST_URL = "https://push2.eastmoney.com/api/qt/clist/get"
 
 _HEADERS = {
+    # Mobile UA is required — desktop UA causes rc=102 on the kline endpoint
     "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "Mozilla/5.0 (Linux; Android 10; K) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
+        "Chrome/120.0.0.0 Mobile Safari/537.36"
     ),
     "Referer": "https://quote.eastmoney.com/",
 }
+
+# Public user-token required by kline + clist endpoints
+_UT = "bd1d9195e7"
+
+# fields1 is required for kline endpoint to return data (rc=102 without it)
+_KLINE_FIELDS1 = "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13"
 
 # klt mapping
 _PERIOD_KLT: Dict[str, int] = {"daily": 101, "weekly": 102, "monthly": 103}
@@ -57,7 +64,7 @@ _ADJUST_FQT: Dict[str | None, int] = {
     "none": 0,   # 不复权
 }
 
-# kline fields — order must match _parse_kline()
+# kline fields2 — order must match _parse_kline()
 _KLINE_FIELDS = "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61"
 
 
@@ -178,11 +185,13 @@ class EastMoneyProvider(BaseDataProvider):
                     _KLINE_URL,
                     params={
                         "secid": "1.600519",
+                        "ut": _UT,
+                        "fields1": _KLINE_FIELDS1,
+                        "fields2": _KLINE_FIELDS,
                         "klt": 101,
                         "fqt": 1,
-                        "beg": "20240101",
-                        "end": "20240102",
-                        "fields2": _KLINE_FIELDS,
+                        "end": "20500000",
+                        "lmt": 1,
                     },
                 )
             if r.status_code == 200:
@@ -231,12 +240,13 @@ class EastMoneyProvider(BaseDataProvider):
 
         params: Dict[str, Any] = {
             "secid": secid,
+            "ut": _UT,
+            "fields1": _KLINE_FIELDS1,  # required — omitting causes rc=102
+            "fields2": _KLINE_FIELDS,
             "klt": klt,
             "fqt": fqt,
-            "fields2": _KLINE_FIELDS,
             "beg": start_date or "19900101",
             "end": end_date or "20991231",
-            "lmt": 1000000,  # fetch all bars in one request
         }
 
         try:
@@ -562,7 +572,7 @@ class EastMoneyProvider(BaseDataProvider):
             "pz": page_size,
             "po": 1,
             "np": 1,
-            "ut": "bd1d9195e7",
+            "ut": _UT,
             "fltt": 2,
             "invt": 2,
             "fid": "f3",
