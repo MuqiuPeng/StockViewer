@@ -394,7 +394,7 @@ export default function StockDashboard() {
           ) : (() => {
             // Group datasets by data source
             const grouped = datasets.reduce((acc, ds) => {
-              const source = ds.dataSource || 'stock_zh_a_hist';
+              const source = ds.dataSource || 'cn.stock';
               if (!acc[source]) acc[source] = [];
               acc[source].push(ds);
               return acc;

@@ -23,7 +23,7 @@ interface DatasetInfo {
 
 // Helper function to format dataset display name
 function formatDatasetDisplay(dataset: DatasetInfo): string {
-  const sourceConfig = getDataSourceConfig(dataset.dataSource || 'stock_zh_a_hist');
+  const sourceConfig = getDataSourceConfig(dataset.dataSource || 'cn.stock');
   const sourceName = sourceConfig?.name || dataset.dataSource;
   return `${dataset.code} - ${sourceName}`;
 }
@@ -388,7 +388,7 @@ export default function DatasetManagement() {
 
   // Then, add ALL datasets grouped by data source (datasets remain in their data source groups)
   datasets.forEach(ds => {
-    const source = ds.dataSource || 'stock_zh_a_hist';
+    const source = ds.dataSource || 'cn.stock';
     const sourceConfig = getDataSourceConfig(source);
     const sourceName = sourceConfig?.name || source;
 
@@ -613,7 +613,7 @@ export default function DatasetManagement() {
                           </td>
                           <td className="border border-gray-200 dark:border-gray-600 p-2 font-mono font-medium dark:text-white">{dataset.code}</td>
                           <td className="border border-gray-200 dark:border-gray-600 p-2 dark:text-white">{dataset.name}</td>
-                          <td className="border border-gray-200 dark:border-gray-600 p-2 text-sm dark:text-gray-300">{getGroupDisplayName(dataset.dataSource || 'stock_zh_a_hist', 'datasource')}</td>
+                          <td className="border border-gray-200 dark:border-gray-600 p-2 text-sm dark:text-gray-300">{getGroupDisplayName(dataset.dataSource || 'cn.stock', 'datasource')}</td>
                           <td className="border border-gray-200 dark:border-gray-600 p-2 text-sm dark:text-gray-300">
                             {dataset.firstDate ? dataset.firstDate.split('T')[0] : 'N/A'}
                           </td>
@@ -826,7 +826,7 @@ export default function DatasetManagement() {
             id: ticketModalStock.id,
             symbol: ticketModalStock.code,
             name: ticketModalStock.name,
-            dataSource: ticketModalStock.dataSource || 'stock_zh_a_hist',
+            dataSource: ticketModalStock.dataSource || 'cn.stock',
           }}
           onSuccess={() => {
             alert('Request submitted! An admin will review it soon.');

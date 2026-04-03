@@ -12,13 +12,21 @@ import { fetchStockDataFromService } from '@/lib/data-service-client';
 
 export const runtime = 'nodejs';
 
-// Supported data sources
+// Supported data sources (canonical IDs from lib/data-sources.ts)
 const SUPPORTED_DATA_SOURCES = [
-  'stock_zh_a_hist',      // A股历史数据
-  'stock_hk_hist',        // 港股历史数据
-  'stock_us_hist',        // 美股历史数据
-  'fund_etf_hist_em',     // ETF基金历史数据
-  'index_zh_a_hist',      // A股指数历史数据
+  'cn.stock',
+  'cn.stock.b',
+  'cn.stock.cdr',
+  'hk.stock',
+  'us.stock',
+  'cn.index',
+  'hk.index',
+  'us.index',
+  'global.index',
+  'cn.etf',
+  'cn.lof',
+  'cn.futures',
+  'global.futures',
 ];
 
 // POST /api/stocks/import - Create an import job

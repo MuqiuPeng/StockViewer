@@ -5,7 +5,7 @@ from fastapi import APIRouter, Query
 from typing import Optional
 import time
 
-from ...services.akshare_service import akshare_service
+from ...providers.registry import get_provider
 from ...models.responses import ApiResponse, ListData, ErrorDetail, Meta
 
 router = APIRouter()
@@ -30,7 +30,7 @@ async def get_stock_list(
     """
     start_time = time.time()
 
-    result = akshare_service.get_stock_list(
+    result = get_provider().get_stock_list(
         market=market,
         include_delisted=include_delisted,
     )
@@ -76,7 +76,7 @@ async def get_index_list(
     """
     start_time = time.time()
 
-    result = akshare_service.get_index_list(market=market)
+    result = get_provider().get_index_list(market=market)
 
     duration_ms = int((time.time() - start_time) * 1000)
 
@@ -117,7 +117,7 @@ async def get_fund_list(
     """
     start_time = time.time()
 
-    result = akshare_service.get_fund_list(fund_type=type)
+    result = get_provider().get_fund_list(fund_type=type)
 
     duration_ms = int((time.time() - start_time) * 1000)
 
@@ -150,7 +150,7 @@ async def get_futures_list():
     """
     start_time = time.time()
 
-    result = akshare_service.get_futures_list()
+    result = get_provider().get_futures_list()
 
     duration_ms = int((time.time() - start_time) * 1000)
 

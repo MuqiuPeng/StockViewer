@@ -3,7 +3,7 @@ Data sources API endpoints.
 """
 from fastapi import APIRouter
 
-from ...services.akshare_service import akshare_service
+from ...providers.registry import get_provider
 from ...models.responses import ApiResponse, DataSourcesData, Meta
 
 router = APIRouter()
@@ -17,7 +17,7 @@ async def get_data_sources():
     Returns all supported data sources with their configurations,
     including required parameters, symbol format, and examples.
     """
-    result = akshare_service.get_data_sources()
+    result = get_provider().get_data_sources()
 
     return ApiResponse(
         success=True,

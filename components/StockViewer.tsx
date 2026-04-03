@@ -212,7 +212,7 @@ export default function StockViewer() {
     // Add data sources with friendly names
     const dataSources = new Set<string>();
     datasets.forEach(ds => {
-      const source = ds.dataSource || 'stock_zh_a_hist';
+      const source = ds.dataSource || 'cn.stock';
       dataSources.add(source);
     });
     dataSources.forEach(source => {
@@ -254,7 +254,7 @@ export default function StockViewer() {
         // Data source - filter by dataSource
         // Extract technical source name from group ID (format: "datasource_{source}")
         const technicalSourceName = group.id.replace('datasource_', '');
-        result = datasets.filter(ds => (ds.dataSource || 'stock_zh_a_hist') === technicalSourceName);
+        result = datasets.filter(ds => (ds.dataSource || 'cn.stock') === technicalSourceName);
       }
     }
 
