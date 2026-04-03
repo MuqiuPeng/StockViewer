@@ -18,6 +18,7 @@ Set  DATA_PROVIDER=eastmoney  in the service's .env file.
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -66,6 +67,45 @@ _ADJUST_FQT: Dict[str | None, int] = {
 
 # kline fields2 — order must match _parse_kline()
 _KLINE_FIELDS = "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61"
+
+
+def _http_get(
+    url: str,
+    params: Dict[str, Any],
+    *,
+    retries: int = 3,
+    backoff: float = 1.0,
+) -> httpx.Response:
+    """
+    GET with redirect following and simple retry-on-disconnect logic.
+
+    EastMoney's push2.eastmoney.com issues 302 → push2delay.eastmoney.com,
+    so follow_redirects=True is mandatory.  The kline endpoint occasionally
+    drops the connection; a short backoff + retry resolves transient failures.
+    """
+    timeout = settings.akshare_timeout
+    last_exc: Exception = RuntimeError("No attempts made")
+    for attempt in range(1, retries + 1):
+        try:
+            with httpx.Client(
+                timeout=timeout,
+                headers=_HEADERS,
+                follow_redirects=True,
+            ) as client:
+                r = client.get(url, params=params)
+            r.raise_for_status()
+            return r
+        except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadError) as exc:
+            last_exc = exc
+            if attempt < retries:
+                logger.warning(
+                    "EastMoney connection error (attempt %d/%d): %s — retrying in %.1fs",
+                    attempt, retries, exc, backoff * attempt,
+                )
+                time.sleep(backoff * attempt)
+        except Exception as exc:
+            raise exc  # non-transient errors propagate immediately
+    raise last_exc
 
 
 class EastMoneyProvider(BaseDataProvider):
@@ -180,27 +220,21 @@ class EastMoneyProvider(BaseDataProvider):
     def health_check(self) -> Dict[str, Any]:
         """Ping EastMoney to verify connectivity."""
         try:
-            with httpx.Client(timeout=5, headers=_HEADERS) as client:
-                r = client.get(
-                    _KLINE_URL,
-                    params={
-                        "secid": "1.600519",
-                        "ut": _UT,
-                        "fields1": _KLINE_FIELDS1,
-                        "fields2": _KLINE_FIELDS,
-                        "klt": 101,
-                        "fqt": 1,
-                        "end": "20500000",
-                        "lmt": 1,
-                    },
-                )
-            if r.status_code == 200:
-                return {"status": "healthy", "version": self.VERSION, "message": None}
-            return {
-                "status": "unhealthy",
-                "version": self.VERSION,
-                "message": f"HTTP {r.status_code}",
-            }
+            _http_get(
+                _KLINE_URL,
+                {
+                    "secid": "1.600519",
+                    "ut": _UT,
+                    "fields1": _KLINE_FIELDS1,
+                    "fields2": _KLINE_FIELDS,
+                    "klt": 101,
+                    "fqt": 1,
+                    "end": "20500000",
+                    "lmt": 1,
+                },
+                retries=1,
+            )
+            return {"status": "healthy", "version": self.VERSION, "message": None}
         except Exception as exc:
             return {"status": "unhealthy", "version": self.VERSION, "message": str(exc)}
 
@@ -250,11 +284,7 @@ class EastMoneyProvider(BaseDataProvider):
         }
 
         try:
-            with httpx.Client(
-                timeout=settings.akshare_timeout, headers=_HEADERS
-            ) as client:
-                r = client.get(_KLINE_URL, params=params)
-            r.raise_for_status()
+            r = _http_get(_KLINE_URL, params)
             payload = r.json()
         except Exception as exc:
             logger.error("EastMoney kline fetch error for %s: %s", symbol, exc)
@@ -580,11 +610,7 @@ class EastMoneyProvider(BaseDataProvider):
             "fields": fields,
         }
         try:
-            with httpx.Client(
-                timeout=settings.akshare_timeout, headers=_HEADERS
-            ) as client:
-                r = client.get(_CLIST_URL, params=params)
-            r.raise_for_status()
+            r = _http_get(_CLIST_URL, params)
             payload = r.json()
             return payload.get("data", {}).get("diff") or []
         except Exception as exc:
