@@ -97,7 +97,9 @@ export default function AdminPage() {
   // Users state
   const [users, setUsers] = useState<User[]>([]);
   const [userStats, setUserStats] = useState<UserStats>({ PENDING: 0, APPROVED: 0, REJECTED: 0 });
-  const [userStatusFilter, setUserStatusFilter] = useState<string>('PENDING');
+  const [userStatusFilter, setUserStatusFilter] = useState<string>('');
+  const [userRoleFilter, setUserRoleFilter] = useState<string>('');
+  const [userSearch, setUserSearch] = useState('');
   const [usersLoading, setUsersLoading] = useState(true);
 
   // Datasets state
@@ -141,12 +143,8 @@ export default function AdminPage() {
   const fetchUsers = useCallback(async () => {
     try {
       setUsersLoading(true);
-      const params = new URLSearchParams();
-      if (userStatusFilter) {
-        params.set('status', userStatusFilter);
-      }
 
-      const response = await fetch(`/api/admin/users?${params}`);
+      const response = await fetch('/api/admin/users');
       const data = await response.json();
 
       if (!response.ok) {
@@ -165,7 +163,7 @@ export default function AdminPage() {
     } finally {
       setUsersLoading(false);
     }
-  }, [userStatusFilter]);
+  }, []);
 
   const fetchDatasets = useCallback(async () => {
     try {
@@ -498,61 +496,70 @@ export default function AdminPage() {
         {/* Users Tab */}
         {activeTab === 'users' && (
           <>
-            {/* User Stats */}
-            <div className="grid grid-cols-3 gap-4 mb-6">
-              <div
-                className={`p-4 rounded-lg cursor-pointer transition-colors ${
-                  userStatusFilter === 'PENDING'
-                    ? 'bg-yellow-100 dark:bg-yellow-900 ring-2 ring-yellow-500'
-                    : 'bg-white dark:bg-gray-800 hover:bg-yellow-50 dark:hover:bg-yellow-900/50'
-                }`}
-                onClick={() => setUserStatusFilter('PENDING')}
-              >
-                <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400">
-                  {userStats.PENDING}
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">Pending</div>
-              </div>
-              <div
-                className={`p-4 rounded-lg cursor-pointer transition-colors ${
-                  userStatusFilter === 'APPROVED'
-                    ? 'bg-green-100 dark:bg-green-900 ring-2 ring-green-500'
-                    : 'bg-white dark:bg-gray-800 hover:bg-green-50 dark:hover:bg-green-900/50'
-                }`}
-                onClick={() => setUserStatusFilter('APPROVED')}
-              >
-                <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-                  {userStats.APPROVED}
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">Approved</div>
-              </div>
-              <div
-                className={`p-4 rounded-lg cursor-pointer transition-colors ${
-                  userStatusFilter === 'REJECTED'
-                    ? 'bg-red-100 dark:bg-red-900 ring-2 ring-red-500'
-                    : 'bg-white dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-900/50'
-                }`}
-                onClick={() => setUserStatusFilter('REJECTED')}
-              >
-                <div className="text-2xl font-bold text-red-600 dark:text-red-400">
-                  {userStats.REJECTED}
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">Rejected</div>
-              </div>
+            {/* Stats Summary */}
+            <div className="flex items-center gap-4 mb-4 text-sm">
+              <span className="text-gray-500 dark:text-gray-400">
+                Total <span className="font-semibold text-gray-900 dark:text-white">{userStats.PENDING + userStats.APPROVED + userStats.REJECTED}</span>
+              </span>
+              <span className="text-yellow-600 dark:text-yellow-400">
+                Pending <span className="font-semibold">{userStats.PENDING}</span>
+              </span>
+              <span className="text-green-600 dark:text-green-400">
+                Approved <span className="font-semibold">{userStats.APPROVED}</span>
+              </span>
+              <span className="text-red-600 dark:text-red-400">
+                Rejected <span className="font-semibold">{userStats.REJECTED}</span>
+              </span>
             </div>
 
-            {/* All filter */}
-            <div className="mb-4 flex gap-2">
-              <button
-                className={`px-3 py-1 rounded text-sm ${
-                  !userStatusFilter
-                    ? 'bg-blue-500 text-white'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
-                }`}
-                onClick={() => setUserStatusFilter('')}
+            {/* Filter Bar */}
+            <div className="flex items-center gap-3 mb-4">
+              {/* Search */}
+              <input
+                type="text"
+                placeholder="Search by name or email..."
+                value={userSearch}
+                onChange={(e) => setUserSearch(e.target.value)}
+                className="flex-1 max-w-xs px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+
+              {/* Role Filter */}
+              <select
+                value={userRoleFilter}
+                onChange={(e) => setUserRoleFilter(e.target.value)}
+                className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                All
-              </button>
+                <option value="">All Roles</option>
+                <option value="super_admin">Super Admin</option>
+                <option value="admin">Admin</option>
+                <option value="user">User</option>
+              </select>
+
+              {/* Status Filter */}
+              <select
+                value={userStatusFilter}
+                onChange={(e) => setUserStatusFilter(e.target.value)}
+                className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All Status</option>
+                <option value="PENDING">Pending</option>
+                <option value="APPROVED">Approved</option>
+                <option value="REJECTED">Rejected</option>
+              </select>
+
+              {/* Clear filters */}
+              {(userSearch || userRoleFilter || userStatusFilter) && (
+                <button
+                  onClick={() => {
+                    setUserSearch('');
+                    setUserRoleFilter('');
+                    setUserStatusFilter('');
+                  }}
+                  className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  Clear
+                </button>
+              )}
             </div>
 
             {/* Users Table */}
@@ -584,14 +591,35 @@ export default function AdminPage() {
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                    {users.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
-                          No users found
-                        </td>
-                      </tr>
-                    ) : (
-                      users.map((user) => (
+                    {(() => {
+                      const filteredUsers = users.filter((u) => {
+                        // Search filter
+                        if (userSearch) {
+                          const q = userSearch.toLowerCase();
+                          const nameMatch = u.name?.toLowerCase().includes(q);
+                          const emailMatch = u.email?.toLowerCase().includes(q);
+                          if (!nameMatch && !emailMatch) return false;
+                        }
+                        // Role filter
+                        if (userRoleFilter === 'super_admin' && !u.isSuperAdmin) return false;
+                        if (userRoleFilter === 'admin' && !u.isAdmin && !u.isSuperAdmin) return false;
+                        if (userRoleFilter === 'user' && (u.isAdmin || u.isSuperAdmin)) return false;
+                        // Status filter
+                        if (userStatusFilter && u.status !== userStatusFilter) return false;
+                        return true;
+                      });
+
+                      if (filteredUsers.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan={6} className="px-6 py-12 text-center text-gray-500 dark:text-gray-400">
+                              No users found
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return filteredUsers.map((user) => (
                         <tr key={user.id}>
                           <td className="px-6 py-4 whitespace-nowrap">
                             <div className="flex items-center">
@@ -735,8 +763,8 @@ export default function AdminPage() {
                             </div>
                           </td>
                         </tr>
-                      ))
-                    )}
+                      ));
+                    })()}
                   </tbody>
                 </table>
               )}
