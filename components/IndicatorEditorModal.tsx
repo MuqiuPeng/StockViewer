@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import { useTheme } from './ThemeProvider';
 import {
@@ -8,13 +8,11 @@ import {
   transformCodeToPlaceholders,
   wrapCodeBody,
   extractCodeBody,
-  BASE_COLUMNS,
 } from './editor/placeholder-utils';
-import type { Period } from './editor/types';
+import type { Period, ImportableItem, ImportableDatasetColumn } from './editor/types';
+import ImportPanel from './editor/ImportPanel';
+import { BASE_COLUMNS } from './editor/placeholder-utils';
 import { useDataSourceFetcher } from '@/hooks/useDataSourceFetcher';
-import { useMonacoVisualBlocks } from '@/hooks/useMonacoVisualBlocks';
-import DataSourcePicker from './editor/DataSourcePicker';
-import './editor/DataSourceChip.css';
 
 interface Indicator {
   id: string;
@@ -39,10 +37,10 @@ interface IndicatorEditorModalProps {
 
 // Templates - use placeholders for columns
 const CODE_TEMPLATE = `# Example: 20-day Simple Moving Average
-return ◈close◈.rolling(20).mean()`;
+return \${close}.rolling(20).mean()`;
 
 const MYTT_TEMPLATE = `# Example: MACD indicator group
-DIF, DEA, MACD_hist = MACD(◈close◈.values, SHORT=12, LONG=26, M=9)
+DIF, DEA, MACD_hist = MACD(\${close}.values, SHORT=12, LONG=26, M=9)
 
 return {
     'DIF': DIF,
@@ -76,6 +74,7 @@ export default function IndicatorEditorModal({
   const [syntaxWarnings, setSyntaxWarnings] = useState<string[]>([]);
   const [editorInstance, setEditorInstance] = useState<any>(null);
   const [monacoInstance, setMonacoInstance] = useState<any>(null);
+  const decorationIdsRef = useRef<string[]>([]);
 
   // Orphaned columns check state
   const [showOrphanedColumnsModal, setShowOrphanedColumnsModal] = useState(false);
@@ -100,18 +99,6 @@ export default function IndicatorEditorModal({
 
   // Shared hooks
   const { importableItems, datasetColumns, isLoading: loadingData } = useDataSourceFetcher(isOpen);
-
-  const visualBlocks = useMonacoVisualBlocks({
-    code: pythonCode,
-    onCodeChange: setPythonCode,
-    dataSources: {
-      baseColumns: BASE_COLUMNS,
-      indicators: importableItems,
-      datasetColumns,
-    },
-    mode: 'indicator',
-    readOnly,
-  });
 
   // Initialize form when indicator changes
   useEffect(() => {
@@ -520,6 +507,73 @@ export default function IndicatorEditorModal({
     return { warnings, markers };
   };
 
+  // Insert handlers for ImportPanel
+  const handleInsertColumn = useCallback((col: string) => {
+    if (!editorInstance) return;
+    const selection = editorInstance.getSelection();
+    if (!selection) return;
+    editorInstance.executeEdits('import-panel', [{
+      range: selection,
+      text: '${' + col + '}',
+      forceMoveMarkers: true,
+    }]);
+    editorInstance.focus();
+  }, [editorInstance]);
+
+  const handleInsertIndicator = useCallback((item: ImportableItem) => {
+    if (!editorInstance) return;
+    const selection = editorInstance.getSelection();
+    if (!selection) return;
+    const text = item.isGroupColumn
+      ? '${IND:' + item.indicatorName + ':' + item.columnName + '}'
+      : '${IND:' + item.indicatorName + '}';
+    editorInstance.executeEdits('import-panel', [{
+      range: selection,
+      text,
+      forceMoveMarkers: true,
+    }]);
+    editorInstance.focus();
+  }, [editorInstance]);
+
+  const handleInsertDatasetColumn = useCallback((dsCol: ImportableDatasetColumn) => {
+    if (!editorInstance) return;
+    const selection = editorInstance.getSelection();
+    if (!selection) return;
+    editorInstance.executeEdits('import-panel', [{
+      range: selection,
+      text: '${DS:' + dsCol.datasetSymbol + '@' + dsCol.column + '}',
+      forceMoveMarkers: true,
+    }]);
+    editorInstance.focus();
+  }, [editorInstance]);
+
+  // Syntax highlighting for ${...} markers
+  useEffect(() => {
+    if (!editorInstance || !monacoInstance) return;
+    const model = editorInstance.getModel();
+    if (!model) return;
+
+    const decorations: any[] = [];
+    const text = model.getValue();
+    const regex = /\$\{([^}]+)\}/g;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const startPos = model.getPositionAt(match.index);
+      const endPos = model.getPositionAt(match.index + match[0].length);
+      const content = match[1];
+
+      let className = 'placeholder-highlight-base';
+      if (content.startsWith('IND:')) className = 'placeholder-highlight-indicator';
+      else if (content.startsWith('DS:')) className = 'placeholder-highlight-dataset';
+
+      decorations.push({
+        range: new monacoInstance.Range(startPos.lineNumber, startPos.column, endPos.lineNumber, endPos.column),
+        options: { inlineClassName: className },
+      });
+    }
+    decorationIdsRef.current = editorInstance.deltaDecorations(decorationIdsRef.current, decorations);
+  }, [pythonCode, editorInstance, monacoInstance]);
+
   // Check syntax when code changes
   useEffect(() => {
     if (pythonCode && editorInstance && monacoInstance) {
@@ -746,7 +800,7 @@ export default function IndicatorEditorModal({
 
             {/* Hint */}
             <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-2">
-              Type <span className="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded">@</span> in the editor to insert data references
+              Use <span className="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded">{'${close}'}</span> format for data references
             </div>
           </div>
 
@@ -761,7 +815,6 @@ export default function IndicatorEditorModal({
                 onMount={(editor, monaco) => {
                   setEditorInstance(editor);
                   setMonacoInstance(monaco);
-                  visualBlocks.onEditorMount(editor, monaco);
                 }}
                 theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
                 options={{
@@ -790,17 +843,20 @@ export default function IndicatorEditorModal({
               />
             </div>
           </div>
+
+          {/* Right Panel - Import */}
+          <ImportPanel
+            baseColumns={BASE_COLUMNS}
+            indicators={importableItems}
+            datasetColumns={datasetColumns}
+            isLoading={loadingData}
+            onInsertColumn={handleInsertColumn}
+            onInsertIndicator={handleInsertIndicator}
+            onInsertDatasetColumn={handleInsertDatasetColumn}
+            currentIndicatorId={indicator?.id}
+          />
         </div>
       </div>
-
-      {/* Inline DataSource Picker (rendered via Monaco ContentWidget) */}
-      <DataSourcePicker
-        container={visualBlocks.pickerContainerRef.current}
-        pickerState={visualBlocks.pickerState}
-        dataSources={visualBlocks.dataSources}
-        onSelect={visualBlocks.insertPlaceholder}
-        onClose={visualBlocks.closePicker}
-      />
 
       {/* Orphaned Columns Confirmation Modal */}
       {showOrphanedColumnsModal && orphanedColumnsData && (

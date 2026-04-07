@@ -1,13 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import { useTheme } from './ThemeProvider';
+import ImportPanel from './editor/ImportPanel';
 import { BASE_COLUMNS } from './editor/placeholder-utils';
+import type { ImportableItem, ImportableDatasetColumn } from './editor/types';
 import { useDataSourceFetcher } from '@/hooks/useDataSourceFetcher';
-import DataSourcePicker from './editor/DataSourcePicker';
-import type { PickerItem, PickerState, DataSourcesConfig } from './editor/types';
-import './editor/DataSourceChip.css';
 
 interface Strategy {
   id: string;
@@ -246,18 +245,9 @@ export default function StrategyEditorModal({
   const [isValidating, setIsValidating] = useState(false);
   const [validationSuccess, setValidationSuccess] = useState<string | null>(null);
 
-  // Editor refs for @ trigger
+  // Editor refs
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
-  const pickerContainerRef = useRef<HTMLDivElement | null>(null);
-  const pickerWidgetRef = useRef<any>(null);
-
-  const [pickerState, setPickerState] = useState<PickerState>({
-    isOpen: false,
-    mode: 'insert',
-    position: null,
-    anchorPlaceholder: null,
-  });
 
   // Shared data fetcher
   const {
@@ -267,6 +257,8 @@ export default function StrategyEditorModal({
     groups,
     isLoading: loadingData,
   } = useDataSourceFetcher(isOpen);
+
+  const decorationIdsRef = useRef<string[]>([]);
 
   // Local indicators for dependencies
   const [indicators, setIndicators] = useState<Indicator[]>([]);
@@ -330,143 +322,6 @@ export default function StrategyEditorModal({
       setPythonCode(strategyType === 'portfolio' ? PORTFOLIO_CODE_TEMPLATE : CODE_TEMPLATE);
     }
   }, [strategyType, strategy]);
-
-  // @ trigger handler for strategies - inserts raw data access code
-  useEffect(() => {
-    const editor = editorRef.current;
-    const monaco = monacoRef.current;
-    if (!editor || !monaco || readOnly) return;
-
-    const typeDisposable = editor.onDidType((text: string) => {
-      if (text === '@') {
-        const selection = editor.getSelection();
-        if (!selection) return;
-        const pos = selection.getPosition();
-
-        // Create picker container if needed
-        if (!pickerContainerRef.current) {
-          pickerContainerRef.current = document.createElement('div');
-          pickerContainerRef.current.className = 'visual-block-picker-container';
-        }
-
-        // Remove existing widget
-        if (pickerWidgetRef.current) {
-          editor.removeContentWidget(pickerWidgetRef.current);
-        }
-
-        const widget = {
-          getId: () => 'strategy-data-source-picker',
-          getDomNode: () => pickerContainerRef.current!,
-          getPosition: () => ({
-            position: { lineNumber: pos.lineNumber, column: pos.column },
-            preference: [monaco.editor.ContentWidgetPositionPreference.BELOW],
-          }),
-        };
-
-        pickerWidgetRef.current = widget;
-        editor.addContentWidget(widget);
-
-        setPickerState({
-          isOpen: true,
-          mode: 'insert',
-          position: { lineNumber: pos.lineNumber, column: pos.column },
-          anchorPlaceholder: null,
-        });
-      }
-    });
-
-    // Escape handler
-    const keyDisposable = editor.onKeyDown((e: any) => {
-      if (e.keyCode === monaco.KeyCode.Escape && pickerState.isOpen) {
-        e.preventDefault();
-        e.stopPropagation();
-        closePicker();
-      }
-    });
-
-    return () => {
-      typeDisposable.dispose();
-      keyDisposable.dispose();
-    };
-  }, [readOnly, pickerState.isOpen]);
-
-  const closePicker = useCallback(() => {
-    setPickerState({
-      isOpen: false,
-      mode: 'insert',
-      position: null,
-      anchorPlaceholder: null,
-    });
-    const editor = editorRef.current;
-    if (editor && pickerWidgetRef.current) {
-      editor.removeContentWidget(pickerWidgetRef.current);
-      pickerWidgetRef.current = null;
-    }
-  }, []);
-
-  // Insert raw data access code when selecting from picker
-  const handlePickerSelect = useCallback((item: PickerItem) => {
-    const editor = editorRef.current;
-    const monaco = monacoRef.current;
-    if (!editor || !monaco) return;
-
-    let codeToInsert = '';
-    if (item.type === 'base') {
-      codeToInsert = `data['${item.column}']`;
-    } else if (item.type === 'indicator') {
-      if (item.isGroupColumn) {
-        codeToInsert = `data['${item.indicatorName}:${item.columnName}']`;
-      } else {
-        codeToInsert = `data['${item.indicatorName}']`;
-      }
-    } else if (item.type === 'dataset') {
-      codeToInsert = `data['${item.datasetSymbol}@${item.datasetColumn}']`;
-    }
-
-    if (!codeToInsert) return;
-
-    // Remove the '@' trigger and insert the code
-    const model = editor.getModel();
-    if (!model) return;
-
-    const selection = editor.getSelection();
-    if (!selection) return;
-
-    const cursorPos = selection.getPosition();
-    const offset = model.getOffsetAt(cursorPos);
-    const textBefore = model.getValue().substring(Math.max(0, offset - 1), offset);
-
-    if (textBefore === '@') {
-      const startPos = model.getPositionAt(offset - 1);
-      editor.executeEdits('insert-data-ref', [{
-        range: new monaco.Range(
-          startPos.lineNumber, startPos.column,
-          cursorPos.lineNumber, cursorPos.column
-        ),
-        text: codeToInsert,
-        forceMoveMarkers: true,
-      }]);
-    } else {
-      const insertRange = new monaco.Range(
-        cursorPos.lineNumber, cursorPos.column,
-        cursorPos.lineNumber, cursorPos.column
-      );
-      editor.executeEdits('insert-data-ref', [{
-        range: insertRange,
-        text: codeToInsert,
-        forceMoveMarkers: true,
-      }]);
-    }
-
-    editor.focus();
-    closePicker();
-  }, [closePicker]);
-
-  const dataSources: DataSourcesConfig = {
-    baseColumns: BASE_COLUMNS,
-    indicators: importableItems,
-    datasetColumns,
-  };
 
   const handleValidate = async () => {
     setError(null);
@@ -553,6 +408,78 @@ export default function StrategyEditorModal({
       setIsLoading(false);
     }
   };
+
+  // Insert handlers for ImportPanel (strategy uses raw Python data['...'] format)
+  const handleInsertColumn = useCallback((col: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const selection = editor.getSelection();
+    if (!selection) return;
+    editor.executeEdits('import-panel', [{
+      range: selection,
+      text: `data['${col}']`,
+      forceMoveMarkers: true,
+    }]);
+    editor.focus();
+  }, []);
+
+  const handleInsertIndicator = useCallback((item: ImportableItem) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const selection = editor.getSelection();
+    if (!selection) return;
+    const text = item.isGroupColumn
+      ? `data['${item.indicatorName}:${item.columnName}']`
+      : `data['${item.indicatorName}']`;
+    editor.executeEdits('import-panel', [{
+      range: selection,
+      text,
+      forceMoveMarkers: true,
+    }]);
+    editor.focus();
+  }, []);
+
+  const handleInsertDatasetColumn = useCallback((dsCol: ImportableDatasetColumn) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const selection = editor.getSelection();
+    if (!selection) return;
+    editor.executeEdits('import-panel', [{
+      range: selection,
+      text: `data['${dsCol.datasetSymbol}@${dsCol.column}']`,
+      forceMoveMarkers: true,
+    }]);
+    editor.focus();
+  }, []);
+
+  // Syntax highlighting for data['...'] patterns in strategy editor
+  useEffect(() => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!editor || !monaco) return;
+    const model = editor.getModel();
+    if (!model) return;
+
+    const decorations: any[] = [];
+    const text = model.getValue();
+    const regex = /data\['([^']+)'\]/g;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const startPos = model.getPositionAt(match.index);
+      const endPos = model.getPositionAt(match.index + match[0].length);
+      const content = match[1];
+
+      let className = 'placeholder-highlight-base';
+      if (content.includes(':')) className = 'placeholder-highlight-indicator';
+      else if (content.includes('@')) className = 'placeholder-highlight-dataset';
+
+      decorations.push({
+        range: new monaco.Range(startPos.lineNumber, startPos.column, endPos.lineNumber, endPos.column),
+        options: { inlineClassName: className },
+      });
+    }
+    decorationIdsRef.current = editor.deltaDecorations(decorationIdsRef.current, decorations);
+  }, [pythonCode]);
 
   if (!isOpen) return null;
 
@@ -720,7 +647,7 @@ export default function StrategyEditorModal({
 
             {/* Hint */}
             <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-2">
-              Type <span className="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded">@</span> in the editor to insert data references
+              Use <span className="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded">{"data['close']"}</span> format for data references
             </div>
           </div>
 
@@ -763,6 +690,17 @@ export default function StrategyEditorModal({
               />
             </div>
           </div>
+
+          {/* Import Panel */}
+          <ImportPanel
+            baseColumns={BASE_COLUMNS}
+            indicators={importableItems}
+            datasetColumns={datasetColumns}
+            isLoading={loadingData}
+            onInsertColumn={handleInsertColumn}
+            onInsertIndicator={handleInsertIndicator}
+            onInsertDatasetColumn={handleInsertDatasetColumn}
+          />
 
           {/* Right Panel - External Datasets & Portfolio Constraints */}
           <div className="w-64 flex-shrink-0 overflow-y-auto space-y-3">
@@ -964,14 +902,6 @@ export default function StrategyEditorModal({
         </div>
       </div>
 
-      {/* Inline DataSource Picker (rendered via Monaco ContentWidget) */}
-      <DataSourcePicker
-        container={pickerContainerRef.current}
-        pickerState={pickerState}
-        dataSources={dataSources}
-        onSelect={handlePickerSelect}
-        onClose={closePicker}
-      />
     </div>
   );
 }

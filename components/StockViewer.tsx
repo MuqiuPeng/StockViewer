@@ -1206,6 +1206,21 @@ export default function StockViewer() {
           ))}
         </div>
 
+        {/* What-If Simulation Toggle */}
+        {selectedPeriod === 'daily' && selectedDataset && (
+          <button
+            onClick={() => setSimulationPanelOpen(!simulationPanelOpen)}
+            className={`px-3 py-2 text-sm font-medium rounded border transition-colors ${
+              simulationPanelOpen || simulatedCandle
+                ? 'bg-blue-600 text-white border-blue-600'
+                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+            }`}
+            title="What-If Simulation"
+          >
+            {simulatedCandle ? 'What-If ●' : 'What-If'}
+          </button>
+        )}
+
         {/* Loading indicator */}
         {loading && (
           <span className="text-sm text-gray-600 dark:text-gray-300">
