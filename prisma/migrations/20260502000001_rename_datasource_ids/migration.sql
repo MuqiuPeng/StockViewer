@@ -1,10 +1,7 @@
--- Migration: rename legacy AKShare-style dataSource IDs to canonical market.category IDs
---
--- Run with:  psql $DATABASE_URL -f prisma/migrations/rename_datasource_ids.sql
--- Or via Prisma:  npx prisma db execute --file prisma/migrations/rename_datasource_ids.sql
+-- Rename legacy AKShare-style dataSource IDs to canonical market.category IDs.
 --
 -- The @@unique([symbol, dataSource]) constraint on Stock means we cannot have
--- two rows with the same symbol after renaming.  The UPDATE below is safe
+-- two rows with the same symbol after renaming. The UPDATE below is safe
 -- because every old ID maps to exactly one new ID, so no duplicates are created
 -- unless the same symbol was stored under multiple aliases — in that case the
 -- later UPDATE will violate the unique constraint and the transaction will roll

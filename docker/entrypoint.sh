@@ -1,15 +1,15 @@
 #!/bin/bash
 set -e
 
-# Run Prisma migrations if DATABASE_URL is set (database mode)
+# Apply Prisma migrations if DATABASE_URL is set (database mode).
+# For an existing database that pre-dates the migrations directory, run once:
+#   prisma migrate resolve --applied 20260502000000_init
+#   prisma migrate resolve --applied 20260502000001_rename_datasource_ids
+# to mark the baseline as already applied. See docker/README.md for details.
 if [ -n "$DATABASE_URL" ]; then
-    echo "Syncing database schema..."
-
-    # Use db push for development - more forgiving, doesn't require migration history
-    # For production with strict migration control, use: prisma migrate deploy
-    prisma db push --schema=/app/prisma/schema.prisma --accept-data-loss=false --skip-generate
-
-    echo "Database schema sync complete"
+    echo "Applying database migrations..."
+    prisma migrate deploy --schema=/app/prisma/schema.prisma
+    echo "Database migrations applied"
 fi
 
 # Set up cron job for daily dataset updates at 6 PM Beijing time (10:00 UTC)
