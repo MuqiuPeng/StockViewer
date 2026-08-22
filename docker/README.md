@@ -1,219 +1,57 @@
-# StockViewer Docker Deployment
+# data-service container image
 
-Complete Docker deployment for StockViewer with PostgreSQL database support.
+The only container this project still ships. It packages the Python
+FastAPI market-data service (`../data-service`) so it can be deployed to
+a platform that builds from a Dockerfile — Railway, Fly.io, Render.
 
-## Prerequisites
+Everything else that used to live here (a Next.js image, a combined
+supervisord image, nginx, and the local/production/NAS compose stacks)
+was removed: the app is hosted on Vercel, and local development runs the
+web app and the data-service as native processes, with Postgres provided
+by the hosted database.
 
-- [Docker Desktop](https://www.docker.com/get-started) installed and running
-
-## Quick Start
-
-### 1. Configure Environment
-
-```bash
-# From project root
-cp .env.docker.example .env.docker
-```
-
-Edit `.env.docker` and fill in:
-- `AUTH_SECRET`: Generate with `openssl rand -base64 32`
-- `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET`: For GitHub OAuth (optional)
-- `AUTH_GOOGLE_ID` / `AUTH_GOOGLE_SECRET`: For Google OAuth (optional)
-
-### 2. Start Services
+## Build and run locally
 
 ```bash
-# Start PostgreSQL + App
-docker compose --env-file .env.docker up -d --build
-
+docker build -f docker/Dockerfile.data-service -t stockviewer-data-service .
+docker run --rm -p 8000:8000 stockviewer-data-service
 ```
 
-### 3. Access
+Health check: `curl http://localhost:8000/api/v1/health`
 
-- **Local**: http://localhost:3000
-- **External**: Your configured domain (e.g., https://stockviewer.robindev.org)
+Note that running the data-service in Docker on macOS is what forced the
+HTTPS_PROXY workaround documented in
+`data-service/app/providers/eastmoney_provider.py` — EastMoney is only
+reachable over IPv6 from the host there. Running it natively (see the
+repository README) avoids that entirely, so prefer native for local work
+and keep this image for deployment.
 
-## Architecture
+## Environment
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Docker Network                          │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │            StockViewer App Container                  │   │
-│  │  ┌─────────────────┐     ┌─────────────────┐         │   │
-│  │  │   Next.js       │     │    AKTools      │         │   │
-│  │  │   Port: 3000    │────▶│    Port: 8080   │         │   │
-│  │  └────────┬────────┘     └─────────────────┘         │   │
-│  │           │               (internal only)             │   │
-│  └───────────┼──────────────────────────────────────────┘   │
-│              │                                               │
-│  ┌───────────▼──────────┐                                    │
-│  │    PostgreSQL        │                                    │
-│  │    Port: 5432        │                                    │
-│  └──────────────────────┘                                    │
-│                                                              │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │                   Docker Volumes                      │   │
-│  │  - postgres-data (database)                           │   │
-│  │  - app-data (CSV files, user data)                   │   │
-│  └──────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-```
+| Variable | Required | Purpose |
+|----------|----------|---------|
+| `LOG_INGEST_SECRET` | No | Shared secret for forwarding logs to the app's `/api/admin/logs/ingest/service` |
+| `HTTPS_PROXY` | No | Only needed when the container cannot reach EastMoney directly |
 
-## Commands
+## Database migrations
 
-All commands from project root:
-
-### View Logs
+Prisma migrations are owned by the web app, not by this image. Apply them
+against the hosted database with:
 
 ```bash
-docker compose logs -f          # All services
-docker compose logs -f app      # App only
-docker compose logs -f db       # Database only
+npx prisma migrate deploy
 ```
 
-### Stop Services
+For a database that pre-dates the `prisma/migrations` directory, mark the
+baseline as already applied once, or `migrate deploy` will try to recreate
+existing tables:
 
 ```bash
-docker compose down             # Stop containers
-docker compose down -v          # Stop and remove volumes (data loss!)
+npx prisma migrate resolve --applied 20260502000000_init
+npx prisma migrate resolve --applied 20260502000001_rename_datasource_ids
 ```
 
-### Rebuild
+## Scheduled dataset updates
 
-```bash
-docker compose --env-file .env.docker up --build -d
-```
-
-### Status
-
-```bash
-docker compose ps
-```
-
-### Database Access
-
-```bash
-# Connect to PostgreSQL
-docker compose exec db psql -U stockviewer -d stockviewer
-
-# Run migrations manually
-docker compose exec app prisma migrate deploy --schema=/app/prisma/schema.prisma
-```
-
-## Configuration
-
-### Environment Variables
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `AUTH_SECRET` | Yes | Session encryption key |
-| `AUTH_URL` | No | External URL (default: http://localhost:3000) |
-| `AUTH_GITHUB_ID` | No | GitHub OAuth client ID |
-| `AUTH_GITHUB_SECRET` | No | GitHub OAuth client secret |
-| `AUTH_GOOGLE_ID` | No | Google OAuth client ID |
-| `AUTH_GOOGLE_SECRET` | No | Google OAuth client secret |
-| `POSTGRES_USER` | No | Database user (default: stockviewer) |
-| `POSTGRES_PASSWORD` | No | Database password (default: stockviewer123) |
-| `POSTGRES_DB` | No | Database name (default: stockviewer) |
-
-### OAuth Setup
-
-#### GitHub
-
-1. Go to [GitHub Developer Settings](https://github.com/settings/developers)
-2. Create "New OAuth App"
-3. Set callback URL: `{AUTH_URL}/api/auth/callback/github`
-4. Copy Client ID and Secret to `.env.docker`
-
-#### Google
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/apis/credentials)
-2. Create "OAuth 2.0 Client ID" (Web application)
-3. Add authorized redirect: `{AUTH_URL}/api/auth/callback/google`
-4. Copy Client ID and Secret to `.env.docker`
-
-## Data Persistence
-
-| Volume | Purpose |
-|--------|---------|
-| `postgres-data` | PostgreSQL database |
-| `app-data` | CSV files, user uploads |
-
-### Backup
-
-```bash
-# Backup PostgreSQL
-docker compose exec db pg_dump -U stockviewer stockviewer > backup.sql
-
-# Backup app data
-docker run --rm -v stockviewer_app-data:/data -v $(pwd):/backup alpine \
-  tar czf /backup/app-data.tar.gz -C /data .
-```
-
-### Restore
-
-```bash
-# Restore PostgreSQL
-cat backup.sql | docker compose exec -T db psql -U stockviewer stockviewer
-
-# Restore app data
-docker run --rm -v stockviewer_app-data:/data -v $(pwd):/backup alpine \
-  tar xzf /backup/app-data.tar.gz -C /data
-```
-
-## Troubleshooting
-
-### Container Won't Start
-
-```bash
-# Check logs
-docker compose logs app
-
-# Check if database is ready
-docker compose logs db
-```
-
-### Database Connection Error
-
-```bash
-# Ensure db is healthy
-docker compose ps
-
-# Test connection
-docker compose exec app prisma db push --skip-generate
-```
-
-### Port Conflict
-
-Edit `docker-compose.yml` to change ports:
-
-```yaml
-services:
-  app:
-    ports:
-      - "3001:3000"  # Change external port
-  db:
-    ports:
-      - "5433:5432"  # Change external port
-```
-
-### Clean Rebuild
-
-```bash
-docker compose down -v
-docker system prune -f
-docker compose --env-file .env.docker up --build -d
-```
-
-## Development
-
-For development with hot-reload, use the standard setup:
-
-```bash
-npm install
-npm run dev
-```
-
-See main [README.md](../README.md) for development setup.
+Previously a cron job inside the app container. Now handled by Vercel Cron,
+declared in `vercel.json` (`/api/cron/update-datasets`, daily at 10:00 UTC).

@@ -63,7 +63,8 @@ Schema is managed by Prisma migrations under `prisma/migrations/`.
   Postgres to generate a migration directory.
 - Commit the generated `migration.sql` along with the schema change.
 - Never run `prisma db push` against production — production is reconciled by
-  `prisma migrate deploy` in `docker/entrypoint.sh`.
+  running `npx prisma migrate deploy` against the hosted database. See
+  `docker/README.md`.
 
 For a database that pre-dates the `prisma/migrations/` directory, run once
 before the first `migrate deploy`:

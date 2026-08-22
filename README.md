@@ -102,44 +102,34 @@ StockViewer is a powerful Next.js application that enables you to:
 
 **New to this project?** See [SETUP.md](SETUP.md) for detailed installation instructions.
 
-### Docker 部署（推荐）
-
-```bash
-# 1. 克隆项目
-git clone <repository-url>
-cd StockViewer
-
-# 2. 配置环境变量
-cp .env.docker.example .env.docker
-# 编辑 .env.docker 填写必要配置
-
-# 3. 启动服务
-docker compose --env-file .env.docker up -d --build
-
-# 访问 http://localhost:3000
-```
-
 ### 本地开发
+
+本地全部以原生进程运行，不需要 Docker。
 
 ```bash
 # 1. 安装依赖
+git clone <repository-url>
+cd StockViewer
 npm install
-
-# 2. 运行 setup 脚本
 npm run setup
 
-# 3. 设置 Python 环境
-python -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install pandas numpy
+# 2. 设置 Python 环境（data-service 与指标/回测执行器共用）
+python3 -m venv python-venv
+./python-venv/bin/pip install -r data-service/requirements.txt
+./python-venv/bin/pip install -r data/python/requirements.txt
 
-# 4. 启动数据服务（需要先启动）
-docker compose up data-service -d
+# 3. 配置环境变量（DATABASE_URL 指向托管数据库）
+cp .env.local.example .env.local
 
-# 5. 启动开发服务器
+# 4. 启动数据服务
+cd data-service && ../python-venv/bin/python -m uvicorn app.main:app --port 8000 --reload
+
+# 5. 另开一个终端启动 web
 npm run dev
 # 访问 http://localhost:3000
 ```
+
+两个服务也已注册在 local runtime 的 `dev` stack 里，可以一次性拉起。
 
 See [SETUP.md](SETUP.md) for troubleshooting and detailed instructions.
 
@@ -224,32 +214,28 @@ Comprehensive documentation is organized by topic:
 - **Editor**: Monaco Editor (VS Code engine)
 - **Theming**: Dark/Light mode with system preference detection
 - **Backend**: Next.js API Routes, Node.js
-- **Data Service**: Python FastAPI + AKShare (独立 Docker 服务)
+- **Data Service**: Python FastAPI + AKShare (独立服务)
 - **Data Processing**: Python 3.8+, pandas, numpy, MyTT library
 - **Database**: PostgreSQL 16 (用户、团队、数据集管理)
-- **Deployment**: Docker Compose
+- **Deployment**: Vercel (web) + 容器化 data-service + 托管 PostgreSQL
 
-## Docker Architecture
+## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    stockviewer-network                       │
-│                                                             │
-│  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐│
-│  │     app      │────▶│ data-service │     │      db      ││
-│  │   (Next.js)  │     │   (FastAPI)  │     │ (PostgreSQL) ││
-│  │    :3000     │     │    :8000     │     │    :5432     ││
-│  └──────┬───────┘     └──────────────┘     └──────────────┘│
-│         │                                         ▲         │
-│         └─────────────────────────────────────────┘         │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│     web      │────▶│ data-service │     │  PostgreSQL  │
+│   (Next.js)  │     │   (FastAPI)  │     │   (托管)      │
+│    :3000     │     │    :8000     │     │              │
+└──────┬───────┘     └──────────────┘     └──────────────┘
+       │                                          ▲
+       └──────────────────────────────────────────┘
 ```
 
-| 服务 | 端口 | 用途 |
-|------|------|------|
-| **app** | 3000 | Next.js 主应用 |
-| **data-service** | 8000 | Python FastAPI 数据服务 (AKShare) |
-| **db** | 5432 | PostgreSQL 数据库 |
+| 服务 | 端口 | 用途 | 本地 | 线上 |
+|------|------|------|------|------|
+| **web** | 3000 | Next.js 主应用 | `npm run dev` | Vercel |
+| **data-service** | 8000 | Python FastAPI 数据服务 (AKShare) | uvicorn 原生 | 容器镜像 |
+| **db** | 5432 | PostgreSQL 数据库 | 托管 | 托管 |
 
 ## Project Structure
 
@@ -393,7 +379,7 @@ Error: Failed to fetch stock data
 ```
 **Solution**: 确保 data-service 正在运行
 ```bash
-docker compose up data-service -d
+cd data-service && ../python-venv/bin/python -m uvicorn app.main:app --port 8000
 curl http://localhost:8000/api/v1/health
 ```
 
@@ -416,10 +402,7 @@ PYTHON_TIMEOUT_MS=600000  # 10 minutes
 ```
 Error: Can't reach database server
 ```
-**Solution**: 确保 PostgreSQL 正在运行
-```bash
-docker compose up db -d
-```
+**Solution**: 检查 `.env.local` 里的 `DATABASE_URL` 是否指向可达的托管数据库
 
 ### Backtest Equity Curve Drops Suddenly
 **Cause**: Missing stock data for certain dates (trading suspensions, delisting, data gaps)

@@ -78,8 +78,6 @@ aktools_log.log*
 
 # docker
 .docker/
-docker-compose.yml
-docker-compose.override.yml
 *.tar
 *.tar.gz
 
