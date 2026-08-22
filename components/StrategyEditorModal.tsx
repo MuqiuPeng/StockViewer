@@ -1,8 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import Editor from '@monaco-editor/react';
 import { useTheme } from './ThemeProvider';
+import ImportPanel from './editor/ImportPanel';
+import { BASE_COLUMNS } from './editor/placeholder-utils';
+import type { ImportableItem, ImportableDatasetColumn } from './editor/types';
+import { useDataSourceFetcher } from '@/hooks/useDataSourceFetcher';
 
 interface Strategy {
   id: string;
@@ -10,8 +14,6 @@ interface Strategy {
   description: string;
   pythonCode: string;
   strategyType: 'signal' | 'portfolio';
-  category?: string;
-  tags?: string[];
   constraints?: {
     maxPositions?: number;
     positionSizing: 'equal' | 'custom';
@@ -228,8 +230,6 @@ export default function StrategyEditorModal({
   const [description, setDescription] = useState('');
   const [pythonCode, setPythonCode] = useState('');
   const [strategyType, setStrategyType] = useState<'signal' | 'portfolio'>('signal');
-  const [category, setCategory] = useState('');
-  const [tagsInput, setTagsInput] = useState('');
   const [constraints, setConstraints] = useState({
     maxPositions: 5,
     positionSizing: 'equal' as 'equal' | 'custom',
@@ -238,7 +238,7 @@ export default function StrategyEditorModal({
   const [externalDatasets, setExternalDatasets] = useState<Record<string, { groupId: string; datasetName: string }>>({});
   const [editingDataset, setEditingDataset] = useState<string | null>(null);
   const [tempDatasetConfig, setTempDatasetConfig] = useState<{ paramName: string; groupId: string; datasetName: string } | null>(null);
-  // dependencies are auto-detected by the backend from Python code
+  const [dependencies, setDependencies] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<any>(null);
@@ -249,12 +249,22 @@ export default function StrategyEditorModal({
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
 
+  // Shared data fetcher
+  const {
+    indicators: fetchedIndicators,
+    importableItems,
+    datasetColumns,
+    groups,
+    isLoading: loadingData,
+  } = useDataSourceFetcher(isOpen);
+
+  const decorationIdsRef = useRef<string[]>([]);
+
   // Local indicators for dependencies
   const [indicators, setIndicators] = useState<Indicator[]>([]);
 
   // Build a lookup from stock DB id to stock info
   const [datasets, setDatasets] = useState<Array<{ id: string; name: string; code: string; filename: string }>>([]);
-  const [groups, setGroups] = useState<Array<{ id: string; name: string; stockIds: string[] }>>([]);
   const stockLookup = new Map(datasets.map(ds => [ds.id, ds]));
 
   const getGroupStocks = (group: any) => {
@@ -278,11 +288,6 @@ export default function StrategyEditorModal({
         .then((res) => res.json())
         .then((data) => setIndicators(data.indicators || []))
         .catch(console.error);
-
-      fetch('/api/groups')
-        .then((res) => res.json())
-        .then((data) => { if (data.groups) setGroups(data.groups); })
-        .catch(console.error);
     }
   }, [isOpen]);
 
@@ -292,25 +297,21 @@ export default function StrategyEditorModal({
       setDescription(strategy.description);
       setPythonCode(strategy.pythonCode);
       setStrategyType(strategy.strategyType || 'signal');
-      setCategory(strategy.category || '');
-      setTagsInput((strategy.tags || []).join(', '));
       setConstraints({
         maxPositions: strategy.constraints?.maxPositions ?? 5,
         positionSizing: strategy.constraints?.positionSizing ?? 'equal',
         reserveCash: strategy.constraints?.reserveCash ?? 10,
       });
       setExternalDatasets(strategy.externalDatasets || {});
-      // dependencies auto-detected
+      setDependencies(strategy.dependencies || []);
     } else {
       setName('');
       setDescription('');
       setStrategyType('signal');
-      setCategory('');
-      setTagsInput('');
       setPythonCode(CODE_TEMPLATE);
       setConstraints({ maxPositions: 5, positionSizing: 'equal', reserveCash: 10 });
       setExternalDatasets({});
-      // dependencies auto-detected
+      setDependencies([]);
     }
     setError(null);
     setValidationSuccess(null);
@@ -379,8 +380,6 @@ export default function StrategyEditorModal({
         )
       );
 
-      const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
-
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -389,11 +388,9 @@ export default function StrategyEditorModal({
           description,
           pythonCode,
           strategyType,
-          category: category || undefined,
-          tags: tags.length > 0 ? tags : undefined,
           constraints: strategyType === 'portfolio' ? constraints : undefined,
           externalDatasets: Object.keys(validExternalDatasets).length > 0 ? validExternalDatasets : undefined,
-          // dependencies are auto-detected by backend
+          dependencies: dependencies.length > 0 ? dependencies : undefined,
         }),
       });
 
@@ -411,6 +408,78 @@ export default function StrategyEditorModal({
       setIsLoading(false);
     }
   };
+
+  // Insert handlers for ImportPanel (strategy uses raw Python data['...'] format)
+  const handleInsertColumn = useCallback((col: string) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const selection = editor.getSelection();
+    if (!selection) return;
+    editor.executeEdits('import-panel', [{
+      range: selection,
+      text: `data['${col}']`,
+      forceMoveMarkers: true,
+    }]);
+    editor.focus();
+  }, []);
+
+  const handleInsertIndicator = useCallback((item: ImportableItem) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const selection = editor.getSelection();
+    if (!selection) return;
+    const text = item.isGroupColumn
+      ? `data['${item.indicatorName}:${item.columnName}']`
+      : `data['${item.indicatorName}']`;
+    editor.executeEdits('import-panel', [{
+      range: selection,
+      text,
+      forceMoveMarkers: true,
+    }]);
+    editor.focus();
+  }, []);
+
+  const handleInsertDatasetColumn = useCallback((dsCol: ImportableDatasetColumn) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    const selection = editor.getSelection();
+    if (!selection) return;
+    editor.executeEdits('import-panel', [{
+      range: selection,
+      text: `data['${dsCol.datasetSymbol}@${dsCol.column}']`,
+      forceMoveMarkers: true,
+    }]);
+    editor.focus();
+  }, []);
+
+  // Syntax highlighting for data['...'] patterns in strategy editor
+  useEffect(() => {
+    const editor = editorRef.current;
+    const monaco = monacoRef.current;
+    if (!editor || !monaco) return;
+    const model = editor.getModel();
+    if (!model) return;
+
+    const decorations: any[] = [];
+    const text = model.getValue();
+    const regex = /data\['([^']+)'\]/g;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const startPos = model.getPositionAt(match.index);
+      const endPos = model.getPositionAt(match.index + match[0].length);
+      const content = match[1];
+
+      let className = 'placeholder-highlight-base';
+      if (content.includes(':')) className = 'placeholder-highlight-indicator';
+      else if (content.includes('@')) className = 'placeholder-highlight-dataset';
+
+      decorations.push({
+        range: new monaco.Range(startPos.lineNumber, startPos.column, endPos.lineNumber, endPos.column),
+        options: { inlineClassName: className },
+      });
+    }
+    decorationIdsRef.current = editor.deltaDecorations(decorationIdsRef.current, decorations);
+  }, [pythonCode]);
 
   if (!isOpen) return null;
 
@@ -489,48 +558,14 @@ export default function StrategyEditorModal({
                 className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
                 disabled={isLoading || !!strategy || readOnly}
               >
-                <option value="signal">Signal</option>
-                <option value="portfolio">Portfolio</option>
+                <option value="signal">Single Stock</option>
+                <option value="portfolio">Portfolio (Multi-Stock)</option>
               </select>
               {!!strategy && (
                 <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
                   Cannot change after creation
                 </p>
               )}
-            </div>
-
-            {/* Category */}
-            <div>
-              <label className="block text-xs font-medium mb-1 dark:text-white">Category</label>
-              <input
-                type="text"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                list="strategy-categories"
-                className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
-                placeholder="e.g., Trend Following"
-                disabled={isLoading || readOnly}
-              />
-              <datalist id="strategy-categories">
-                <option value="Trend Following" />
-                <option value="Mean Reversion" />
-                <option value="Momentum" />
-                <option value="Breakout" />
-                <option value="Hedging" />
-              </datalist>
-            </div>
-
-            {/* Tags */}
-            <div>
-              <label className="block text-xs font-medium mb-1 dark:text-white">Tags</label>
-              <input
-                type="text"
-                value={tagsInput}
-                onChange={(e) => setTagsInput(e.target.value)}
-                className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
-                placeholder="Comma-separated tags"
-                disabled={isLoading || readOnly}
-              />
             </div>
 
             {/* Name */}
@@ -557,6 +592,45 @@ export default function StrategyEditorModal({
                 rows={2}
                 disabled={isLoading || readOnly}
               />
+            </div>
+
+            {/* Dependencies */}
+            <div>
+              <label className="block text-xs font-medium mb-1 dark:text-white">Dependencies</label>
+              <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
+                Required indicators for this strategy
+              </p>
+              {indicators.length === 0 ? (
+                <p className="text-xs text-gray-400 italic">No indicators</p>
+              ) : (
+                <div className="flex flex-wrap gap-1 p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 max-h-24 overflow-y-auto">
+                  {indicators.map((indicator) => (
+                    <label
+                      key={indicator.id}
+                      className={`flex items-center px-2 py-0.5 rounded cursor-pointer text-xs transition-colors ${
+                        dependencies.includes(indicator.name)
+                          ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200'
+                          : 'bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-500'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={dependencies.includes(indicator.name)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setDependencies([...dependencies, indicator.name]);
+                          } else {
+                            setDependencies(dependencies.filter((d) => d !== indicator.name));
+                          }
+                        }}
+                        className="sr-only"
+                        disabled={readOnly}
+                      />
+                      {indicator.name}
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* Template Button */}
@@ -616,6 +690,17 @@ export default function StrategyEditorModal({
               />
             </div>
           </div>
+
+          {/* Import Panel */}
+          <ImportPanel
+            baseColumns={BASE_COLUMNS}
+            indicators={importableItems}
+            datasetColumns={datasetColumns}
+            isLoading={loadingData}
+            onInsertColumn={handleInsertColumn}
+            onInsertIndicator={handleInsertIndicator}
+            onInsertDatasetColumn={handleInsertDatasetColumn}
+          />
 
           {/* Right Panel - External Datasets & Portfolio Constraints */}
           <div className="w-64 flex-shrink-0 overflow-y-auto space-y-3">

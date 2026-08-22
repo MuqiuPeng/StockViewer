@@ -9,6 +9,13 @@ services:
     environment:
       - LOG_LEVEL=info
       - CACHE_TTL=300
+      # ── EastMoney proxy (macOS Docker Desktop only) ────────────────────────
+      # EastMoney is reachable via IPv6 on the Mac host but IPv4 from inside
+      # Docker is refused.  Run an HTTP proxy on the host (clash, v2ray, etc.)
+      # then uncomment the line below, replacing 7890 with your proxy port.
+      #- HTTPS_PROXY=http://host.docker.internal:7890
+      #- HTTP_PROXY=http://host.docker.internal:7890
+      #- NO_PROXY=localhost,127.0.0.1,data-service,app
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]

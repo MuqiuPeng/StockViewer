@@ -64,4 +64,18 @@ body {
   animation: slide-in 0.3s ease-out;
 }
 
+/* Placeholder syntax highlighting in Monaco editor */
+.placeholder-highlight-base {
+  background: rgba(59, 130, 246, 0.15);
+  border-radius: 2px;
+}
+.placeholder-highlight-indicator {
+  background: rgba(139, 92, 246, 0.15);
+  border-radius: 2px;
+}
+.placeholder-highlight-dataset {
+  background: rgba(34, 197, 94, 0.15);
+  border-radius: 2px;
+}
+
 

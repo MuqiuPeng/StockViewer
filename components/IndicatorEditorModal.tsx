@@ -1,13 +1,18 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import { useTheme } from './ThemeProvider';
 import {
+  transformPlaceholdersToCode,
+  transformCodeToPlaceholders,
   wrapCodeBody,
   extractCodeBody,
 } from './editor/placeholder-utils';
-import type { Period } from './editor/types';
+import type { Period, ImportableItem, ImportableDatasetColumn } from './editor/types';
+import ImportPanel from './editor/ImportPanel';
+import { BASE_COLUMNS } from './editor/placeholder-utils';
+import { useDataSourceFetcher } from '@/hooks/useDataSourceFetcher';
 
 interface Indicator {
   id: string;
@@ -20,8 +25,6 @@ interface Indicator {
   expectedOutputs?: string[];
   externalDatasets?: Record<string, { groupId: string; datasetName: string }>;
   period?: Period;
-  category?: string;
-  tags?: string[];
 }
 
 interface IndicatorEditorModalProps {
@@ -32,12 +35,12 @@ interface IndicatorEditorModalProps {
   readOnly?: boolean;
 }
 
-// Templates - use direct data['column'] format
+// Templates - use placeholders for columns
 const CODE_TEMPLATE = `# Example: 20-day Simple Moving Average
-return data['close'].rolling(20).mean()`;
+return \${close}.rolling(20).mean()`;
 
 const MYTT_TEMPLATE = `# Example: MACD indicator group
-DIF, DEA, MACD_hist = MACD(data['close'].values, SHORT=12, LONG=26, M=9)
+DIF, DEA, MACD_hist = MACD(\${close}.values, SHORT=12, LONG=26, M=9)
 
 return {
     'DIF': DIF,
@@ -53,7 +56,7 @@ export default function IndicatorEditorModal({
   readOnly = false,
 }: IndicatorEditorModalProps) {
   const { theme } = useTheme();
-  const [indicatorType, setIndicatorType] = useState<'scalar' | 'vector'>('scalar');
+  const [indicatorType, setIndicatorType] = useState<'custom' | 'mytt_group'>('custom');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [outputColumn, setOutputColumn] = useState('');
@@ -62,8 +65,6 @@ export default function IndicatorEditorModal({
   const [pythonCode, setPythonCode] = useState('');
   const [externalDatasets, setExternalDatasets] = useState<Record<string, { groupId: string; datasetName: string }>>({});
   const [period, setPeriod] = useState<Period>('daily');
-  const [category, setCategory] = useState(indicator?.category || '');
-  const [tagsInput, setTagsInput] = useState((indicator?.tags || []).join(', '));
   const [activeTab, setActiveTab] = useState<'text' | 'upload'>('text');
   const [isLoading, setIsLoading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
@@ -73,6 +74,8 @@ export default function IndicatorEditorModal({
   const [syntaxWarnings, setSyntaxWarnings] = useState<string[]>([]);
   const [editorInstance, setEditorInstance] = useState<any>(null);
   const [monacoInstance, setMonacoInstance] = useState<any>(null);
+  const decorationIdsRef = useRef<string[]>([]);
+
   // Orphaned columns check state
   const [showOrphanedColumnsModal, setShowOrphanedColumnsModal] = useState(false);
   const [orphanedColumnsData, setOrphanedColumnsData] = useState<{
@@ -91,32 +94,35 @@ export default function IndicatorEditorModal({
   // Track if outputColumn was manually edited by user
   const [outputColumnManuallyEdited, setOutputColumnManuallyEdited] = useState(false);
 
+  // Track the raw Python code before transformation
+  const [rawPythonCode, setRawPythonCode] = useState<string | null>(null);
+
+  // Shared hooks
+  const { importableItems, datasetColumns, isLoading: loadingData } = useDataSourceFetcher(isOpen);
+
   // Initialize form when indicator changes
   useEffect(() => {
     if (indicator) {
-      setIndicatorType(indicator.isGroup ? 'vector' : 'scalar');
+      setIndicatorType(indicator.isGroup ? 'mytt_group' : 'custom');
       setName(indicator.name);
       setDescription(indicator.description);
       setOutputColumn(indicator.outputColumn);
       setGroupName(indicator.groupName || '');
       setExpectedOutputs(indicator.expectedOutputs || ['']);
-      setPythonCode(extractCodeBody(indicator.pythonCode));
+      setRawPythonCode(indicator.pythonCode);
       setExternalDatasets(indicator.externalDatasets || {});
       setPeriod(indicator.period || 'daily');
-      setCategory(indicator.category || '');
-      setTagsInput((indicator.tags || []).join(', '));
     } else {
-      setIndicatorType('scalar');
+      setIndicatorType('custom');
       setName('');
       setDescription('');
       setOutputColumn('');
       setGroupName('');
       setExpectedOutputs(['']);
       setPythonCode('');
+      setRawPythonCode(null);
       setExternalDatasets({});
       setPeriod('daily');
-      setCategory('');
-      setTagsInput('');
     }
     setError(null);
     setValidationMessage(null);
@@ -125,15 +131,25 @@ export default function IndicatorEditorModal({
     setOutputColumnManuallyEdited(!!indicator);
   }, [indicator, isOpen]);
 
+  // Transform raw Python code to visual placeholders
+  useEffect(() => {
+    if (rawPythonCode) {
+      const withPlaceholders = transformCodeToPlaceholders(rawPythonCode);
+      const bodyCode = extractCodeBody(withPlaceholders);
+      setPythonCode(bodyCode);
+      setRawPythonCode(null);
+    }
+  }, [rawPythonCode]);
+
   // Auto-fill output column / groupName from name
   useEffect(() => {
     if (name) {
       const normalized = name.replace(/\s+/g, '_');
-      if (indicatorType === 'vector') {
+      if (indicatorType === 'mytt_group') {
         if (!indicator || !outputColumnManuallyEdited) {
           setGroupName(normalized);
         }
-      } else if (indicatorType === 'scalar') {
+      } else if (indicatorType === 'custom') {
         if (!outputColumnManuallyEdited) {
           setOutputColumn(normalized);
         }
@@ -171,11 +187,12 @@ export default function IndicatorEditorModal({
         )
       );
 
-      const codeToValidate = wrapCodeBody(pythonCode);
+      const codeWithImports = transformPlaceholdersToCode(pythonCode);
+      const codeToValidate = wrapCodeBody(codeWithImports);
 
       const requestBody: any = {
         pythonCode: codeToValidate,
-        isGroup: indicatorType === 'vector'
+        isGroup: indicatorType === 'mytt_group'
       };
 
       if (Object.keys(validExternalDatasets).length > 0) {
@@ -214,14 +231,14 @@ export default function IndicatorEditorModal({
       return;
     }
 
-    if (indicatorType === 'vector') {
+    if (indicatorType === 'mytt_group') {
       if (!groupName) {
-        setError('Group name is required for vector indicators');
+        setError('Group name is required for MyTT indicators');
         return;
       }
       const filteredOutputs = expectedOutputs.filter(o => o.trim() !== '');
       if (filteredOutputs.length === 0) {
-        setError('At least one expected output is required for vector indicators');
+        setError('At least one expected output is required for MyTT indicators');
         return;
       }
     }
@@ -234,19 +251,17 @@ export default function IndicatorEditorModal({
         : '/api/indicators';
       const method = indicator ? 'PUT' : 'POST';
 
-      const codeToSave = wrapCodeBody(pythonCode);
+      const codeWithImports = transformPlaceholdersToCode(pythonCode);
+      const codeToSave = wrapCodeBody(codeWithImports);
 
-      const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
       const requestBody: any = {
         name,
         description,
         pythonCode: codeToSave,
         period,
-        category: category || null,
-        tags,
       };
 
-      if (indicatorType === 'vector') {
+      if (indicatorType === 'mytt_group') {
         requestBody.isGroup = true;
         requestBody.groupName = groupName;
         requestBody.expectedOutputs = expectedOutputs.filter(o => o.trim() !== '');
@@ -492,6 +507,73 @@ export default function IndicatorEditorModal({
     return { warnings, markers };
   };
 
+  // Insert handlers for ImportPanel
+  const handleInsertColumn = useCallback((col: string) => {
+    if (!editorInstance) return;
+    const selection = editorInstance.getSelection();
+    if (!selection) return;
+    editorInstance.executeEdits('import-panel', [{
+      range: selection,
+      text: '${' + col + '}',
+      forceMoveMarkers: true,
+    }]);
+    editorInstance.focus();
+  }, [editorInstance]);
+
+  const handleInsertIndicator = useCallback((item: ImportableItem) => {
+    if (!editorInstance) return;
+    const selection = editorInstance.getSelection();
+    if (!selection) return;
+    const text = item.isGroupColumn
+      ? '${IND:' + item.indicatorName + ':' + item.columnName + '}'
+      : '${IND:' + item.indicatorName + '}';
+    editorInstance.executeEdits('import-panel', [{
+      range: selection,
+      text,
+      forceMoveMarkers: true,
+    }]);
+    editorInstance.focus();
+  }, [editorInstance]);
+
+  const handleInsertDatasetColumn = useCallback((dsCol: ImportableDatasetColumn) => {
+    if (!editorInstance) return;
+    const selection = editorInstance.getSelection();
+    if (!selection) return;
+    editorInstance.executeEdits('import-panel', [{
+      range: selection,
+      text: '${DS:' + dsCol.datasetSymbol + '@' + dsCol.column + '}',
+      forceMoveMarkers: true,
+    }]);
+    editorInstance.focus();
+  }, [editorInstance]);
+
+  // Syntax highlighting for ${...} markers
+  useEffect(() => {
+    if (!editorInstance || !monacoInstance) return;
+    const model = editorInstance.getModel();
+    if (!model) return;
+
+    const decorations: any[] = [];
+    const text = model.getValue();
+    const regex = /\$\{([^}]+)\}/g;
+    let match;
+    while ((match = regex.exec(text)) !== null) {
+      const startPos = model.getPositionAt(match.index);
+      const endPos = model.getPositionAt(match.index + match[0].length);
+      const content = match[1];
+
+      let className = 'placeholder-highlight-base';
+      if (content.startsWith('IND:')) className = 'placeholder-highlight-indicator';
+      else if (content.startsWith('DS:')) className = 'placeholder-highlight-dataset';
+
+      decorations.push({
+        range: new monacoInstance.Range(startPos.lineNumber, startPos.column, endPos.lineNumber, endPos.column),
+        options: { inlineClassName: className },
+      });
+    }
+    decorationIdsRef.current = editorInstance.deltaDecorations(decorationIdsRef.current, decorations);
+  }, [pythonCode, editorInstance, monacoInstance]);
+
   // Check syntax when code changes
   useEffect(() => {
     if (pythonCode && editorInstance && monacoInstance) {
@@ -575,16 +657,13 @@ export default function IndicatorEditorModal({
               <label className="block text-xs font-medium mb-1 dark:text-white">Type</label>
               <select
                 value={indicatorType}
-                onChange={(e) => setIndicatorType(e.target.value as 'scalar' | 'vector')}
+                onChange={(e) => setIndicatorType(e.target.value as 'custom' | 'mytt_group')}
                 className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
                 disabled={isLoading || !!indicator}
               >
-                <option value="scalar">Scalar</option>
-                <option value="vector">Vector</option>
+                <option value="custom">Custom (Single)</option>
+                <option value="mytt_group">MyTT Group</option>
               </select>
-              <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
-                {indicatorType === 'scalar' ? 'Single output value' : 'Multiple output values'}
-              </p>
             </div>
 
             {/* Name */}
@@ -629,42 +708,8 @@ export default function IndicatorEditorModal({
               </select>
             </div>
 
-            {/* Category */}
-            <div>
-              <label className="block text-xs font-medium mb-1 dark:text-white">Category</label>
-              <input
-                type="text"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                list="indicator-categories"
-                className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
-                placeholder="e.g., Trend, Oscillator"
-                disabled={isLoading || readOnly}
-              />
-              <datalist id="indicator-categories">
-                <option value="Trend" />
-                <option value="Oscillator" />
-                <option value="Volume" />
-                <option value="Momentum" />
-                <option value="Volatility" />
-              </datalist>
-            </div>
-
-            {/* Tags */}
-            <div>
-              <label className="block text-xs font-medium mb-1 dark:text-white">Tags</label>
-              <input
-                type="text"
-                value={tagsInput}
-                onChange={(e) => setTagsInput(e.target.value)}
-                className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
-                placeholder="Comma-separated tags"
-                disabled={isLoading || readOnly}
-              />
-            </div>
-
             {/* Output Settings */}
-            {indicatorType === 'scalar' ? (
+            {indicatorType === 'custom' ? (
               <div>
                 <label className="block text-xs font-medium mb-1 dark:text-white">Output Column</label>
                 <input
@@ -734,7 +779,7 @@ export default function IndicatorEditorModal({
 
             {/* Template Button */}
             <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-              {indicatorType === 'scalar' ? (
+              {indicatorType === 'custom' ? (
                 <button
                   type="button"
                   onClick={handleInsertTemplate}
@@ -755,7 +800,7 @@ export default function IndicatorEditorModal({
 
             {/* Hint */}
             <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-2">
-              Use <span className="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded">{"data['close']"}</span> format for data references
+              Use <span className="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded">{'${close}'}</span> format for data references
             </div>
           </div>
 
@@ -799,6 +844,17 @@ export default function IndicatorEditorModal({
             </div>
           </div>
 
+          {/* Right Panel - Import */}
+          <ImportPanel
+            baseColumns={BASE_COLUMNS}
+            indicators={importableItems}
+            datasetColumns={datasetColumns}
+            isLoading={loadingData}
+            onInsertColumn={handleInsertColumn}
+            onInsertIndicator={handleInsertIndicator}
+            onInsertDatasetColumn={handleInsertDatasetColumn}
+            currentIndicatorId={indicator?.id}
+          />
         </div>
       </div>
 
