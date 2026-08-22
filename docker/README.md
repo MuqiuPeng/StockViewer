@@ -26,8 +26,6 @@ Edit `.env.docker` and fill in:
 # Start PostgreSQL + App
 docker compose --env-file .env.docker up -d --build
 
-# With Cloudflare Tunnel (for external access)
-docker compose --env-file .env.docker --profile tunnel up -d --build
 ```
 
 ### 3. Access
@@ -50,10 +48,10 @@ docker compose --env-file .env.docker --profile tunnel up -d --build
 │  │           │               (internal only)             │   │
 │  └───────────┼──────────────────────────────────────────┘   │
 │              │                                               │
-│  ┌───────────▼──────────┐     ┌─────────────────────────┐   │
-│  │    PostgreSQL        │     │  Cloudflare Tunnel      │   │
-│  │    Port: 5432        │     │  (optional)             │   │
-│  └──────────────────────┘     └─────────────────────────┘   │
+│  ┌───────────▼──────────┐                                    │
+│  │    PostgreSQL        │                                    │
+│  │    Port: 5432        │                                    │
+│  └──────────────────────┘                                    │
 │                                                              │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │                   Docker Volumes                      │   │
@@ -73,7 +71,6 @@ All commands from project root:
 docker compose logs -f          # All services
 docker compose logs -f app      # App only
 docker compose logs -f db       # Database only
-docker compose logs -f tunnel   # Tunnel only (if enabled)
 ```
 
 ### Stop Services
@@ -117,7 +114,6 @@ docker compose exec app prisma migrate deploy --schema=/app/prisma/schema.prisma
 | `AUTH_GITHUB_SECRET` | No | GitHub OAuth client secret |
 | `AUTH_GOOGLE_ID` | No | Google OAuth client ID |
 | `AUTH_GOOGLE_SECRET` | No | Google OAuth client secret |
-| `CLOUDFLARE_TUNNEL_TOKEN` | No | Token for Cloudflare Tunnel |
 | `POSTGRES_USER` | No | Database user (default: stockviewer) |
 | `POSTGRES_PASSWORD` | No | Database password (default: stockviewer123) |
 | `POSTGRES_DB` | No | Database name (default: stockviewer) |
@@ -137,14 +133,6 @@ docker compose exec app prisma migrate deploy --schema=/app/prisma/schema.prisma
 2. Create "OAuth 2.0 Client ID" (Web application)
 3. Add authorized redirect: `{AUTH_URL}/api/auth/callback/google`
 4. Copy Client ID and Secret to `.env.docker`
-
-### Cloudflare Tunnel
-
-1. Login to [Cloudflare Zero Trust](https://one.dash.cloudflare.com/)
-2. Create a Tunnel → Get the token
-3. Configure ingress to point to `http://app:3000`
-4. Set `CLOUDFLARE_TUNNEL_TOKEN` in `.env.docker`
-5. Start with `--profile tunnel`
 
 ## Data Persistence
 

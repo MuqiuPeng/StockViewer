@@ -227,7 +227,7 @@ Comprehensive documentation is organized by topic:
 - **Data Service**: Python FastAPI + AKShare (独立 Docker 服务)
 - **Data Processing**: Python 3.8+, pandas, numpy, MyTT library
 - **Database**: PostgreSQL 16 (用户、团队、数据集管理)
-- **Deployment**: Docker Compose (支持 Cloudflare Tunnel)
+- **Deployment**: Docker Compose
 
 ## Docker Architecture
 
@@ -242,11 +242,6 @@ Comprehensive documentation is organized by topic:
 │  └──────┬───────┘     └──────────────┘     └──────────────┘│
 │         │                                         ▲         │
 │         └─────────────────────────────────────────┘         │
-│                                                             │
-│  ┌──────────────┐                                          │
-│  │    tunnel    │  (可选: --profile tunnel)                 │
-│  │ (Cloudflare) │                                          │
-│  └──────────────┘                                          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -255,7 +250,6 @@ Comprehensive documentation is organized by topic:
 | **app** | 3000 | Next.js 主应用 |
 | **data-service** | 8000 | Python FastAPI 数据服务 (AKShare) |
 | **db** | 5432 | PostgreSQL 数据库 |
-| **tunnel** | - | Cloudflare Tunnel (可选) |
 
 ## Project Structure
 

@@ -59,18 +59,6 @@ services:
   #   networks:
   #     - stockviewer
 
-  tunnel:
-    image: cloudflare/cloudflared:latest
-    container_name: stockviewer-tunnel
-    command: tunnel run
-    environment:
-      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
-    restart: unless-stopped
-    networks:
-      - stockviewer
-    profiles:
-      - tunnel
-
 networks:
   stockviewer:
     driver: bridge
