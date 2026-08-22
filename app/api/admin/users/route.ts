@@ -23,7 +23,6 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status') as UserStatus | null;
 
     const where = status ? { status } : {};
-    const superAdminGithubId = process.env.ADMIN_GITHUB_ID;
 
     const [users, stats] = await Promise.all([
       prisma.user.findMany({
@@ -35,6 +34,7 @@ export async function GET(request: NextRequest) {
           image: true,
           status: true,
           isAdmin: true,
+          isSuperAdmin: true,
           createdAt: true,
           statusReviewedAt: true,
           statusReviewNote: true,
@@ -43,12 +43,6 @@ export async function GET(request: NextRequest) {
               id: true,
               name: true,
               image: true,
-            },
-          },
-          accounts: {
-            select: {
-              provider: true,
-              providerAccountId: true,
             },
           },
         },
@@ -60,15 +54,8 @@ export async function GET(request: NextRequest) {
       }),
     ]);
 
-    // Mark super admin users
-    const usersWithSuperAdmin = users.map((user) => ({
-      ...user,
-      isSuperAdmin: superAdminGithubId
-        ? user.accounts.some(
-            (acc) => acc.provider === 'github' && acc.providerAccountId === superAdminGithubId
-          )
-        : false,
-    }));
+    // isSuperAdmin is now a column, so the rows are already in their final shape.
+    const usersWithSuperAdmin = users;
 
     const statusCounts = {
       PENDING: 0,

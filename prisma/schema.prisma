@@ -49,6 +49,12 @@ model User {
   image         String?
   status        UserStatus @default(PENDING)
   isAdmin       Boolean    @default(false)
+  // Super admins cannot have their admin rights revoked. Replaces the old
+  // ADMIN_GITHUB_ID env-var mechanism, which disappeared with GitHub OAuth.
+  isSuperAdmin  Boolean    @default(false)
+  // bcrypt hash for local account sign-in. Nullable so that rows predating
+  // local accounts stay valid; such a user simply cannot sign in until set.
+  passwordHash  String?
   accounts      Account[]
   sessions      Session[]
 

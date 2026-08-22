@@ -1,93 +1,54 @@
 /**
  * Admin authentication helper
+ *
+ * Admin rights live in the User table. The previous super-admin-by-GitHub-ID
+ * mechanism went away together with GitHub OAuth; a super admin is now simply
+ * a row with isSuperAdmin set, which the seed script grants to the first
+ * account (see scripts/create-admin.ts).
  */
 
 import { prisma } from '@/lib/prisma';
 
 /**
- * Check if a user is an admin
- * Admin can be:
- * 1. User with isAdmin=true in database
- * 2. User whose GitHub ID matches ADMIN_GITHUB_ID env var (super admin)
+ * Check if a user is an admin.
+ * Super admins are admins implicitly, whatever isAdmin says.
  */
 export async function isAdmin(userId: string): Promise<boolean> {
-  const adminGithubId = process.env.ADMIN_GITHUB_ID;
-
-  // Find user with accounts
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: {
-      isAdmin: true,
-      accounts: {
-        where: { provider: 'github' },
-        select: { providerAccountId: true },
-      },
-    },
+    select: { isAdmin: true, isSuperAdmin: true },
   });
 
   if (!user) {
     return false;
   }
 
-  // Check if user has isAdmin flag
-  if (user.isAdmin) {
-    return true;
-  }
-
-  // Check if user's GitHub ID matches super admin
-  if (adminGithubId && user.accounts.length > 0) {
-    return user.accounts.some(
-      (account) => account.providerAccountId === adminGithubId
-    );
-  }
-
-  return false;
+  return user.isAdmin || user.isSuperAdmin;
 }
 
 /**
- * Check if a user is the super admin (ADMIN_GITHUB_ID)
- * Super admin cannot have their admin status revoked
+ * Check if a user is a super admin.
+ * Super admins cannot have their admin status revoked.
  */
 export async function isSuperAdmin(userId: string): Promise<boolean> {
-  const adminGithubId = process.env.ADMIN_GITHUB_ID;
-  if (!adminGithubId) return false;
-
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: {
-      accounts: {
-        where: { provider: 'github' },
-        select: { providerAccountId: true },
-      },
-    },
+    select: { isSuperAdmin: true },
   });
 
-  if (!user || !user.accounts.length) return false;
-
-  return user.accounts.some(
-    (account) => account.providerAccountId === adminGithubId
-  );
+  return user?.isSuperAdmin ?? false;
 }
 
 /**
- * Get admin user ID from environment config
- * Returns null if admin is not configured or user not found
+ * Get the super admin's user ID.
+ * Returns null when no super admin has been created yet.
  */
 export async function getAdminUserId(): Promise<string | null> {
-  const adminGithubId = process.env.ADMIN_GITHUB_ID;
-
-  if (!adminGithubId) {
-    return null;
-  }
-
-  // Find user with this GitHub account
-  const account = await prisma.account.findFirst({
-    where: {
-      provider: 'github',
-      providerAccountId: adminGithubId,
-    },
-    select: { userId: true },
+  const user = await prisma.user.findFirst({
+    where: { isSuperAdmin: true },
+    orderBy: { createdAt: 'asc' },
+    select: { id: true },
   });
 
-  return account?.userId ?? null;
+  return user?.id ?? null;
 }

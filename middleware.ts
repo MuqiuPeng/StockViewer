@@ -58,11 +58,9 @@ export default auth((req) => {
 
   // Check user status - only allow APPROVED users (or admin)
   const userStatus = req.auth.user?.status;
-  const userGithubId = (req.auth.user as { githubId?: string })?.githubId;
-  const adminGithubId = process.env.ADMIN_GITHUB_ID;
 
   // Admin users bypass approval check
-  const isAdmin = adminGithubId && userGithubId === adminGithubId;
+  const isAdmin = req.auth.user?.isAdmin === true;
 
   // Allow pending approval page for non-approved users
   if (pathname === '/auth/pending') {
