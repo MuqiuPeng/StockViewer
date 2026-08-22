@@ -36,15 +36,16 @@ interface ChartPanelProps {
   onSelectedCandleIndexChange?: (index: number) => void;
   onVisibleRangeChange?: (width: number) => void;
   preservedVisibleRangeWidth?: number | null;
-  keyboardZoomTrigger?: number; // Increment to zoom in, decrement to zoom out
-  preservedDateRange?: { from: string; to: string } | null; // Date range to restore
-  onDateRangeChange?: (range: { from: string; to: string }) => void; // Report visible date range
-  isArrowKeyNav?: boolean; // True when navigation is from arrow keys
-  onArrowKeyNavHandled?: () => void; // Callback to reset arrow key nav flag
+  keyboardZoomTrigger?: number;
+  preservedDateRange?: { from: string; to: string } | null;
+  onDateRangeChange?: (range: { from: string; to: string }) => void;
+  isArrowKeyNav?: boolean;
+  onArrowKeyNavHandled?: () => void;
   constantLines1?: ConstantLine[];
   constantLines2?: ConstantLine[];
   onConstantLines1Change?: (lines: ConstantLine[]) => void;
   onConstantLines2Change?: (lines: ConstantLine[]) => void;
+  simulatedTime?: string | null; // Time string of the simulated candle (for ghost styling)
 }
 
 // Predefined color palette for indicators
@@ -98,6 +99,7 @@ export default function ChartPanel({
   constantLines2: propConstantLines2,
   onConstantLines1Change,
   onConstantLines2Change,
+  simulatedTime,
 }: ChartPanelProps) {
   const { theme } = useTheme();
   const candlestickContainerRef = useRef<HTMLDivElement>(null);
@@ -107,8 +109,11 @@ export default function ChartPanel({
   const indicator1ChartRef = useRef<IChartApi | null>(null);
   const indicator2ChartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
+  const ghostCandleSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
   const indicator1SeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
   const indicator2SeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
+  const ghostIndicator1SeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
+  const ghostIndicator2SeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(new Map());
   const syncUnsubscribe1Ref = useRef<(() => void) | null>(null);
   const syncUnsubscribe2Ref = useRef<(() => void) | null>(null);
   const priceLinesRef1 = useRef<any[]>([]);
@@ -215,8 +220,7 @@ export default function ChartPanel({
         background: { type: ColorType.Solid, color: 'white' },
         textColor: 'black',
       },
-      width: candlestickContainerRef.current.clientWidth,
-      height: candlestickContainerRef.current.clientHeight || 350,
+      autoSize: true,
       grid: {
         vertLines: { color: '#e0e0e0' },
         horzLines: { color: '#e0e0e0' },
@@ -254,8 +258,7 @@ export default function ChartPanel({
         background: { type: ColorType.Solid, color: 'white' },
         textColor: 'black',
       },
-      width: indicator1ContainerRef.current.clientWidth,
-      height: indicator1ContainerRef.current.clientHeight || 250,
+      autoSize: true,
       grid: {
         vertLines: { visible: false },
         horzLines: { visible: false },
@@ -295,8 +298,7 @@ export default function ChartPanel({
         background: { type: ColorType.Solid, color: 'white' },
         textColor: 'black',
       },
-      width: indicator2ContainerRef.current.clientWidth,
-      height: indicator2ContainerRef.current.clientHeight || 250,
+      autoSize: true,
       grid: {
         vertLines: { visible: false },
         horzLines: { visible: false },
@@ -495,24 +497,38 @@ export default function ChartPanel({
       try {
         if (param.time && param.point) {
           const candleSeries = candlestickSeriesRef.current;
+          const ghostCandleSeries = ghostCandleSeriesRef.current;
           if (candleSeries) {
-            // Get the price at this time point
-            const candleData = param.seriesData.get(candleSeries);
+            // Get the price at this time point (check real series first, then ghost)
+            let candleData = param.seriesData.get(candleSeries);
+            if ((!candleData || !('close' in candleData)) && ghostCandleSeries) {
+              candleData = param.seriesData.get(ghostCandleSeries);
+            }
             if (candleData && 'close' in candleData) {
-              // Sync to indicator charts - use any series from those charts
+              // Sync to indicator charts
+              const isSimTime = simulatedTime && param.time === simulatedTime;
               const indicator1Series = Array.from(indicator1SeriesRef.current.values())[0];
+              const ghostInd1Series = Array.from(ghostIndicator1SeriesRef.current.values())[0];
               const indicator2Series = Array.from(indicator2SeriesRef.current.values())[0];
+              const ghostInd2Series = Array.from(ghostIndicator2SeriesRef.current.values())[0];
 
-              if (indicator1Series) {
-                const indicator1Data = param.seriesData.get(indicator1Series);
-                const price1 = indicator1Data && 'value' in indicator1Data && indicator1Data.value !== null ? indicator1Data.value : 0;
-                indicator1Chart.setCrosshairPosition(price1, param.time, indicator1Series);
+              // For simulated time, prefer ghost series; for real time, prefer real series
+              const series1 = isSimTime ? (ghostInd1Series || indicator1Series) : (indicator1Series || ghostInd1Series);
+              if (series1) {
+                const price1: number = (() => {
+                  const d: any = param.seriesData.get(series1);
+                  return d && 'value' in d && typeof d.value === 'number' ? d.value : 0;
+                })();
+                indicator1Chart.setCrosshairPosition(price1, param.time, series1);
               }
 
-              if (indicator2Series) {
-                const indicator2Data = param.seriesData.get(indicator2Series);
-                const price2 = indicator2Data && 'value' in indicator2Data && indicator2Data.value !== null ? indicator2Data.value : 0;
-                indicator2Chart.setCrosshairPosition(price2, param.time, indicator2Series);
+              const series2 = isSimTime ? (ghostInd2Series || indicator2Series) : (indicator2Series || ghostInd2Series);
+              if (series2) {
+                const price2: number = (() => {
+                  const d: any = param.seriesData.get(series2);
+                  return d && 'value' in d && typeof d.value === 'number' ? d.value : 0;
+                })();
+                indicator2Chart.setCrosshairPosition(price2, param.time, series2);
               }
             }
           }
@@ -548,19 +564,24 @@ export default function ChartPanel({
       // Sync crosshair to other charts
       try {
         if (param.time && param.point) {
+          const isSimTime = simulatedTime && param.time === simulatedTime;
           const candleSeries = candlestickSeriesRef.current;
-          const indicator2Series = Array.from(indicator2SeriesRef.current.values())[0];
+          const ghostCandleSeries = ghostCandleSeriesRef.current;
 
-          if (candleSeries) {
-            const candleData = param.seriesData.get(candleSeries);
-            const price = candleData && 'close' in candleData ? candleData.close : 0;
-            candlestickChart.setCrosshairPosition(price, param.time, candleSeries);
+          const targetCandle = isSimTime ? (ghostCandleSeries || candleSeries) : candleSeries;
+          if (targetCandle) {
+            const cd: any = param.seriesData.get(targetCandle) || (ghostCandleSeries ? param.seriesData.get(ghostCandleSeries) : null);
+            const price = cd && 'close' in cd ? cd.close : 0;
+            candlestickChart.setCrosshairPosition(price, param.time, targetCandle);
           }
 
-          if (indicator2Series) {
-            const indicator2Data = param.seriesData.get(indicator2Series);
-            const price2 = indicator2Data && 'value' in indicator2Data && indicator2Data.value !== null ? indicator2Data.value : 0;
-            indicator2Chart.setCrosshairPosition(price2, param.time, indicator2Series);
+          const ind2Series = Array.from(indicator2SeriesRef.current.values())[0];
+          const ghostInd2 = Array.from(ghostIndicator2SeriesRef.current.values())[0];
+          const target2 = isSimTime ? (ghostInd2 || ind2Series) : (ind2Series || ghostInd2);
+          if (target2) {
+            const d: any = param.seriesData.get(target2);
+            const price2 = d && 'value' in d && typeof d.value === 'number' ? d.value : 0;
+            indicator2Chart.setCrosshairPosition(price2, param.time, target2);
           }
         } else {
           candlestickChart.clearCrosshairPosition();
@@ -593,19 +614,24 @@ export default function ChartPanel({
       // Sync crosshair to other charts
       try {
         if (param.time && param.point) {
+          const isSimTime = simulatedTime && param.time === simulatedTime;
           const candleSeries = candlestickSeriesRef.current;
-          const indicator1Series = Array.from(indicator1SeriesRef.current.values())[0];
+          const ghostCandleSeries = ghostCandleSeriesRef.current;
 
-          if (candleSeries) {
-            const candleData = param.seriesData.get(candleSeries);
-            const price = candleData && 'close' in candleData ? candleData.close : 0;
-            candlestickChart.setCrosshairPosition(price, param.time, candleSeries);
+          const targetCandle = isSimTime ? (ghostCandleSeries || candleSeries) : candleSeries;
+          if (targetCandle) {
+            const cd: any = param.seriesData.get(targetCandle) || (ghostCandleSeries ? param.seriesData.get(ghostCandleSeries) : null);
+            const price = cd && 'close' in cd ? cd.close : 0;
+            candlestickChart.setCrosshairPosition(price, param.time, targetCandle);
           }
 
-          if (indicator1Series) {
-            const indicator1Data = param.seriesData.get(indicator1Series);
-            const price1 = indicator1Data && 'value' in indicator1Data && indicator1Data.value !== null ? indicator1Data.value : 0;
-            indicator1Chart.setCrosshairPosition(price1, param.time, indicator1Series);
+          const ind1Series = Array.from(indicator1SeriesRef.current.values())[0];
+          const ghostInd1 = Array.from(ghostIndicator1SeriesRef.current.values())[0];
+          const target1 = isSimTime ? (ghostInd1 || ind1Series) : (ind1Series || ghostInd1);
+          if (target1) {
+            const d: any = param.seriesData.get(target1);
+            const price1 = d && 'value' in d && typeof d.value === 'number' ? d.value : 0;
+            indicator1Chart.setCrosshairPosition(price1, param.time, target1);
           }
         } else {
           candlestickChart.clearCrosshairPosition();
@@ -789,8 +815,39 @@ export default function ChartPanel({
     if (!candlestickChart || !indicator1Chart || !indicator2Chart) return;
 
     if (candlestickSeriesRef.current && candles.length > 0) {
-      // Step 1: Set data for main chart
-      candlestickSeriesRef.current.setData(candles as any);
+      // Step 1: Set data for main chart — split real vs simulated
+      const realCandles = simulatedTime ? candles.filter(c => c.time !== simulatedTime) : candles;
+      const simCandle = simulatedTime ? candles.find(c => c.time === simulatedTime) : null;
+
+      candlestickSeriesRef.current.setData(realCandles as any);
+
+      // Ghost candle for simulated data
+      const chart = candlestickChartRef.current!;
+      if (simCandle) {
+        if (!ghostCandleSeriesRef.current) {
+          ghostCandleSeriesRef.current = chart.addCandlestickSeries({
+            upColor: 'rgba(38, 166, 154, 0.35)',
+            downColor: 'rgba(239, 83, 80, 0.35)',
+            borderVisible: true,
+            borderUpColor: 'rgba(38, 166, 154, 0.5)',
+            borderDownColor: 'rgba(239, 83, 80, 0.5)',
+            wickUpColor: 'rgba(38, 166, 154, 0.4)',
+            wickDownColor: 'rgba(239, 83, 80, 0.4)',
+            lastValueVisible: false,
+            priceLineVisible: false,
+          });
+        }
+        // Include last real candle for visual continuity, then the sim candle
+        const lastReal = realCandles[realCandles.length - 1];
+        const ghostData = lastReal ? [
+          { ...lastReal, open: lastReal.close, high: lastReal.close, low: lastReal.close, close: lastReal.close },
+          simCandle,
+        ] : [simCandle];
+        ghostCandleSeriesRef.current.setData(ghostData as any);
+      } else if (ghostCandleSeriesRef.current) {
+        chart.removeSeries(ghostCandleSeriesRef.current);
+        ghostCandleSeriesRef.current = null;
+      }
 
       // Step 2: Restore visible range based on preserved date range, or fit content
       let rangeRestored = false;
@@ -941,28 +998,89 @@ export default function ChartPanel({
         });
         currentSeries.set(indicator, lineSeries);
 
-        const data = indicators[indicator].filter(d => d.value !== null).map(d => ({
-          time: d.time as any,
-          value: d.value as number,
-        }));
-        lineSeries.setData(data);
+        const allData = indicators[indicator].filter(d => d.value !== null);
+        const realData = simulatedTime ? allData.filter(d => d.time !== simulatedTime) : allData;
+        lineSeries.setData(realData.map(d => ({ time: d.time as any, value: d.value as number })));
+
+        // Add ghost dashed line for simulated point
+        if (simulatedTime) {
+          const simPoint = allData.find(d => d.time === simulatedTime);
+          const lastReal = realData[realData.length - 1];
+          if (simPoint && lastReal) {
+            let ghostSeries = ghostIndicator1SeriesRef.current.get(indicator);
+            if (!ghostSeries) {
+              ghostSeries = chart.addLineSeries({
+                color: (color || '#888') + '60',
+                lineWidth: 2,
+                lineStyle: 2, // LineStyle.Dashed
+                priceLineVisible: false,
+                lastValueVisible: false,
+              });
+              ghostIndicator1SeriesRef.current.set(indicator, ghostSeries);
+            }
+            ghostSeries.setData([
+              { time: lastReal.time as any, value: lastReal.value as number },
+              { time: simPoint.time as any, value: simPoint.value as number },
+            ]);
+            if (color) ghostSeries.applyOptions({ color: color + '60' });
+          }
+        }
       }
     }
 
     // Update data and colors for existing series to match the shared color map
     for (const [indicator, series] of currentSeries.entries()) {
       if (indicators[indicator]) {
-        const data = indicators[indicator].filter(d => d.value !== null).map(d => ({
-          time: d.time as any,
-          value: d.value as number,
-        }));
-        series.setData(data);
+        const allData = indicators[indicator].filter(d => d.value !== null);
+        const realData = simulatedTime ? allData.filter(d => d.time !== simulatedTime) : allData;
+        series.setData(realData.map(d => ({ time: d.time as any, value: d.value as number })));
         // Update color to match the shared color map
         const newColor = colorMap.get(indicator);
         if (newColor) {
           series.applyOptions({ color: newColor });
         }
+
+        // Update ghost dashed line for simulated point
+        if (simulatedTime) {
+          const simPoint = allData.find(d => d.time === simulatedTime);
+          const lastReal = realData[realData.length - 1];
+          if (simPoint && lastReal) {
+            const color = colorMap.get(indicator);
+            let ghostSeries = ghostIndicator1SeriesRef.current.get(indicator);
+            if (!ghostSeries) {
+              ghostSeries = chart.addLineSeries({
+                color: (color || '#888') + '60',
+                lineWidth: 2,
+                lineStyle: 2, // LineStyle.Dashed
+                priceLineVisible: false,
+                lastValueVisible: false,
+              });
+              ghostIndicator1SeriesRef.current.set(indicator, ghostSeries);
+            }
+            ghostSeries.setData([
+              { time: lastReal.time as any, value: lastReal.value as number },
+              { time: simPoint.time as any, value: simPoint.value as number },
+            ]);
+            if (color) ghostSeries.applyOptions({ color: color + '60' });
+          }
+        }
       }
+    }
+
+    // Clean up ghost series for removed indicators
+    for (const [ind, gs] of ghostIndicator1SeriesRef.current.entries()) {
+      if (!enabledIndicators1.has(ind)) {
+        try { chart.removeSeries(gs); } catch {}
+        ghostIndicator1SeriesRef.current.delete(ind);
+      }
+    }
+
+    // When simulatedTime is null, clean up all ghost series
+    if (!simulatedTime) {
+      for (const [ind, gs] of ghostIndicator1SeriesRef.current.entries()) {
+        try { chart.removeSeries(gs); } catch {}
+      }
+      ghostIndicator1SeriesRef.current.clear();
     }
 
     // Align with main chart
@@ -979,7 +1097,7 @@ export default function ChartPanel({
         }
       });
     }
-  }, [enabledIndicators1, indicators, candles.length, colorMap]);
+  }, [enabledIndicators1, indicators, candles.length, colorMap, simulatedTime]);
 
   // Update indicator series for Chart 2
   useEffect(() => {
@@ -1038,28 +1156,89 @@ export default function ChartPanel({
         });
         currentSeries.set(indicator, lineSeries);
 
-        const data = indicators[indicator].filter(d => d.value !== null).map(d => ({
-          time: d.time as any,
-          value: d.value as number,
-        }));
-        lineSeries.setData(data);
+        const allData = indicators[indicator].filter(d => d.value !== null);
+        const realData = simulatedTime ? allData.filter(d => d.time !== simulatedTime) : allData;
+        lineSeries.setData(realData.map(d => ({ time: d.time as any, value: d.value as number })));
+
+        // Add ghost dashed line for simulated point
+        if (simulatedTime) {
+          const simPoint = allData.find(d => d.time === simulatedTime);
+          const lastReal = realData[realData.length - 1];
+          if (simPoint && lastReal) {
+            let ghostSeries = ghostIndicator2SeriesRef.current.get(indicator);
+            if (!ghostSeries) {
+              ghostSeries = chart.addLineSeries({
+                color: (color || '#888') + '60',
+                lineWidth: 2,
+                lineStyle: 2, // LineStyle.Dashed
+                priceLineVisible: false,
+                lastValueVisible: false,
+              });
+              ghostIndicator2SeriesRef.current.set(indicator, ghostSeries);
+            }
+            ghostSeries.setData([
+              { time: lastReal.time as any, value: lastReal.value as number },
+              { time: simPoint.time as any, value: simPoint.value as number },
+            ]);
+            if (color) ghostSeries.applyOptions({ color: color + '60' });
+          }
+        }
       }
     }
 
     // Update data and colors for existing series to match the shared color map
     for (const [indicator, series] of currentSeries.entries()) {
       if (indicators[indicator]) {
-        const data = indicators[indicator].filter(d => d.value !== null).map(d => ({
-          time: d.time as any,
-          value: d.value as number,
-        }));
-        series.setData(data);
+        const allData = indicators[indicator].filter(d => d.value !== null);
+        const realData = simulatedTime ? allData.filter(d => d.time !== simulatedTime) : allData;
+        series.setData(realData.map(d => ({ time: d.time as any, value: d.value as number })));
         // Update color to match the shared color map
         const newColor = colorMap.get(indicator);
         if (newColor) {
           series.applyOptions({ color: newColor });
         }
+
+        // Update ghost dashed line for simulated point
+        if (simulatedTime) {
+          const simPoint = allData.find(d => d.time === simulatedTime);
+          const lastReal = realData[realData.length - 1];
+          if (simPoint && lastReal) {
+            const color = colorMap.get(indicator);
+            let ghostSeries = ghostIndicator2SeriesRef.current.get(indicator);
+            if (!ghostSeries) {
+              ghostSeries = chart.addLineSeries({
+                color: (color || '#888') + '60',
+                lineWidth: 2,
+                lineStyle: 2, // LineStyle.Dashed
+                priceLineVisible: false,
+                lastValueVisible: false,
+              });
+              ghostIndicator2SeriesRef.current.set(indicator, ghostSeries);
+            }
+            ghostSeries.setData([
+              { time: lastReal.time as any, value: lastReal.value as number },
+              { time: simPoint.time as any, value: simPoint.value as number },
+            ]);
+            if (color) ghostSeries.applyOptions({ color: color + '60' });
+          }
+        }
       }
+    }
+
+    // Clean up ghost series for removed indicators
+    for (const [ind, gs] of ghostIndicator2SeriesRef.current.entries()) {
+      if (!enabledIndicators2.has(ind)) {
+        try { chart.removeSeries(gs); } catch {}
+        ghostIndicator2SeriesRef.current.delete(ind);
+      }
+    }
+
+    // When simulatedTime is null, clean up all ghost series
+    if (!simulatedTime) {
+      for (const [ind, gs] of ghostIndicator2SeriesRef.current.entries()) {
+        try { chart.removeSeries(gs); } catch {}
+      }
+      ghostIndicator2SeriesRef.current.clear();
     }
 
     // Align with main chart
@@ -1076,7 +1255,7 @@ export default function ChartPanel({
         }
       });
     }
-  }, [enabledIndicators2, indicators, candles.length, colorMap]);
+  }, [enabledIndicators2, indicators, candles.length, colorMap, simulatedTime]);
 
   // Effect to ensure charts maintain same width for alignment
   // Only sync once after mount/data updates, not repeatedly

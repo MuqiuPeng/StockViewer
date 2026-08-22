@@ -7,6 +7,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
+import { logger } from '@/lib/logger';
+import { LogSource } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -148,11 +150,14 @@ export async function DELETE(
       );
     }
 
+    logger.info(LogSource.API, 'remove_member', 'Removed member from team', { userId, metadata: { teamId: params.id, memberId } });
+
     return NextResponse.json({
       success: true,
       message: 'Member removed from group',
     });
   } catch (error) {
+    logger.error(LogSource.API, 'remove_member', 'Failed to remove member', { error, metadata: { teamId: params.id } });
     console.error('Error removing member:', error);
     return NextResponse.json(
       { error: 'Failed to remove member', message: error instanceof Error ? error.message : 'Unknown error' },

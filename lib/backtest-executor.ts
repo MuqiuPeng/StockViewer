@@ -8,7 +8,7 @@ export interface BacktestInput {
   strategyCode: string;
   data?: Record<string, any>[];                // Single-stock data
   dataMap?: Record<string, Record<string, any>[]>;  // Portfolio data (symbol -> data)
-  strategyType: 'single' | 'portfolio';        // NEW: Strategy type
+  strategyType: 'signal' | 'portfolio';        // Strategy type
   initialCash?: number;
   commission?: number;
   parameters?: Record<string, any>;
@@ -101,7 +101,7 @@ export async function executeBacktest(
       return;
     }
 
-    if (input.strategyType === 'single' && !input.data) {
+    if (input.strategyType === 'signal' && !input.data) {
       reject(new Error('data is required for single-stock backtest'));
       return;
     }

@@ -29,12 +29,12 @@ const navigation: NavItem[] = [
   { id: 'getting-started', title: 'Getting Started', level: 0 },
   { id: 'viewer', title: 'Chart Viewer', level: 0 },
   { id: 'indicators', title: 'Indicators', level: 0 },
-  { id: 'indicators-single', title: 'Single Indicators', level: 1 },
-  { id: 'indicators-group', title: 'Group Indicators', level: 1 },
+  { id: 'indicators-single', title: 'Scalar Indicators', level: 1 },
+  { id: 'indicators-group', title: 'Vector Indicators', level: 1 },
   { id: 'indicators-external', title: 'External Datasets', level: 1 },
   { id: 'indicators-dependencies', title: 'Dependencies', level: 1 },
   { id: 'backtest', title: 'Backtesting', level: 0 },
-  { id: 'backtest-single', title: 'Single Stock', level: 1 },
+  { id: 'backtest-single', title: 'Signal Strategy', level: 1 },
   { id: 'backtest-portfolio', title: 'Portfolio', level: 1 },
   { id: 'backtest-metrics', title: 'Metrics', level: 1 },
   { id: 'datasets', title: 'Datasets', level: 0 },
@@ -159,6 +159,10 @@ export default function DocsPage() {
                   <span className="text-green-500">•</span>
                   <span><strong className="text-gray-900 dark:text-white">Indicator Selector</strong> — Toggle and assign indicators to chart panels</span>
                 </li>
+                <li className="flex gap-2">
+                  <span className="text-green-500">•</span>
+                  <span><strong className="text-gray-900 dark:text-white">What-If Simulation</strong> — The What-If panel (right side, daily mode only) lets you simulate a future trading day by entering hypothetical OHLC values. The system calculates all enabled indicators on the simulated data without storing anything in the database. Simulated data appears as a ghost (semi-transparent) candle with dashed indicator lines.</span>
+                </li>
               </ul>
             </section>
 
@@ -181,13 +185,17 @@ export default function DocsPage() {
                   ['MyTT', 'Chinese technical analysis library (60+ functions)'],
                 ]}
               />
+
+              <Callout type="info" title="Organization">
+                Each indicator can be assigned a Category (e.g., Trend, Oscillator, Volume, Momentum) and Tags for organization.
+              </Callout>
             </section>
 
-            {/* Single Indicators */}
+            {/* Scalar Indicators */}
             <section id="indicators-single" className="mb-16">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Single Indicators</h2>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Scalar Indicators</h2>
               <p className="text-gray-600 dark:text-gray-400 mb-6">
-                A single indicator returns one column of values. The function must be named <code className="text-sm bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">calculate</code> and accept a <code className="text-sm bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">data</code> parameter.
+                A scalar indicator returns one column of values. The function must be named <code className="text-sm bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">calculate</code> and accept a <code className="text-sm bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">data</code> parameter.
               </p>
 
               <CodeBlock
@@ -215,11 +223,11 @@ export default function DocsPage() {
               />
             </section>
 
-            {/* Group Indicators */}
+            {/* Vector Indicators */}
             <section id="indicators-group" className="mb-16">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Group Indicators</h2>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Vector Indicators</h2>
               <p className="text-gray-600 dark:text-gray-400 mb-6">
-                Group indicators return multiple columns. Return a dictionary where keys are output names and values are arrays. Columns are named as <code className="text-sm bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">GroupName:OutputName</code>.
+                Vector indicators return multiple columns. Return a dictionary where keys are output names and values are arrays. Columns are named as <code className="text-sm bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">VectorName:OutputName</code>.
               </p>
 
               <CodeBlock
@@ -247,7 +255,7 @@ export default function DocsPage() {
               />
 
               <Callout type="info" title="Naming Convention">
-                When you create a group indicator with name &quot;MACD&quot; and outputs [&quot;DIF&quot;, &quot;DEA&quot;, &quot;MACD&quot;],
+                When you create a vector indicator with name &quot;MACD&quot; and outputs [&quot;DIF&quot;, &quot;DEA&quot;, &quot;MACD&quot;],
                 the columns will be accessible as <code>data[&apos;MACD:DIF&apos;]</code>, <code>data[&apos;MACD:DEA&apos;]</code>, etc.
               </Callout>
             </section>
@@ -260,30 +268,28 @@ export default function DocsPage() {
               </p>
 
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Setup</h3>
-              <ol className="space-y-2 text-gray-600 dark:text-gray-400 mb-6">
-                <li>1. In the indicator editor, click <strong className="text-gray-900 dark:text-white">&quot;+ Add External Dataset&quot;</strong></li>
-                <li>2. Enter a parameter name (e.g., <code className="text-sm bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">index</code>)</li>
-                <li>3. Select a group and dataset</li>
-              </ol>
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
+                In the indicator or strategy editor, use the <strong className="text-gray-900 dark:text-white">External Datasets</strong> panel to add datasets. Each added dataset is accessible in code as <code className="text-sm bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">dataset[n]</code>, where <code className="text-sm bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">n</code> is the index corresponding to the order datasets were added (starting from 0).
+              </p>
 
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Single Dataset Mode</h3>
               <p className="text-gray-600 dark:text-gray-400 mb-4">
-                When selecting a specific dataset, access columns using <code className="text-sm bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">data[&apos;param@column&apos;]</code>:
+                Access columns from an external dataset using <code className="text-sm bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">dataset[n][&apos;column&apos;]</code>:
               </p>
 
               <CodeBlock
                 title="Relative Strength vs Index"
-                code={`def calculate(data):
+                code={`def calculate(data, dataset):
     """
     Calculate relative strength against market index.
 
-    Setup: Add external dataset with parameter name 'index'
-           pointing to a market index (e.g., 000001.csv)
+    Setup: Add an external dataset (e.g., 000001.csv) via the
+           External Datasets panel. It becomes dataset[0].
 
-    Access: data['index@close'] returns the index close price
+    Access: dataset[0]['close'] returns the index close price
     """
     # Get index close price (merged by date automatically)
-    index_close = data['index@close']
+    index_close = dataset[0]['close']
 
     # Calculate relative strength
     relative_strength = data['close'] / index_close
@@ -293,15 +299,15 @@ export default function DocsPage() {
 
               <CodeBlock
                 title="Using External Indicator Columns"
-                code={`def calculate(data):
+                code={`def calculate(data, dataset):
     """
     Use MACD from another dataset.
 
     If the external dataset has MACD indicator applied,
     you can access its columns.
     """
-    # Access MACD:DIF from the external dataset
-    index_dif = data['index@MACD:DIF']
+    # Access MACD:DIF from the first external dataset
+    index_dif = dataset[0]['MACD:DIF']
     stock_dif = data['MACD:DIF']
 
     # Compare MACD DIF values
@@ -310,6 +316,10 @@ export default function DocsPage() {
     return divergence`}
               />
 
+              <Callout type="info" title="Legacy Format">
+                The older <code>data.import_(&apos;symbol&apos;, type=&apos;dataset&apos;)</code> format is still supported but the <code>dataset[n]</code> syntax is preferred.
+              </Callout>
+
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 mt-8">All Datasets Mode</h3>
               <p className="text-gray-600 dark:text-gray-400 mb-4">
                 Select <strong>&quot;All&quot;</strong> to import all datasets from a group. Each column returns an array of values from all datasets:
@@ -317,18 +327,19 @@ export default function DocsPage() {
 
               <CodeBlock
                 title="Market Breadth - Average of All Stocks"
-                code={`def calculate(data):
+                code={`def calculate(data, dataset):
     """
     Calculate average close price across all stocks in a group.
 
-    Setup: Add external dataset with parameter name 'stocks'
-           Select "All" instead of a specific dataset
+    Setup: Add an external dataset group via External Datasets panel,
+           select "All" instead of a specific dataset.
+           The group becomes dataset[0].
 
-    Access: data['stocks@close'] returns [val1, val2, val3, ...]
+    Access: dataset[0]['close'] returns [val1, val2, val3, ...]
             where each value is from a different stock
     """
     # Get close prices from all stocks (array per row)
-    all_closes = data['stocks@close']
+    all_closes = dataset[0]['close']
 
     # Calculate mean across all stocks for each date
     avg_close = all_closes.apply(
@@ -340,15 +351,15 @@ export default function DocsPage() {
 
               <CodeBlock
                 title="Percentage Above Moving Average"
-                code={`def calculate(data):
+                code={`def calculate(data, dataset):
     """
     Calculate % of stocks above their 20-day MA.
 
     Requires: Each stock in the group has SMA_20 indicator applied
     """
     # Get SMA_20 values from all stocks
-    all_sma = data['stocks@SMA_20']
-    all_close = data['stocks@close']
+    all_sma = dataset[0]['SMA_20']
+    all_close = dataset[0]['close']
 
     def pct_above_ma(row_idx):
         sma_arr = all_sma.iloc[row_idx]
@@ -399,6 +410,10 @@ export default function DocsPage() {
     return signal`}
               />
 
+              <Callout type="info" title="Automatic Detection">
+                Dependencies are automatically detected from your Python code. When you save an indicator or strategy, the system scans for references to other indicators (<code>data[&apos;indicator_name&apos;]</code>) and external datasets (<code>dataset[n]</code> or <code>data.import_()</code>), and records them automatically.
+              </Callout>
+
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 mt-8">Auto-Fix Column Renames</h3>
               <p className="text-gray-600 dark:text-gray-400 mb-4">
                 When you rename an indicator&apos;s output column:
@@ -439,11 +454,15 @@ export default function DocsPage() {
                   ['Position Size', 'Size per position as fraction of capital', '0.1 (10%)'],
                 ]}
               />
+
+              <Callout type="info" title="Organization">
+                Strategies support Category (e.g., Trend Following, Mean Reversion) and Tags for classification.
+              </Callout>
             </section>
 
-            {/* Single Stock */}
+            {/* Signal Strategy */}
             <section id="backtest-single" className="mb-16">
-              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Single Stock Strategy</h2>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Signal Strategy</h2>
               <p className="text-gray-600 dark:text-gray-400 mb-6">
                 Return signals: <code className="text-sm bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">1</code> (buy), <code className="text-sm bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">-1</code> (sell), <code className="text-sm bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded">0</code> (hold)
               </p>

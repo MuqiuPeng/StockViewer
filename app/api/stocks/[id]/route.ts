@@ -7,6 +7,9 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/api-auth';
+import { auth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
+import { LogSource } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -170,11 +173,16 @@ export async function DELETE(
       where: { id: params.id },
     });
 
+    const session = await auth();
+    const userId = session?.user?.id;
+    logger.info(LogSource.API, 'delete_stock', `Deleted stock ${stock.symbol}`, { userId, metadata: { stockId: params.id, symbol: stock.symbol } });
+
     return NextResponse.json({
       success: true,
       message: `Deleted stock ${stock.symbol} and all its price data`,
     });
   } catch (error) {
+    logger.error(LogSource.API, 'delete_stock', 'Failed to delete stock', { error, metadata: { stockId: params.id } });
     console.error('Error deleting stock:', error);
     return NextResponse.json(
       { error: 'Failed to delete stock', message: error instanceof Error ? error.message : 'Unknown error' },

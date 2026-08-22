@@ -11,6 +11,8 @@ import { getApiStorage } from '@/lib/api-auth';
 import { validatePythonCode } from '@/lib/indicator-validator';
 import { detectDependencies } from '@/lib/detect-dependencies';
 import { computeCodeHash } from '@/lib/code-hash';
+import { logger } from '@/lib/logger';
+import { LogSource } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -151,9 +153,25 @@ export async function PUT(
       const allIndicators = await prisma.indicator.findMany({
         select: { id: true, name: true, outputColumn: true, isGroup: true, groupName: true, expectedOutputs: true },
       });
-      const { dependencies, dependencyColumns } = detectDependencies(pythonCode, allIndicators, params.id);
+      const { dependencies, dependencyColumns, importedDatasets } = detectDependencies(pythonCode, allIndicators, params.id);
       updateData.dependencies = dependencies;
       updateData.dependencyColumns = dependencyColumns;
+
+      // Auto-detect external dataset references
+      if (importedDatasets.length > 0) {
+        const currentExt = (updateData.externalDatasets || indicator.externalDatasets || {}) as Record<string, any>;
+        const dsStocks = await prisma.stock.findMany({
+          where: { symbol: { in: importedDatasets } },
+          select: { id: true, symbol: true },
+        });
+        for (const ds of dsStocks) {
+          const alreadyPresent = Object.values(currentExt).some((v: any) => v?.datasetName === ds.symbol);
+          if (!alreadyPresent) {
+            currentExt[`auto_${ds.symbol}`] = { groupId: '', datasetName: ds.symbol };
+          }
+        }
+        updateData.externalDatasets = currentExt;
+      }
 
       // Compute new code hash
       const newCodeHash = computeCodeHash(pythonCode);
@@ -170,6 +188,8 @@ export async function PUT(
       data: updateData,
     });
 
+    logger.info(LogSource.API, 'update_indicator', `Updated indicator "${updated.name}"`, { userId, metadata: { indicatorId: params.id, name: updated.name } });
+
     return NextResponse.json({
       success: true,
       indicator: {
@@ -180,6 +200,7 @@ export async function PUT(
       },
     });
   } catch (error) {
+    logger.error(LogSource.API, 'update_indicator', 'Failed to update indicator', { error, metadata: { indicatorId: params.id } });
     console.error('Error updating indicator:', error);
     return NextResponse.json(
       { error: 'Failed to update indicator', message: error instanceof Error ? error.message : 'Unknown error' },
@@ -259,6 +280,8 @@ export async function DELETE(
         where: { id: params.id },
       });
 
+      logger.info(LogSource.API, 'delete_indicator', `Deleted indicator "${indicator.name}"`, { userId, metadata: { indicatorId: params.id, name: indicator.name, cascade, deletedCount: cascade ? dependents.length + 1 : 1 } });
+
       return NextResponse.json({
         success: true,
         deleted: true,
@@ -280,6 +303,8 @@ export async function DELETE(
         );
       }
 
+      logger.info(LogSource.API, 'delete_indicator', `Removed indicator "${indicator.name}" from collection`, { userId, metadata: { indicatorId: params.id, name: indicator.name } });
+
       return NextResponse.json({
         success: true,
         removed: true,
@@ -287,6 +312,7 @@ export async function DELETE(
       });
     }
   } catch (error) {
+    logger.error(LogSource.API, 'delete_indicator', 'Failed to delete indicator', { error, metadata: { indicatorId: params.id } });
     console.error('Error deleting indicator:', error);
     return NextResponse.json(
       { error: 'Failed to delete indicator', message: error instanceof Error ? error.message : 'Unknown error' },

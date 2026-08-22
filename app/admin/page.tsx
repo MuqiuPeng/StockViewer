@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import { logAction } from '@/lib/client-logger';
 
 interface TicketUser {
   id: string;
@@ -77,7 +78,30 @@ interface CustomDataset {
   postCount: number;
 }
 
-type Tab = 'tickets' | 'users' | 'datasets';
+interface SystemLog {
+  id: string;
+  level: string;
+  source: string;
+  action: string;
+  message: string;
+  userId: string | null;
+  metadata: Record<string, unknown> | null;
+  createdAt: string;
+  user: {
+    id: string;
+    name: string | null;
+    email: string | null;
+    image: string | null;
+  } | null;
+}
+
+interface LogStats {
+  INFO: number;
+  WARN: number;
+  ERROR: number;
+}
+
+type Tab = 'tickets' | 'users' | 'datasets' | 'logs';
 
 export default function AdminPage() {
   const { data: session, status } = useSession();
@@ -107,6 +131,22 @@ export default function AdminPage() {
   const [datasetsTotal, setDatasetsTotal] = useState(0);
   const [datasetsSearch, setDatasetsSearch] = useState('');
   const [datasetsLoading, setDatasetsLoading] = useState(true);
+
+  // Logs state
+  const [logs, setLogs] = useState<SystemLog[]>([]);
+  const [logStats, setLogStats] = useState<LogStats>({ INFO: 0, WARN: 0, ERROR: 0 });
+  const [logsTotal, setLogsTotal] = useState(0);
+  const [logsPage, setLogsPage] = useState(1);
+  const [logLevelFilter, setLogLevelFilter] = useState<string>('');
+  const [logSourceFilter, setLogSourceFilter] = useState<string>('');
+  const [logSearch, setLogSearch] = useState('');
+  const [logsLoading, setLogsLoading] = useState(true);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+  const [logsPerPage, setLogsPerPage] = useState(50);
+  const [logAutoRefresh, setLogAutoRefresh] = useState(false);
+  const [logStartDate, setLogStartDate] = useState('');
+  const [logEndDate, setLogEndDate] = useState('');
+  const logAutoRefreshRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -194,6 +234,39 @@ export default function AdminPage() {
     }
   }, [datasetsSearch]);
 
+  const fetchLogs = useCallback(async () => {
+    try {
+      setLogsLoading(true);
+      const params = new URLSearchParams();
+      params.set('page', String(logsPage));
+      params.set('limit', String(logsPerPage));
+      if (logLevelFilter) params.set('level', logLevelFilter);
+      if (logSourceFilter) params.set('source', logSourceFilter);
+      if (logSearch) params.set('search', logSearch);
+      if (logStartDate) params.set('startDate', logStartDate);
+      if (logEndDate) params.set('endDate', logEndDate);
+
+      const response = await fetch(`/api/admin/logs?${params}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 403) {
+          setError('Access denied');
+          return;
+        }
+        throw new Error(data.message || 'Failed to fetch logs');
+      }
+
+      setLogs(data.logs);
+      setLogStats(data.stats);
+      setLogsTotal(data.total);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setLogsLoading(false);
+    }
+  }, [logsPage, logsPerPage, logLevelFilter, logSourceFilter, logSearch, logStartDate, logEndDate]);
+
   // First, verify admin status before loading any data
   useEffect(() => {
     // Skip if already verified or currently checking
@@ -243,8 +316,29 @@ export default function AdminPage() {
       fetchTickets();
       fetchUsers();
       fetchDatasets();
+      fetchLogs();
     }
-  }, [isAdminVerified, fetchTickets, fetchUsers, fetchDatasets]);
+  }, [isAdminVerified, fetchTickets, fetchUsers, fetchDatasets, fetchLogs]);
+
+  // Refetch logs when filters/page change
+  useEffect(() => {
+    if (isAdminVerified && activeTab === 'logs') {
+      fetchLogs();
+    }
+  }, [logsPage, logsPerPage, logLevelFilter, logSourceFilter, logSearch, logStartDate, logEndDate, isAdminVerified, activeTab, fetchLogs]);
+
+  // Auto-refresh logs
+  useEffect(() => {
+    if (logAutoRefresh && activeTab === 'logs' && isAdminVerified) {
+      logAutoRefreshRef.current = setInterval(() => { fetchLogs(); }, 10000);
+    }
+    return () => {
+      if (logAutoRefreshRef.current) {
+        clearInterval(logAutoRefreshRef.current);
+        logAutoRefreshRef.current = null;
+      }
+    };
+  }, [logAutoRefresh, activeTab, isAdminVerified, fetchLogs]);
 
   const handleTicketAction = async (ticketId: string, action: 'approve' | 'reject') => {
     const note = action === 'reject'
@@ -266,6 +360,7 @@ export default function AdminPage() {
         throw new Error(data.message || 'Failed to process ticket');
       }
 
+      logAction('admin_review_ticket', 'Reviewed ticket', { ticketId, action });
       fetchTickets();
 
       if (action === 'approve' && data.refreshResult) {
@@ -298,6 +393,7 @@ export default function AdminPage() {
         throw new Error(data.error || 'Failed to update user');
       }
 
+      logAction('admin_update_user', 'Updated user status', { userId, action });
       fetchUsers();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Unknown error');
@@ -326,6 +422,7 @@ export default function AdminPage() {
         throw new Error(data.error || 'Failed to update user');
       }
 
+      logAction('admin_toggle_admin', 'Toggled admin', { userId });
       fetchUsers();
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Unknown error');
@@ -380,6 +477,7 @@ export default function AdminPage() {
         throw new Error(data.message || 'Failed to delete dataset');
       }
 
+      logAction('admin_delete_dataset', 'Deleted dataset', { symbol });
       alert(data.message);
       fetchDatasets();
     } catch (err) {
@@ -389,8 +487,45 @@ export default function AdminPage() {
     }
   };
 
+  const handleDeleteLogs = async (olderThanDays: number) => {
+    const label = olderThanDays === 0 ? 'ALL logs' : `logs older than ${olderThanDays} day(s)`;
+    if (!confirm(`Are you sure you want to delete ${label}? This action cannot be undone.`)) {
+      return;
+    }
+
+    try {
+      setActionLoading('delete-logs');
+      const response = await fetch(`/api/admin/logs?olderThanDays=${olderThanDays}`, {
+        method: 'DELETE',
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to delete logs');
+      }
+      logAction('admin_delete_logs', 'Deleted logs', { olderThanDays });
+      alert(`Deleted ${data.deleted} log(s)`);
+      fetchLogs();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Unknown error');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleString('zh-CN');
+  };
+
+  const relativeTime = (dateStr: string) => {
+    const diff = Date.now() - new Date(dateStr).getTime();
+    const sec = Math.floor(diff / 1000);
+    if (sec < 60) return `${sec}s ago`;
+    const min = Math.floor(sec / 60);
+    if (min < 60) return `${min}m ago`;
+    const hr = Math.floor(min / 60);
+    if (hr < 24) return `${hr}h ago`;
+    const d = Math.floor(hr / 24);
+    return `${d}d ago`;
   };
 
   const getStatusBadgeClass = (status: string) => {
@@ -487,6 +622,21 @@ export default function AdminPage() {
               {datasetsTotal > 0 && (
                 <span className="ml-2 bg-gray-500 text-white text-xs px-2 py-0.5 rounded-full">
                   {datasetsTotal}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => setActiveTab('logs')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'logs'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+              }`}
+            >
+              Logs
+              {logStats.ERROR > 0 && (
+                <span className="ml-2 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
+                  {logStats.ERROR}
                 </span>
               )}
             </button>
@@ -1097,6 +1247,288 @@ export default function AdminPage() {
             {/* Total count */}
             <div className="mt-4 text-sm text-gray-500 dark:text-gray-400">
               Total: {datasetsTotal} custom dataset{datasetsTotal !== 1 ? 's' : ''}
+            </div>
+          </>
+        )}
+
+        {/* Logs Tab */}
+        {activeTab === 'logs' && (
+          <>
+            {/* Stats Summary */}
+            <div className="flex items-center gap-4 mb-4 text-sm">
+              <span className="text-gray-500 dark:text-gray-400">
+                Total <span className="font-semibold text-gray-900 dark:text-white">{logsTotal}</span>
+              </span>
+              <span className="text-green-600 dark:text-green-400">
+                INFO <span className="font-semibold">{logStats.INFO}</span>
+              </span>
+              <span className="text-yellow-600 dark:text-yellow-400">
+                WARN <span className="font-semibold">{logStats.WARN}</span>
+              </span>
+              <span className="text-red-600 dark:text-red-400">
+                ERROR <span className="font-semibold">{logStats.ERROR}</span>
+              </span>
+              <div className="flex-1" />
+              <label className="flex items-center gap-1.5 text-gray-500 dark:text-gray-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={logAutoRefresh}
+                  onChange={(e) => setLogAutoRefresh(e.target.checked)}
+                  className="rounded"
+                />
+                Auto-refresh
+              </label>
+            </div>
+
+            {/* Filters Row 1 */}
+            <div className="flex flex-wrap items-center gap-3 mb-3">
+              <select
+                value={logLevelFilter}
+                onChange={(e) => { setLogLevelFilter(e.target.value); setLogsPage(1); }}
+                className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All Levels</option>
+                <option value="INFO">Info</option>
+                <option value="WARN">Warning</option>
+                <option value="ERROR">Error</option>
+              </select>
+              <select
+                value={logSourceFilter}
+                onChange={(e) => { setLogSourceFilter(e.target.value); setLogsPage(1); }}
+                className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="">All Sources</option>
+                <option value="FRONTEND">Frontend</option>
+                <option value="API">API</option>
+                <option value="DATA_SERVICE">Data Service</option>
+              </select>
+              <input
+                type="text"
+                placeholder="Search message..."
+                value={logSearch}
+                onChange={(e) => { setLogSearch(e.target.value); setLogsPage(1); }}
+                className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 flex-1 min-w-[180px]"
+              />
+              <input
+                type="date"
+                value={logStartDate}
+                onChange={(e) => { setLogStartDate(e.target.value); setLogsPage(1); }}
+                className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                title="Start Date"
+              />
+              <span className="text-gray-400 text-sm">-</span>
+              <input
+                type="date"
+                value={logEndDate}
+                onChange={(e) => { setLogEndDate(e.target.value); setLogsPage(1); }}
+                className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                title="End Date"
+              />
+              {(logLevelFilter || logSourceFilter || logSearch || logStartDate || logEndDate) && (
+                <button
+                  onClick={() => { setLogLevelFilter(''); setLogSourceFilter(''); setLogSearch(''); setLogStartDate(''); setLogEndDate(''); setLogsPage(1); }}
+                  className="px-3 py-1.5 text-sm text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+
+            {/* Filters Row 2: Actions */}
+            <div className="flex items-center gap-3 mb-4">
+              <select
+                value={logsPerPage}
+                onChange={(e) => { setLogsPerPage(Number(e.target.value)); setLogsPage(1); }}
+                className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 dark:text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value={20}>20 / page</option>
+                <option value={50}>50 / page</option>
+                <option value={100}>100 / page</option>
+              </select>
+              <button
+                onClick={() => fetchLogs()}
+                className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+              >
+                Refresh
+              </button>
+              <div className="flex-1" />
+              <div className="relative group">
+                <button className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">
+                  Delete Logs ▾
+                </button>
+                <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-gray-800 border dark:border-gray-600 rounded-lg shadow-lg hidden group-hover:block z-10">
+                  {[30, 7, 1, 0].map((days) => (
+                    <button
+                      key={days}
+                      onClick={() => handleDeleteLogs(days)}
+                      disabled={actionLoading === 'delete-logs'}
+                      className={`block w-full text-left px-4 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 ${days === 0 ? 'text-red-600 font-medium' : ''}`}
+                    >
+                      {days === 0 ? 'Delete ALL logs' : `Older than ${days} day${days > 1 ? 's' : ''}`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Logs Table */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden">
+              {logsLoading ? (
+                <div className="p-8 text-center text-gray-500 dark:text-gray-400">Loading...</div>
+              ) : logs.length === 0 ? (
+                <div className="p-8 text-center text-gray-500 dark:text-gray-400">No logs found</div>
+              ) : (
+                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                  <thead className="bg-gray-50 dark:bg-gray-900">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[150px]">
+                        Time
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[70px]">
+                        Level
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[100px]">
+                        Source
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[150px]">
+                        Action
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                        Message
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-[120px]">
+                        User
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                    {logs.map((log) => (
+                      <tr key={log.id} className="group">
+                        <td colSpan={6} className="p-0">
+                          {/* Main row */}
+                          <div
+                            className={`grid cursor-pointer transition-colors ${
+                              log.level === 'ERROR'
+                                ? 'bg-red-50/50 dark:bg-red-900/10 hover:bg-red-50 dark:hover:bg-red-900/20'
+                                : log.level === 'WARN'
+                                ? 'hover:bg-yellow-50/50 dark:hover:bg-yellow-900/10'
+                                : 'hover:bg-gray-50 dark:hover:bg-gray-700/30'
+                            }`}
+                            style={{ gridTemplateColumns: '150px 70px 100px 150px 1fr 120px' }}
+                            onClick={() => setExpandedLogId(expandedLogId === log.id ? null : log.id)}
+                          >
+                            <div className="px-4 py-3 whitespace-nowrap">
+                              <div className="text-xs text-gray-500 dark:text-gray-400">{relativeTime(log.createdAt)}</div>
+                              <div className="text-xs text-gray-400 dark:text-gray-500">{formatDate(log.createdAt)}</div>
+                            </div>
+                            <div className="px-4 py-3">
+                              <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                                log.level === 'ERROR' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' :
+                                log.level === 'WARN' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300' :
+                                'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300'
+                              }`}>
+                                {log.level}
+                              </span>
+                            </div>
+                            <div className="px-4 py-3">
+                              <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                                log.source === 'API' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' :
+                                log.source === 'FRONTEND' ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300' :
+                                'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300'
+                              }`}>
+                                {log.source === 'DATA_SERVICE' ? 'DATA SVC' : log.source}
+                              </span>
+                            </div>
+                            <div className="px-4 py-3">
+                              <code className="text-xs font-mono bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">
+                                {log.action}
+                              </code>
+                            </div>
+                            <div className="px-4 py-3 min-w-0">
+                              <div className="text-sm truncate">{log.message}</div>
+                            </div>
+                            <div className="px-4 py-3 text-sm text-gray-500 dark:text-gray-400 truncate">
+                              {log.user?.name || log.user?.email || '--'}
+                            </div>
+                          </div>
+                          {/* Expanded detail */}
+                          {expandedLogId === log.id && (
+                            <div className="px-6 py-4 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-100 dark:border-gray-700">
+                              <div className="grid grid-cols-2 gap-4 mb-3 text-sm">
+                                <div>
+                                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Log ID</span>
+                                  <div className="font-mono text-xs text-gray-700 dark:text-gray-300">{log.id}</div>
+                                </div>
+                                <div>
+                                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Timestamp</span>
+                                  <div className="text-xs text-gray-700 dark:text-gray-300">{new Date(log.createdAt).toISOString()}</div>
+                                </div>
+                              </div>
+                              <div className="mb-3">
+                                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Full Message</span>
+                                <div className="mt-1 text-sm whitespace-pre-wrap bg-white dark:bg-gray-800 border dark:border-gray-700 rounded p-3">
+                                  {log.message}
+                                </div>
+                              </div>
+                              {log.metadata && (
+                                <div className="mb-3">
+                                  <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Metadata</span>
+                                  {/* Stack trace gets special treatment */}
+                                  {!!(log.metadata as Record<string, unknown>).stack && (
+                                    <div className="mt-1 mb-2">
+                                      <span className="text-xs font-medium text-red-500 dark:text-red-400 uppercase">Stack Trace</span>
+                                      <pre className="mt-1 text-xs text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded p-3 overflow-x-auto whitespace-pre-wrap">
+                                        {String((log.metadata as Record<string, unknown>).stack)}
+                                      </pre>
+                                    </div>
+                                  )}
+                                  <pre className="mt-1 text-xs bg-white dark:bg-gray-800 border dark:border-gray-700 rounded p-3 overflow-x-auto">
+                                    {JSON.stringify(
+                                      Object.fromEntries(
+                                        Object.entries(log.metadata as Record<string, unknown>).filter(([k]) => k !== 'stack')
+                                      ),
+                                      null,
+                                      2,
+                                    )}
+                                  </pre>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* Pagination */}
+            <div className="flex items-center justify-between mt-4">
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                {logsTotal > 0
+                  ? `Showing ${(logsPage - 1) * logsPerPage + 1}-${Math.min(logsPage * logsPerPage, logsTotal)} of ${logsTotal}`
+                  : 'No logs'}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setLogsPage(Math.max(1, logsPage - 1))}
+                  disabled={logsPage <= 1}
+                  className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  Previous
+                </button>
+                <span className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400">
+                  {logsPage} / {Math.max(1, Math.ceil(logsTotal / logsPerPage))}
+                </span>
+                <button
+                  onClick={() => setLogsPage(logsPage + 1)}
+                  disabled={logsPage >= Math.ceil(logsTotal / logsPerPage)}
+                  className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm disabled:opacity-50 hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  Next
+                </button>
+              </div>
             </div>
           </>
         )}

@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { isAdmin, isSuperAdmin } from '@/lib/admin';
 import { prisma } from '@/lib/prisma';
-import { UserStatus } from '@prisma/client';
+import { UserStatus, LogSource } from '@prisma/client';
+import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
 
@@ -129,6 +130,8 @@ export async function PATCH(
         },
       },
     });
+
+    logger.info(LogSource.API, 'admin_update_user', 'Updated user', { userId: session.user.id, metadata: { targetUserId: id, status, isAdmin: setAdmin } });
 
     return NextResponse.json(updatedUser);
   } catch (error) {

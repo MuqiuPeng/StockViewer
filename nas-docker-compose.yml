@@ -1,0 +1,76 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: stockviewer-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-stockviewer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-stockviewer123}
+      POSTGRES_DB: ${POSTGRES_DB:-stockviewer}
+    volumes:
+      - /volume1/docker/appdata/stockviewer/postgres:/var/lib/postgresql/data
+    # 不对公网暴露；如需本地调试再临时打开
+    # ports:
+    #   - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-stockviewer}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - stockviewer
+
+  app:
+    image: ghcr.io/YOUR_ORG_OR_USER/stockviewer:latest
+    container_name: stockviewer-app
+    environment:
+      - NEXT_PUBLIC_STORAGE_MODE=database
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-stockviewer}:${POSTGRES_PASSWORD:-stockviewer123}@db:5432/${POSTGRES_DB:-stockviewer}
+      # 如果 AKTools 不是同容器服务，127.0.0.1 可能不对
+      # 推荐也容器化后改成 http://aktools:8080
+      - NEXT_PUBLIC_AKTOOLS_API_URL=${NEXT_PUBLIC_AKTOOLS_API_URL:-http://aktools:8080}
+      - PYTHON_EXECUTABLE=/opt/venv/bin/python
+      - PYTHON_TIMEOUT_MS=300000
+      - AUTH_SECRET=${AUTH_SECRET}
+      - AUTH_URL=${AUTH_URL:-http://localhost:3000}
+      - AUTH_GITHUB_ID=${AUTH_GITHUB_ID:-}
+      - AUTH_GITHUB_SECRET=${AUTH_GITHUB_SECRET:-}
+      - AUTH_GOOGLE_ID=${AUTH_GOOGLE_ID:-}
+      - AUTH_GOOGLE_SECRET=${AUTH_GOOGLE_SECRET:-}
+      - ADMIN_GITHUB_ID=${ADMIN_GITHUB_ID:-}
+    volumes:
+      - /volume1/docker/appdata/stockviewer/app-data:/app/data
+    ports:
+      - "3000:3000"   # 如果你将来用反向代理，可改为仅内网
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - stockviewer
+
+  # 可选：如果 AKTools 也是容器服务，把它放进来（否则删掉这一段）
+  # aktools:
+  #   image: YOUR_AKTOOLS_IMAGE:latest
+  #   container_name: stockviewer-aktools
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8080:8080"  # 需要的话再映射
+  #   networks:
+  #     - stockviewer
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: stockviewer-tunnel
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN:-}
+    restart: unless-stopped
+    networks:
+      - stockviewer
+    profiles:
+      - tunnel
+
+networks:
+  stockviewer:
+    driver: bridge

@@ -25,7 +25,9 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     ports:
-      - "3000:3000"
+      - "3002:3000"
+    env_file:
+      - ../.env.docker
     environment:
       - NODE_ENV=production
       - AUTH_TRUST_HOST=true
@@ -34,6 +36,8 @@ services:
       - DATA_SERVICE_RETRIES=2
       - PYTHON_EXECUTABLE=python3
       - PYTHON_TIMEOUT_MS=300000
+      - AUTH_TRUST_HOST=true
+      - DATABASE_URL=postgresql://stockviewer:stockviewer123@stockviewer-db:5432/stockviewer
     volumes:
       # Persist data between container restarts
       - stockviewer-csv:/app/data/csv
@@ -46,6 +50,26 @@ services:
     depends_on:
       data-service:
         condition: service_healthy
+      stockviewer-db:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - stockviewer-network
+
+  # PostgreSQL Database
+  stockviewer-db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=stockviewer
+      - POSTGRES_PASSWORD=stockviewer123
+      - POSTGRES_DB=stockviewer
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stockviewer"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
     networks:
       - stockviewer-network
@@ -55,6 +79,7 @@ networks:
     driver: bridge
 
 volumes:
+  postgres-data:
   stockviewer-csv:
   stockviewer-indicators:
   stockviewer-strategies:

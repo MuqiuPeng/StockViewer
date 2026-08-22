@@ -13,6 +13,8 @@ export interface IndicatorForDependency {
 export interface DependencyResult {
   dependencies: string[];         // Indicator IDs
   dependencyColumns: string[];    // Specific column names used
+  datasetIndices: number[];       // dataset[n] indices referenced in code
+  importedDatasets: string[];     // dataset symbols referenced via data.import_('symbol', type='dataset')
 }
 
 /**
@@ -144,7 +146,35 @@ export function detectDependencies(
     }
   }
 
-  return { dependencies, dependencyColumns };
+  // Detect dataset[n] references
+  const datasetIndices: number[] = [];
+  const datasetPattern = /dataset\[(\d+)\]/g;
+  let dsMatch;
+  while ((dsMatch = datasetPattern.exec(pythonCode)) !== null) {
+    const idx = parseInt(dsMatch[1], 10);
+    if (!datasetIndices.includes(idx)) {
+      datasetIndices.push(idx);
+    }
+  }
+  datasetIndices.sort((a, b) => a - b);
+
+  // Detect data.import_('symbol', type='dataset') references
+  const importedDatasets: string[] = [];
+  const importPatterns = [
+    /data\.import_\(\s*['"]([^'"]+)['"]\s*,\s*type\s*=\s*['"]dataset['"]\s*\)/g,
+    /data\.import_\(\s*['"]([^'"]+)['"]\s*\)/g,  // import_ without explicit type
+  ];
+  for (const pattern of importPatterns) {
+    let impMatch;
+    while ((impMatch = pattern.exec(pythonCode)) !== null) {
+      const symbol = impMatch[1];
+      if (!importedDatasets.includes(symbol)) {
+        importedDatasets.push(symbol);
+      }
+    }
+  }
+
+  return { dependencies, dependencyColumns, datasetIndices, importedDatasets };
 }
 
 /**

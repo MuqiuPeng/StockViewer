@@ -7,6 +7,7 @@ import time
 
 from ...providers.registry import get_provider
 from ...models.responses import ApiResponse, HistoryData, ErrorDetail, Meta
+from ...services.log_forwarder import forward_log
 
 router = APIRouter()
 
@@ -62,6 +63,8 @@ async def get_history(
         if error_code == "FETCH_ERROR":
             status_code = 500
 
+        forward_log("ERROR", "fetch_history", f"Failed to fetch {data_source}/{symbol}: {result.get('error', 'Unknown')}", {"data_source": data_source, "symbol": symbol, "error_code": error_code, "duration_ms": duration_ms})
+
         return ApiResponse(
             success=False,
             error=ErrorDetail(
@@ -72,6 +75,8 @@ async def get_history(
         )
 
     data = result["data"]
+    forward_log("INFO", "fetch_history", f"Fetched {data['row_count']} records for {data_source}/{symbol}", {"data_source": data_source, "symbol": symbol, "row_count": data["row_count"], "duration_ms": duration_ms})
+
     return ApiResponse(
         success=True,
         data=HistoryData(

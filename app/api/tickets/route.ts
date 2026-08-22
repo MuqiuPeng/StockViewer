@@ -7,7 +7,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
-import { TicketType } from '@prisma/client';
+import { TicketType, LogSource } from '@prisma/client';
+import { logger } from '@/lib/logger';
 
 export const runtime = 'nodejs';
 
@@ -98,6 +99,8 @@ export async function POST(request: Request) {
       },
     });
 
+    logger.info(LogSource.API, 'submit_ticket', `Submitted ${type} ticket`, { userId, metadata: { ticketId: ticket.id, type } });
+
     return NextResponse.json({
       success: true,
       message: 'Ticket submitted successfully',
@@ -110,6 +113,7 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    logger.error(LogSource.API, 'submit_ticket', 'Failed to create ticket', { error });
     console.error('Error creating ticket:', error);
     return NextResponse.json(
       { error: 'Failed to create ticket', message: error instanceof Error ? error.message : 'Unknown error' },

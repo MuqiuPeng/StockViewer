@@ -174,7 +174,7 @@ export default function StrategyManager({ isOpen, onClose }: StrategyManagerProp
                         ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300'
                         : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300'
                     }`}>
-                      {strategy.strategyType || 'single'}
+                      {strategy.strategyType || 'signal'}
                     </span>
                   </td>
                   <td className="border dark:border-gray-600 p-2 dark:text-gray-200">

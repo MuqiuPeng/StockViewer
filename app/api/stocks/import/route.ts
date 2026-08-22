@@ -7,8 +7,9 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireAuth } from '@/lib/api-auth';
-import { Prisma } from '@prisma/client';
+import { Prisma, LogSource } from '@prisma/client';
 import { fetchStockDataFromService } from '@/lib/data-service-client';
+import { logger } from '@/lib/logger';
 
 export const runtime = 'nodejs';
 
@@ -91,6 +92,8 @@ export async function POST(request: Request) {
     processImportJob(job.id, symbol, dataSource, name, startDate, endDate).catch(err => {
       console.error('Import job failed:', err);
     });
+
+    logger.info(LogSource.API, 'import_stock', 'Import job created', { metadata: { symbol, dataSource } });
 
     return NextResponse.json({
       success: true,

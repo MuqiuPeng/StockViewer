@@ -7,6 +7,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
+import { logger } from '@/lib/logger';
+import { LogSource } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -97,11 +99,14 @@ export async function DELETE(
       where: { id: params.id },
     });
 
+    logger.info(LogSource.API, 'delete_post', 'Deleted post', { userId, metadata: { postId: params.id } });
+
     return NextResponse.json({
       success: true,
       message: 'Post deleted',
     });
   } catch (error) {
+    logger.error(LogSource.API, 'delete_post', 'Failed to delete post', { error, metadata: { postId: params.id } });
     console.error('Error deleting post:', error);
     return NextResponse.json(
       { error: 'Failed to delete post', message: error instanceof Error ? error.message : 'Unknown error' },

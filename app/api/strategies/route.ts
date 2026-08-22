@@ -8,6 +8,8 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
 import { detectDependencies } from '@/lib/detect-dependencies';
+import { logger } from '@/lib/logger';
+import { LogSource } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -34,6 +36,8 @@ export async function GET() {
       description: us.strategy.description,
       pythonCode: us.strategy.pythonCode,
       strategyType: us.strategy.strategyType,
+      category: us.strategy.category,
+      tags: us.strategy.tags,
       parameters: us.strategy.parameters,
       constraints: us.strategy.constraints,
       externalDatasets: us.strategy.externalDatasets,
@@ -63,7 +67,7 @@ export async function POST(request: Request) {
     const { userId } = authResult;
 
     const body = await request.json();
-    const { name, description, pythonCode, parameters, strategyType, constraints, externalDatasets } = body;
+    const { name, description, pythonCode, parameters, strategyType, constraints, externalDatasets, category, tags } = body;
 
     // Validate required fields
     if (!name || !pythonCode) {
@@ -82,7 +86,7 @@ export async function POST(request: Request) {
     }
 
     // Validate strategy type
-    const validStrategyType = strategyType === 'portfolio' ? 'portfolio' : 'single';
+    const validStrategyType = strategyType === 'portfolio' ? 'portfolio' : 'signal';
 
     // For portfolio strategies, validate signal format requirement
     if (validStrategyType === 'portfolio' && !pythonCode.includes('data_map')) {
@@ -107,7 +111,24 @@ export async function POST(request: Request) {
     const allIndicators = await prisma.indicator.findMany({
       select: { id: true, name: true, outputColumn: true, isGroup: true, groupName: true, expectedOutputs: true },
     });
-    const { dependencies, dependencyColumns } = detectDependencies(pythonCode, allIndicators);
+    const { dependencies, dependencyColumns, importedDatasets } = detectDependencies(pythonCode, allIndicators);
+
+    // Auto-detect external dataset references from code
+    let resolvedExternalDatasets = externalDatasets || {};
+    if (importedDatasets.length > 0) {
+      const dsStocks = await prisma.stock.findMany({
+        where: { symbol: { in: importedDatasets } },
+        select: { id: true, symbol: true },
+      });
+      for (const ds of dsStocks) {
+        const alreadyPresent = Object.values(resolvedExternalDatasets as Record<string, any>).some(
+          (v: any) => v?.datasetName === ds.symbol
+        );
+        if (!alreadyPresent) {
+          (resolvedExternalDatasets as Record<string, any>)[`auto_${ds.symbol}`] = { groupId: '', datasetName: ds.symbol };
+        }
+      }
+    }
 
     // Create strategy
     const strategy = await prisma.strategy.create({
@@ -117,9 +138,11 @@ export async function POST(request: Request) {
         description,
         pythonCode,
         strategyType: validStrategyType,
+        category: category || undefined,
+        tags: tags || undefined,
         parameters: parameters || {},
         constraints: validStrategyType === 'portfolio' ? constraints : undefined,
-        externalDatasets: externalDatasets || undefined,
+        externalDatasets: Object.keys(resolvedExternalDatasets as Record<string, any>).length > 0 ? resolvedExternalDatasets : undefined,
         dependencies,
       },
     });
@@ -131,6 +154,8 @@ export async function POST(request: Request) {
         strategyId: strategy.id,
       },
     });
+
+    logger.info(LogSource.API, 'save_strategy', 'Created strategy', { userId, metadata: { strategyId: strategy.id } });
 
     return NextResponse.json({
       success: true,

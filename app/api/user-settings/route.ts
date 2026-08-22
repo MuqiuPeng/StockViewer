@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { logger } from '@/lib/logger';
+import { LogSource } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -54,8 +56,11 @@ export async function POST(request: Request) {
       },
     });
 
+    logger.info(LogSource.API, 'update_user_settings', 'Updated user settings', { userId: session.user.id, metadata: { setupComplete } });
+
     return NextResponse.json({ settings });
   } catch (error) {
+    logger.error(LogSource.API, 'update_user_settings', 'Failed to update settings', { error });
     console.error('Error updating user settings:', error);
     return NextResponse.json(
       { error: 'Failed to update settings', message: error instanceof Error ? error.message : 'Unknown error' },

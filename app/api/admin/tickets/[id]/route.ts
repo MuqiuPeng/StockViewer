@@ -8,7 +8,8 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
 import { isAdmin } from '@/lib/admin';
-import { Prisma } from '@prisma/client';
+import { Prisma, LogSource } from '@prisma/client';
+import { logger } from '@/lib/logger';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -176,6 +177,8 @@ export async function PATCH(
         }
       }
     }
+
+    logger.info(LogSource.API, 'admin_review_ticket', 'Reviewed ticket', { userId, metadata: { ticketId: id, action } });
 
     return NextResponse.json({
       success: true,

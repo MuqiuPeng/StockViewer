@@ -6,6 +6,8 @@
 import { NextResponse } from 'next/server';
 import { getApiStorage } from '@/lib/api-auth';
 import { computeIndicator, computeIndicators, ComputeResult } from '@/lib/indicator-compute';
+import { logger } from '@/lib/logger';
+import { LogSource } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -68,6 +70,8 @@ export async function POST(request: Request) {
     const successCount = Object.values(results).filter(r => r.success).length;
     const failCount = stockIds.length - successCount;
 
+    logger.info(LogSource.API, 'apply_indicator', 'Applied indicator', { userId, metadata: { indicatorId } });
+
     return NextResponse.json({
       success: allSuccess,
       message: allSuccess
@@ -76,6 +80,7 @@ export async function POST(request: Request) {
       results,
     });
   } catch (error) {
+    logger.error(LogSource.API, 'apply_indicator', error instanceof Error ? error.message : 'Unknown error', { error });
     console.error('Error applying indicator:', error);
     return NextResponse.json(
       {

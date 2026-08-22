@@ -9,6 +9,8 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
 import { detectDependencies } from '@/lib/detect-dependencies';
+import { logger } from '@/lib/logger';
+import { LogSource } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -98,7 +100,7 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const { name, description, pythonCode, parameters, constraints, externalDatasets } = body;
+    const { name, description, pythonCode, parameters, constraints, externalDatasets, category, tags } = body;
 
     // Validate Python code if provided
     if (pythonCode) {
@@ -138,6 +140,8 @@ export async function PUT(
     if (pythonCode !== undefined) updateData.pythonCode = pythonCode;
     if (parameters !== undefined) updateData.parameters = parameters;
     if (externalDatasets !== undefined) updateData.externalDatasets = externalDatasets;
+    if (category !== undefined) updateData.category = category;
+    if (tags !== undefined) updateData.tags = tags;
 
     // Allow updating constraints for portfolio strategies
     if (constraints !== undefined && strategy.strategyType === 'portfolio') {
@@ -158,6 +162,8 @@ export async function PUT(
       data: updateData,
     });
 
+    logger.info(LogSource.API, 'update_strategy', `Updated strategy "${updated.name}"`, { userId, metadata: { strategyId: params.id, name: updated.name } });
+
     return NextResponse.json({
       success: true,
       strategy: {
@@ -168,6 +174,7 @@ export async function PUT(
       },
     });
   } catch (error) {
+    logger.error(LogSource.API, 'update_strategy', 'Failed to update strategy', { error, metadata: { strategyId: params.id } });
     console.error('Error updating strategy:', error);
     return NextResponse.json(
       { error: 'Failed to update strategy', message: error instanceof Error ? error.message : 'Unknown error' },
@@ -207,6 +214,8 @@ export async function DELETE(
         where: { id: params.id },
       });
 
+      logger.info(LogSource.API, 'delete_strategy', `Deleted strategy "${strategy.name}"`, { userId, metadata: { strategyId: params.id, name: strategy.name } });
+
       return NextResponse.json({
         success: true,
         deleted: true,
@@ -228,6 +237,8 @@ export async function DELETE(
         );
       }
 
+      logger.info(LogSource.API, 'delete_strategy', `Removed strategy "${strategy.name}" from collection`, { userId, metadata: { strategyId: params.id, name: strategy.name } });
+
       return NextResponse.json({
         success: true,
         removed: true,
@@ -235,6 +246,7 @@ export async function DELETE(
       });
     }
   } catch (error) {
+    logger.error(LogSource.API, 'delete_strategy', 'Failed to delete strategy', { error, metadata: { strategyId: params.id } });
     console.error('Error deleting strategy:', error);
     return NextResponse.json(
       { error: 'Failed to delete strategy', message: error instanceof Error ? error.message : 'Unknown error' },

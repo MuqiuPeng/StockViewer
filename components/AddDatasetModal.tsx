@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { DATA_SOURCES, getDataSourceConfig, getDataSourceCategories } from '@/lib/data-sources';
+import { logAction, logError } from '@/lib/client-logger';
 
 interface AddDatasetModalProps {
   isOpen: boolean;
@@ -203,15 +204,18 @@ export default function AddDatasetModal({ isOpen, onClose, onSuccess }: AddDatas
             success: true,
             message: 'Added successfully',
           });
+          logAction('add_dataset', 'Added dataset', { symbol: sym, dataSource });
           // Call onSuccess for each successful addition to refresh the list
           onSuccess(data.stock?.name || sym);
         }
       } catch (err) {
+        const errorMessage = err instanceof Error ? err.message : 'Network error';
         addResults.push({
           symbol: sym,
           success: false,
-          message: err instanceof Error ? err.message : 'Network error',
+          message: errorMessage,
         });
+        logError('add_dataset', errorMessage, { symbol: sym, dataSource });
       }
     }
 

@@ -38,10 +38,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# local env files
-.env*.local
-.env
-.env.docker
+# local env files - ignore every real env file, keep only the examples
+.env*
+!.env*.example
 
 # vercel
 .vercel

@@ -8,6 +8,7 @@ import BacktestHistorySidebar from './BacktestHistorySidebar';
 import BacktestHistoryDetailModal from './BacktestHistoryDetailModal';
 import { BacktestHistoryEntry } from '@/lib/backtest-history-storage';
 import { Strategy } from '@/lib/strategy-storage';
+import { logAction, logError } from '@/lib/client-logger';
 
 interface DatasetInfo {
   id: string;
@@ -220,6 +221,8 @@ export default function BacktestPage() {
         setDatasetData(null);
       }
 
+      logAction('run_backtest', 'Started backtest', { strategyId });
+
       const response = await fetch('/api/backtest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -239,6 +242,7 @@ export default function BacktestPage() {
       const data = await response.json();
       if (data.error) {
         const errorMessage = data.message || data.error || 'Unknown error occurred';
+        logError('run_backtest', errorMessage, { strategyId });
         console.error('Backtest error:', data);
         alert(`Backtest failed: ${errorMessage}`);
         return;
@@ -246,7 +250,9 @@ export default function BacktestPage() {
 
       setBacktestResults(data.result);
     } catch (err) {
-      alert(`Failed to run backtest: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+      logError('run_backtest', errorMessage, { strategyId });
+      alert(`Failed to run backtest: ${errorMessage}`);
     } finally {
       setIsBacktestLoading(false);
     }
