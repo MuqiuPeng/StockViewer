@@ -106,8 +106,9 @@ def _http_get(
     GET with redirect following and simple retry-on-disconnect logic.
 
     EastMoney's push2.eastmoney.com issues 302 → push2delay.eastmoney.com,
-    so follow_redirects=True is mandatory.  The kline endpoint occasionally
-    drops the connection; a short backoff + retry resolves transient failures.
+    so follow_redirects=True is mandatory.  The endpoints occasionally drop the
+    connection or return a transient 5xx (seen while paging through long lists);
+    a short backoff + retry resolves these.  Client 4xx errors are not retried.
     """
     timeout = settings.akshare_timeout
     last_exc: Exception = RuntimeError("No attempts made")
@@ -121,7 +122,20 @@ def _http_get(
                 r = client.get(url, params=params)
             r.raise_for_status()
             return r
-        except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadError) as exc:
+        except httpx.HTTPStatusError as exc:
+            # Only transient server-side 5xx are worth retrying; 4xx won't heal.
+            if exc.response.status_code < 500:
+                raise
+            last_exc = exc
+            if attempt < retries:
+                logger.warning(
+                    "EastMoney HTTP %d (attempt %d/%d) — retrying in %.1fs",
+                    exc.response.status_code, attempt, retries, backoff * attempt,
+                )
+                time.sleep(backoff * attempt)
+        except httpx.TransportError as exc:
+            # Covers connect/read/write/timeout/protocol errors (e.g. the server
+            # dropping the connection mid-response).
             last_exc = exc
             if attempt < retries:
                 logger.warning(
@@ -468,10 +482,14 @@ class EastMoneyProvider(BaseDataProvider):
         if cache_key in _cache:
             return _cache[cache_key]
 
-        items = self._fetch_clist(
-            fs=market_fs[market],
-            fields="f12,f13,f14",
-        )
+        try:
+            items = self._fetch_clist(
+                fs=market_fs[market],
+                fields="f12,f13,f14",
+            )
+        except Exception as exc:
+            logger.error("EastMoney stock list fetch failed (market=%s): %s", market, exc)
+            return {"success": False, "error": str(exc), "error_code": "FETCH_ERROR"}
 
         exchange_map = {"0": "SZSE", "1": "SSE", "116": "HKEX"}
 
@@ -513,7 +531,11 @@ class EastMoneyProvider(BaseDataProvider):
         if cache_key in _cache:
             return _cache[cache_key]
 
-        items = self._fetch_clist(fs=market_fs[market], fields="f12,f13,f14")
+        try:
+            items = self._fetch_clist(fs=market_fs[market], fields="f12,f13,f14")
+        except Exception as exc:
+            logger.error("EastMoney index list fetch failed (market=%s): %s", market, exc)
+            return {"success": False, "error": str(exc), "error_code": "FETCH_ERROR"}
 
         result = {
             "success": True,
@@ -545,7 +567,11 @@ class EastMoneyProvider(BaseDataProvider):
         if cache_key in _cache:
             return _cache[cache_key]
 
-        items = self._fetch_clist(fs=fund_fs[fund_type], fields="f12,f14")
+        try:
+            items = self._fetch_clist(fs=fund_fs[fund_type], fields="f12,f14")
+        except Exception as exc:
+            logger.error("EastMoney fund list fetch failed (type=%s): %s", fund_type, exc)
+            return {"success": False, "error": str(exc), "error_code": "FETCH_ERROR"}
 
         result = {
             "success": True,
@@ -567,10 +593,14 @@ class EastMoneyProvider(BaseDataProvider):
         if cache_key in _cache:
             return _cache[cache_key]
 
-        items = self._fetch_clist(
-            fs="m:110,m:114,m:115,m:113,m:112",
-            fields="f12,f14,f107",
-        )
+        try:
+            items = self._fetch_clist(
+                fs="m:110,m:114,m:115,m:113,m:112",
+                fields="f12,f14,f107",
+            )
+        except Exception as exc:
+            logger.error("EastMoney futures list fetch failed: %s", exc)
+            return {"success": False, "error": str(exc), "error_code": "FETCH_ERROR"}
 
         result = {
             "success": True,
@@ -615,30 +645,60 @@ class EastMoneyProvider(BaseDataProvider):
         self,
         fs: str,
         fields: str,
-        page_size: int = 50000,
+        page_size: int = 100,
     ) -> List[Dict]:
         """
-        Fetch a security list from EastMoney's clist endpoint.
+        Fetch a complete security list from EastMoney's clist endpoint.
 
-        Handles single-page fetch with a large page size (usually sufficient
-        to retrieve all instruments in one round-trip for most categories).
+        The endpoint caps every response at 100 rows regardless of the requested
+        ``pz``, so we page through with ``pn`` until ``data.total`` rows have been
+        collected (or a short/empty page signals the end).  A single large-``pz``
+        request would silently return only the first 100 instruments.
         """
-        params: Dict[str, Any] = {
-            "pn": 1,
-            "pz": page_size,
-            "po": 1,
-            "np": 1,
-            "ut": _UT,
-            "fltt": 2,
-            "invt": 2,
-            "fid": "f3",
-            "fs": fs,
-            "fields": fields,
-        }
-        try:
-            r = _http_get(_CLIST_URL, params)
-            payload = r.json()
-            return payload.get("data", {}).get("diff") or []
-        except Exception as exc:
-            logger.error("EastMoney clist fetch error (fs=%s): %s", fs, exc)
-            return []
+        rows: List[Dict] = []
+        total: Optional[int] = None
+        page = 1
+        while True:
+            params: Dict[str, Any] = {
+                "pn": page,
+                "pz": page_size,
+                "po": 1,
+                "np": 1,
+                "ut": _UT,
+                "fltt": 2,
+                "invt": 2,
+                "fid": "f3",
+                "fs": fs,
+                "fields": fields,
+            }
+            try:
+                payload = _http_get(_CLIST_URL, params).json()
+            except Exception as exc:
+                # If any page fails (even after _http_get's own retries) we can't
+                # guarantee a complete list, so surface it as an error rather than
+                # returning a silently-truncated one that looks successful.
+                logger.error(
+                    "EastMoney clist fetch error (fs=%s, pn=%d of total): %s",
+                    fs, page, exc,
+                )
+                raise
+
+            data = payload.get("data") or {}
+            diff = data.get("diff") or []
+            if not diff:
+                break
+            rows.extend(diff)
+
+            if total is None:
+                total = data.get("total") or 0
+            # Stop once we've collected everything or the server returned a short page.
+            if len(rows) >= total or len(diff) < page_size:
+                break
+            page += 1
+
+        if total and len(rows) < total:
+            logger.warning(
+                "EastMoney clist incomplete (fs=%s): collected %d of %d rows",
+                fs, len(rows), total,
+            )
+        return rows

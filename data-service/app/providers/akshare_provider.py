@@ -5,7 +5,9 @@ Wraps the akshare library and implements the BaseDataProvider interface.
 """
 import akshare as ak
 import pandas as pd
-from typing import Optional, Dict, Any
+import requests
+import time
+from typing import Callable, Optional, Dict, Any
 from cachetools import TTLCache
 import logging
 
@@ -16,6 +18,49 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 _cache: TTLCache = TTLCache(maxsize=settings.cache_max_size, ttl=settings.cache_ttl)
+
+# Transient network failures raised by akshare's bare ``requests`` calls to the
+# Chinese exchange endpoints.  These servers (notably www.szse.cn, which serves
+# the A-share list as an xlsx report) intermittently drop the TLS connection
+# mid-handshake — surfacing as e.g. ``SSLError(SSLEOFError(... UNEXPECTED_EOF_
+# WHILE_READING ...))`` or ``ConnectionError('Connection aborted', RemoteDisconnected)``.
+# akshare performs no retries of its own, so a single dropped connection fails
+# the whole request.  ``requests.exceptions.ConnectionError`` is the parent of
+# ``SSLError`` and also wraps ``RemoteDisconnected``, so it covers both cases.
+_TRANSIENT_NETWORK_ERRORS = (
+    requests.exceptions.ConnectionError,
+    requests.exceptions.Timeout,
+    requests.exceptions.ChunkedEncodingError,
+)
+
+
+def _call_with_retry(
+    fn: Callable[..., Any],
+    *args: Any,
+    retries: int = 3,
+    backoff: float = 1.0,
+    **kwargs: Any,
+) -> Any:
+    """Call *fn* retrying transient network failures with linear backoff.
+
+    akshare's data functions wrap bare ``requests.get`` calls with no retry
+    logic.  The successful sub-fetches inside a composite akshare function are
+    ``@lru_cache``d, so a retry only re-attempts the part that actually failed.
+    Non-transient errors propagate immediately.
+    """
+    last_exc: Exception = RuntimeError("No attempts made")
+    for attempt in range(1, retries + 1):
+        try:
+            return fn(*args, **kwargs)
+        except _TRANSIENT_NETWORK_ERRORS as exc:
+            last_exc = exc
+            if attempt < retries:
+                logger.warning(
+                    "AKShare transient network error (attempt %d/%d): %s — retrying in %.1fs",
+                    attempt, retries, exc, backoff * attempt,
+                )
+                time.sleep(backoff * attempt)
+    raise last_exc
 
 
 class AKShareProvider(BaseDataProvider):
@@ -225,7 +270,7 @@ class AKShareProvider(BaseDataProvider):
 
         try:
             func = getattr(ak, func_name)
-            df = func(**params)
+            df = _call_with_retry(func, **params)
 
             if df is None or df.empty:
                 return {
@@ -304,7 +349,19 @@ class AKShareProvider(BaseDataProvider):
             items = []
 
             if market == "a_share":
-                df = ak.stock_info_a_code_name()
+                try:
+                    df = _call_with_retry(ak.stock_info_a_code_name)
+                except _TRANSIENT_NETWORK_ERRORS as exc:
+                    # ak.stock_info_a_code_name() depends on www.szse.cn, which
+                    # frequently drops the TLS connection from server/Docker
+                    # environments.  Fall back to EastMoney's hardened, szse-free
+                    # list endpoint so the A-share list still resolves.
+                    logger.warning(
+                        "AKShare A-share list failed after retries (%s); "
+                        "falling back to EastMoney provider.", exc,
+                    )
+                    return self._a_share_list_via_eastmoney(include_delisted)
+
                 for _, row in df.iterrows():
                     code = str(row.get("code", row.get("代码", "")))
                     items.append({
@@ -320,7 +377,7 @@ class AKShareProvider(BaseDataProvider):
                         (ak.stock_info_sz_delist, "SZSE", "证券代码", "证券简称"),
                     ]:
                         try:
-                            for _, row in fetch_fn().iterrows():
+                            for _, row in _call_with_retry(fetch_fn).iterrows():
                                 items.append({
                                     "code": str(row.get(code_col, "")),
                                     "name": str(row.get(name_col, "")),
@@ -331,7 +388,7 @@ class AKShareProvider(BaseDataProvider):
                             pass
 
             elif market == "hk":
-                df = ak.stock_hk_spot_em()
+                df = _call_with_retry(ak.stock_hk_spot_em)
                 for _, row in df.iterrows():
                     items.append({
                         "code": str(row.get("代码", "")),
@@ -341,7 +398,7 @@ class AKShareProvider(BaseDataProvider):
                     })
 
             elif market == "us":
-                df = ak.stock_us_spot_em()
+                df = _call_with_retry(ak.stock_us_spot_em)
                 for _, row in df.iterrows():
                     items.append({
                         "code": str(row.get("代码", "")),
@@ -366,6 +423,21 @@ class AKShareProvider(BaseDataProvider):
             logger.error(f"Error fetching stock list for {market}: {exc}")
             return {"success": False, "error": str(exc), "error_code": "FETCH_ERROR"}
 
+    def _a_share_list_via_eastmoney(self, include_delisted: bool) -> Dict[str, Any]:
+        """Fallback A-share list via the EastMoney provider.
+
+        EastMoney's clist endpoint does not touch www.szse.cn and uses a
+        hardened HTTP client (browser UA, redirect following, retry-on-disconnect,
+        IPv6-first DNS), so it survives the szse.cn TLS outages that break
+        ``ak.stock_info_a_code_name()``.  Imported lazily to avoid a module-load
+        cycle with the provider registry.
+        """
+        from .eastmoney_provider import EastMoneyProvider
+
+        return EastMoneyProvider().get_stock_list(
+            market="a_share", include_delisted=include_delisted
+        )
+
     def get_index_list(self, market: str = "zh") -> Dict[str, Any]:
         try:
             items = []
@@ -384,7 +456,7 @@ class AKShareProvider(BaseDataProvider):
                 }
 
             fetch_fn, mkt_label = fetch_map[market]
-            df = fetch_fn()
+            df = _call_with_retry(fetch_fn)
             for _, row in df.iterrows():
                 items.append({
                     "code": str(row.get("代码", row.get("symbol", ""))),
@@ -416,7 +488,7 @@ class AKShareProvider(BaseDataProvider):
                     "error_code": "INVALID_TYPE",
                 }
 
-            df = fetch_map[fund_type]()
+            df = _call_with_retry(fetch_map[fund_type])
             for _, row in df.iterrows():
                 items.append({
                     "code": str(row.get("代码", "")),
@@ -435,7 +507,7 @@ class AKShareProvider(BaseDataProvider):
 
     def get_futures_list(self) -> Dict[str, Any]:
         try:
-            df = ak.futures_zh_spot()
+            df = _call_with_retry(ak.futures_zh_spot)
             items = []
             for _, row in df.iterrows():
                 items.append({
