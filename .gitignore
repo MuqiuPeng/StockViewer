@@ -82,3 +82,6 @@ aktools_log.log*
 *.tar.gz
 
 /lib/generated/prisma
+
+# local postgres cluster (project-local, disposable)
+/.pgdata/
