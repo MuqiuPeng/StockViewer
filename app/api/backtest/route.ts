@@ -9,6 +9,8 @@ import { getApiStorage } from '@/lib/api-auth';
 import { executeBacktest, BacktestInput, BacktestResult } from '@/lib/backtest-executor';
 import { getStockPrices } from '@/lib/stock-storage';
 import { createBacktestHistoryEntry, BacktestHistoryEntry } from '@/lib/backtest-history-storage';
+import { logger } from '@/lib/logger';
+import { LogSource } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -197,7 +199,7 @@ export async function POST(request: Request) {
       const input: BacktestInput = {
         strategyCode: strategy.pythonCode,
         data,
-        strategyType: 'single',
+        strategyType: 'signal',
         initialCash: parameters.initialCash || 100000,
         commission: parameters.commission || 0.001,
         parameters: parameters.strategyParameters || strategy.parameters as Record<string, any> || {},
@@ -268,7 +270,7 @@ export async function POST(request: Request) {
         historyEntry = await createBacktestHistoryEntry({
           strategyId: strategy.id,
           strategyName: strategy.name,
-          strategyType: strategy.strategyType as 'single' | 'portfolio',
+          strategyType: strategy.strategyType as 'signal' | 'portfolio',
           target: { type: 'single', stockId: target.stockId, symbols },
           parameters: {
             initialCash: parameters.initialCash || 100000,
@@ -288,6 +290,8 @@ export async function POST(request: Request) {
           },
         }, storage);
       }
+
+      logger.info(LogSource.API, 'run_backtest', 'Backtest completed', { userId, metadata: { strategyId } });
 
       return NextResponse.json({
         success: result.success,
@@ -445,7 +449,7 @@ export async function POST(request: Request) {
         historyEntry = await createBacktestHistoryEntry({
           strategyId: strategy.id,
           strategyName: strategy.name,
-          strategyType: strategy.strategyType as 'single' | 'portfolio',
+          strategyType: strategy.strategyType as 'signal' | 'portfolio',
           target: {
             type: 'group',
             symbols,
@@ -470,6 +474,8 @@ export async function POST(request: Request) {
           },
         }, storage);
       }
+
+      logger.info(LogSource.API, 'run_backtest', 'Backtest completed', { userId, metadata: { strategyId } });
 
       return NextResponse.json({
         success: true,
@@ -555,7 +561,7 @@ export async function POST(request: Request) {
         historyEntry = await createBacktestHistoryEntry({
           strategyId: strategy.id,
           strategyName: strategy.name,
-          strategyType: strategy.strategyType as 'single' | 'portfolio',
+          strategyType: strategy.strategyType as 'signal' | 'portfolio',
           target: { type: 'portfolio', symbols },
           parameters: {
             initialCash: parameters.initialCash || 100000,
@@ -577,6 +583,8 @@ export async function POST(request: Request) {
         }, storage);
       }
 
+      logger.info(LogSource.API, 'run_backtest', 'Backtest completed', { userId, metadata: { strategyId } });
+
       return NextResponse.json({
         success: result.success,
         result,
@@ -590,6 +598,7 @@ export async function POST(request: Request) {
       );
     }
   } catch (error) {
+    logger.error(LogSource.API, 'run_backtest', error instanceof Error ? error.message : 'Unknown error', { error });
     console.error('Error running backtest:', error);
     return NextResponse.json(
       {

@@ -9,6 +9,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
+import { logger } from '@/lib/logger';
+import { LogSource } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -100,6 +102,8 @@ export async function POST(request: Request) {
       data: { userId, viewSettingId: setting.id },
     });
 
+    logger.info(LogSource.API, 'save_view_setting', `Created view setting "${setting.name}"`, { userId, metadata: { settingId: setting.id, name: setting.name } });
+
     return NextResponse.json({
       success: true,
       setting: {
@@ -110,6 +114,7 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    logger.error(LogSource.API, 'save_view_setting', 'Failed to create view setting', { error });
     console.error('Error creating view setting:', error);
     return NextResponse.json(
       { error: 'Failed to create view setting', message: error instanceof Error ? error.message : 'Unknown error' },

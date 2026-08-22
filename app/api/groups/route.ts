@@ -9,6 +9,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
+import { logger } from '@/lib/logger';
+import { LogSource } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -166,6 +168,8 @@ export async function POST(request: Request) {
       data: { userId, groupId: group.id },
     });
 
+    logger.info(LogSource.API, 'save_group', 'Created group', { userId, metadata: { groupId: group.id } });
+
     return NextResponse.json({
       success: true,
       group: {
@@ -270,6 +274,8 @@ export async function PUT(request: Request) {
       where: { id },
       data: updateData,
     });
+
+    logger.info(LogSource.API, 'save_group', 'Updated group', { userId, metadata: { groupId: id } });
 
     return NextResponse.json({
       success: true,

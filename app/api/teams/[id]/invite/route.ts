@@ -6,6 +6,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
+import { logger } from '@/lib/logger';
+import { LogSource } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -129,6 +131,8 @@ export async function POST(
       },
     });
 
+    logger.info(LogSource.API, 'invite_team_member', `Invited member to team`, { userId, metadata: { teamId: params.id, invitedUserId: targetUser.id, email } });
+
     return NextResponse.json({
       success: true,
       invitation: {
@@ -139,6 +143,7 @@ export async function POST(
       },
     });
   } catch (error) {
+    logger.error(LogSource.API, 'invite_team_member', 'Failed to send invitation', { error, metadata: { teamId: params.id } });
     console.error('Error sending invitation:', error);
     return NextResponse.json(
       { error: 'Failed to send invitation', message: error instanceof Error ? error.message : 'Unknown error' },

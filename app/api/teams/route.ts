@@ -7,6 +7,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
+import { logger } from '@/lib/logger';
+import { LogSource } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -116,6 +118,8 @@ export async function POST(request: Request) {
       },
     });
 
+    logger.info(LogSource.API, 'create_team', `Created team "${team.name}"`, { userId, metadata: { teamId: team.id, name: team.name } });
+
     return NextResponse.json({
       success: true,
       team: {
@@ -132,6 +136,7 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    logger.error(LogSource.API, 'create_team', 'Failed to create team', { error });
     console.error('Error creating team:', error);
     return NextResponse.json(
       { error: 'Failed to create team', message: error instanceof Error ? error.message : 'Unknown error' },

@@ -7,6 +7,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
+import { logger } from '@/lib/logger';
+import { LogSource } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -273,6 +275,8 @@ export async function POST(request: Request) {
       },
     });
 
+    logger.info(LogSource.API, 'create_post', 'Created post', { userId, metadata: { postId: post.id, attachmentCount: post.attachments.length } });
+
     return NextResponse.json({
       success: true,
       post: {
@@ -292,6 +296,7 @@ export async function POST(request: Request) {
       },
     });
   } catch (error) {
+    logger.error(LogSource.API, 'create_post', 'Failed to create post', { error });
     console.error('Error creating post:', error);
     return NextResponse.json(
       { error: 'Failed to create post', message: error instanceof Error ? error.message : 'Unknown error' },

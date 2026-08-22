@@ -140,9 +140,7 @@ function renderNodes(
     if (isSelected) {
       ctx.beginPath();
       ctx.arc(node.x, node.y, radius + 8, 0, Math.PI * 2);
-      ctx.fillStyle = node.type === 'strategy'
-        ? 'rgba(245, 158, 11, 0.3)'
-        : 'rgba(59, 130, 246, 0.3)';
+      ctx.fillStyle = node.color + '4D'; // ~30% opacity
       ctx.fill();
     }
 
@@ -150,9 +148,7 @@ function renderNodes(
     if (isHovered && !isSelected) {
       ctx.beginPath();
       ctx.arc(node.x, node.y, radius + 5, 0, Math.PI * 2);
-      ctx.fillStyle = node.type === 'strategy'
-        ? 'rgba(245, 158, 11, 0.2)'
-        : 'rgba(59, 130, 246, 0.2)';
+      ctx.fillStyle = node.color + '33'; // ~20% opacity
       ctx.fill();
     }
 

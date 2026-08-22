@@ -8,6 +8,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
+import { logger } from '@/lib/logger';
+import { LogSource } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -148,6 +150,8 @@ export async function PUT(
       data: updateData,
     });
 
+    logger.info(LogSource.API, 'update_group', `Updated group "${updated.name}"`, { userId, metadata: { groupId: params.id, name: updated.name } });
+
     return NextResponse.json({
       success: true,
       group: {
@@ -158,6 +162,7 @@ export async function PUT(
       },
     });
   } catch (error) {
+    logger.error(LogSource.API, 'update_group', 'Failed to update group', { error, metadata: { groupId: params.id } });
     console.error('Error updating group:', error);
     return NextResponse.json(
       { error: 'Failed to update group', message: error instanceof Error ? error.message : 'Unknown error' },
@@ -205,6 +210,8 @@ export async function DELETE(
         where: { id: params.id },
       });
 
+      logger.info(LogSource.API, 'delete_group', `Deleted group "${group.name}"`, { userId, metadata: { groupId: params.id, name: group.name } });
+
       return NextResponse.json({
         success: true,
         deleted: true,
@@ -223,6 +230,8 @@ export async function DELETE(
         );
       }
 
+      logger.info(LogSource.API, 'delete_group', `Removed group "${group.name}" from collection`, { userId, metadata: { groupId: params.id, name: group.name } });
+
       return NextResponse.json({
         success: true,
         removed: true,
@@ -230,6 +239,7 @@ export async function DELETE(
       });
     }
   } catch (error) {
+    logger.error(LogSource.API, 'delete_group', 'Failed to delete group', { error, metadata: { groupId: params.id } });
     console.error('Error deleting group:', error);
     return NextResponse.json(
       { error: 'Failed to delete group', message: error instanceof Error ? error.message : 'Unknown error' },

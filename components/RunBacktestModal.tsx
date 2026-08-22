@@ -7,7 +7,7 @@ interface Strategy {
   id: string;
   name: string;
   description: string;
-  strategyType: 'single' | 'portfolio';
+  strategyType: 'signal' | 'portfolio';
   parameters?: Record<string, any>;
 }
 
@@ -274,7 +274,7 @@ export default function RunBacktestModal({
               <option value="">Select a strategy</option>
               {strategies.map((strategy) => (
                 <option key={strategy.id} value={strategy.id}>
-                  {strategy.name} ({strategy.strategyType === 'portfolio' ? 'Portfolio' : 'Single Stock'})
+                  {strategy.name} ({strategy.strategyType === 'portfolio' ? 'Portfolio' : 'Signal'})
                 </option>
               ))}
             </select>
@@ -285,7 +285,7 @@ export default function RunBacktestModal({
                   {selectedStrategy.strategyType === 'portfolio' ? (
                     <span className="text-purple-600 dark:text-purple-400">Portfolio Strategy - Requires multiple stocks with shared capital</span>
                   ) : (
-                    <span className="text-blue-600 dark:text-blue-400">Single Stock Strategy</span>
+                    <span className="text-blue-600 dark:text-blue-400">Signal Strategy</span>
                   )}
                 </p>
               </>
@@ -318,14 +318,14 @@ export default function RunBacktestModal({
                 />
                 <span>Stock Group</span>
               </label>
-              <label className={`flex items-center dark:text-gray-200 ${selectedStrategy?.strategyType === 'single' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+              <label className={`flex items-center dark:text-gray-200 ${selectedStrategy?.strategyType === 'signal' ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                 <input
                   type="radio"
                   value="portfolio"
                   checked={mode === 'portfolio'}
                   onChange={(e) => setMode(e.target.value as 'single' | 'group' | 'portfolio')}
                   className="mr-2"
-                  disabled={selectedStrategy?.strategyType === 'single'}
+                  disabled={selectedStrategy?.strategyType === 'signal'}
                 />
                 <span>Portfolio (Multi-Stock)</span>
               </label>

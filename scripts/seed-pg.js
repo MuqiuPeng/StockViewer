@@ -113,7 +113,7 @@ async function main() {
     {
       name: 'Golden Cross',
       description: 'Buy when SMA20 crosses above SMA60',
-      strategyType: 'single',
+      strategyType: 'signal',
       pythonCode: `def strategy(data):
     signal = (data["sma20"] > data["sma60"]) & (data["sma20"].shift(1) <= data["sma60"].shift(1))
     return signal.astype(int)`,
@@ -122,7 +122,7 @@ async function main() {
     {
       name: 'RSI Oversold',
       description: 'Buy when RSI drops below 30',
-      strategyType: 'single',
+      strategyType: 'signal',
       pythonCode: `def strategy(data):
     signal = (data["rsi14"] < 30) & (data["rsi14"].shift(1) >= 30)
     return signal.astype(int)`,
@@ -131,7 +131,7 @@ async function main() {
     {
       name: 'MACD Crossover',
       description: 'Buy when MACD crosses above zero',
-      strategyType: 'single',
+      strategyType: 'signal',
       pythonCode: `def strategy(data):
     signal = (data["macd"] > 0) & (data["macd"].shift(1) <= 0)
     return signal.astype(int)`,

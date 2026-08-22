@@ -11,6 +11,7 @@ import { API_CONFIG } from '@/lib/env';
 import { getDataSourceConfig } from '@/lib/data-sources';
 import { Period, PERIODS, getPeriodLabel, getPeriodFullName } from '@/lib/period-aggregation';
 import Link from 'next/link';
+import SimulationPanel from './SimulationPanel';
 
 interface ConstantLine {
   value: number;
@@ -125,6 +126,11 @@ export default function StockViewer() {
   // Map of indicator outputColumn to indicator ID for lazy compute
   const [indicatorIdMap, setIndicatorIdMap] = useState<Map<string, string>>(new Map());
 
+  // Simulation state
+  const [simulationPanelOpen, setSimulationPanelOpen] = useState(false);
+  const [simulatedCandle, setSimulatedCandle] = useState<CandleData | null>(null);
+  const [simulatedIndicators, setSimulatedIndicators] = useState<Record<string, IndicatorData[]> | null>(null);
+
   // Resizable panel state
   const [leftPanelWidth, setLeftPanelWidth] = useState(() => {
     // Load from localStorage on initial render
@@ -178,8 +184,24 @@ export default function StockViewer() {
   }, [enabledIndicators1, enabledIndicators2]);
 
   // Candles and indicators are now pre-aggregated by the API based on selectedPeriod
-  const candles = datasetData?.candles ?? [];
-  const indicators = datasetData?.indicators ?? {};
+  // Merge simulation data into display data
+  const candles = useMemo(() => {
+    const base = datasetData?.candles ?? [];
+    if (simulatedCandle && selectedPeriod === 'daily') {
+      return [...base, simulatedCandle];
+    }
+    return base;
+  }, [datasetData?.candles, simulatedCandle, selectedPeriod]);
+
+  const indicators = useMemo(() => {
+    const base = datasetData?.indicators ?? {};
+    if (!simulatedIndicators) return base;
+    const merged = { ...base };
+    for (const [key, simValues] of Object.entries(simulatedIndicators)) {
+      merged[key] = [...(base[key] || []), ...simValues];
+    }
+    return merged;
+  }, [datasetData?.indicators, simulatedIndicators]);
 
   // Filter indicators to show only those matching the selected period
   // Base indicators (volume, turnover, etc.) are always shown
@@ -199,6 +221,30 @@ export default function StockViewer() {
       return !indPeriod || indPeriod === selectedPeriod;
     });
   }, [datasetData?.meta?.indicators, selectedPeriod, indicatorPeriodMap]);
+
+  // All available indicators: merge computed indicators from dataset with all defined indicators
+  const allAvailableIndicators = useMemo(() => {
+    const set = new Set(periodFilteredIndicators);
+    // Add all defined indicators (even if not yet computed for this stock)
+    for (const ind of definedIndicators) {
+      const indPeriod = indicatorPeriodMap.get(ind);
+      if (!indPeriod || indPeriod === selectedPeriod) {
+        set.add(ind);
+      }
+    }
+    // Add group indicator columns
+    for (const groupName of indicatorGroups) {
+      const indPeriod = indicatorPeriodMap.get(groupName);
+      if (!indPeriod || indPeriod === selectedPeriod) {
+        // Group columns from dataset meta
+        const groupCols = (datasetData?.meta?.indicators || []).filter(
+          (ind: string) => ind.startsWith(groupName + ':')
+        );
+        groupCols.forEach((col: string) => set.add(col));
+      }
+    }
+    return Array.from(set);
+  }, [periodFilteredIndicators, definedIndicators, indicatorGroups, indicatorPeriodMap, selectedPeriod, datasetData?.meta?.indicators]);
 
   // Get available groups (custom groups + data sources)
   const availableGroups = useMemo(() => {
@@ -644,6 +690,53 @@ export default function StockViewer() {
 
     loadDatasetData();
   }, [selectedDataset, selectedPeriod]);
+
+  // Clear simulation when dataset or period changes
+  useEffect(() => {
+    setSimulatedCandle(null);
+    setSimulatedIndicators(null);
+  }, [selectedDataset, selectedPeriod]);
+
+  // Simulation handlers
+  const handleSimulationResult = useCallback((candle: CandleData & { volume?: number }, simResult: Record<string, { value?: number | null; groupValues?: Record<string, number | null>; error?: string }>) => {
+    setSimulatedCandle(candle);
+    const simIndicators: Record<string, IndicatorData[]> = {};
+
+    // Calculate base indicator values for the simulated candle
+    const realCandles = datasetData?.candles ?? [];
+    const lastReal = realCandles[realCandles.length - 1];
+    const lastClose = lastReal?.close ?? 0;
+
+    const changePct = lastClose > 0 ? ((candle.close - lastClose) / lastClose) * 100 : 0;
+    const changeAmount = candle.close - lastClose;
+    const amplitude = lastClose > 0 ? ((candle.high - candle.low) / lastClose) * 100 : 0;
+
+    simIndicators['volume'] = [{ time: candle.time, value: candle.volume || 0 }];
+    simIndicators['change_pct'] = [{ time: candle.time, value: changePct }];
+    simIndicators['change_amount'] = [{ time: candle.time, value: changeAmount }];
+    simIndicators['amplitude'] = [{ time: candle.time, value: amplitude }];
+    simIndicators['turnover'] = [{ time: candle.time, value: 0 }];
+    simIndicators['turnover_rate'] = [{ time: candle.time, value: 0 }];
+
+    // Add custom indicator results
+    for (const [indicatorId, res] of Object.entries(simResult)) {
+      if (res.error) continue;
+      const outputCol = Array.from(indicatorIdMap.entries()).find(([, id]) => id === indicatorId)?.[0];
+      if (res.groupValues) {
+        for (const [col, val] of Object.entries(res.groupValues)) {
+          simIndicators[col] = [{ time: candle.time, value: val }];
+        }
+      } else if (outputCol) {
+        simIndicators[outputCol] = [{ time: candle.time, value: res.value ?? null }];
+      }
+    }
+    setSimulatedIndicators(simIndicators);
+  }, [indicatorIdMap, datasetData?.candles]);
+
+  const handleClearSimulation = useCallback(() => {
+    setSimulatedCandle(null);
+    setSimulatedIndicators(null);
+  }, []);
 
   // Auto-compute enabled indicators when dataset changes and indicators don't have values
   useEffect(() => {
@@ -1189,15 +1282,15 @@ export default function StockViewer() {
         </div>
 
         {/* Period Selector */}
-        <div className="flex items-center gap-1 border border-gray-300 dark:border-gray-600 rounded overflow-hidden">
+        <div className="flex items-center bg-gray-100 dark:bg-gray-700/50 rounded-lg p-0.5">
           {PERIODS.map((period) => (
             <button
               key={period}
               onClick={() => setSelectedPeriod(period)}
-              className={`px-3 py-2 text-sm font-medium transition-colors ${
+              className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all duration-150 ${
                 selectedPeriod === period
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700'
+                  ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
               }`}
               title={getPeriodFullName(period)}
             >
@@ -1322,9 +1415,7 @@ export default function StockViewer() {
             style={{ width: leftPanelWidth }}
           >
             <IndicatorSelector
-              indicators={periodFilteredIndicators.filter((ind: string) =>
-                isDefinedIndicator(ind)
-              )}
+              indicators={allAvailableIndicators}
               enabledIndicators={enabledIndicators1}
               onToggle={handleToggleIndicator1}
               title="Indicator Chart 1"
@@ -1333,9 +1424,7 @@ export default function StockViewer() {
               computedIndicators={computedIndicators}
             />
             <IndicatorSelector
-              indicators={periodFilteredIndicators.filter((ind: string) =>
-                isDefinedIndicator(ind)
-              )}
+              indicators={allAvailableIndicators}
               enabledIndicators={enabledIndicators2}
               onToggle={handleToggleIndicator2}
               title="Indicator Chart 2"
@@ -1388,8 +1477,29 @@ export default function StockViewer() {
               constantLines2={constantLines2}
               onConstantLines1Change={setConstantLines1}
               onConstantLines2Change={setConstantLines2}
+              simulatedTime={simulatedCandle?.time ?? null}
             />
           </div>
+
+          {/* What-If Simulation Panel */}
+          {selectedDataset && datasetData && selectedPeriod === 'daily' && (
+            <SimulationPanel
+              stockId={selectedDataset}
+              lastClose={datasetData.candles.length > 0 ? datasetData.candles[datasetData.candles.length - 1]?.close ?? 0 : 0}
+              lastDate={datasetData.candles.length > 0 ? datasetData.candles[datasetData.candles.length - 1]?.time ?? '' : ''}
+              indicatorIds={Array.from(new Set([...enabledIndicators1, ...enabledIndicators2]))
+                .filter(ind => indicatorIdMap.has(ind))
+                .map(ind => indicatorIdMap.get(ind)!)
+              }
+              indicatorNames={new Map(
+                Array.from(indicatorIdMap.entries()).map(([name, id]) => [id, name])
+              )}
+              isOpen={simulationPanelOpen}
+              onToggle={() => setSimulationPanelOpen(!simulationPanelOpen)}
+              onSimulationResult={handleSimulationResult}
+              onClearSimulation={handleClearSimulation}
+            />
+          )}
         </div>
       )}
 

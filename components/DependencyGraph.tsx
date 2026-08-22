@@ -28,6 +28,7 @@ interface Indicator {
   isGroup?: boolean;
   groupName?: string;
   expectedOutputs?: string[];
+  externalDatasets?: Record<string, { groupId: string; datasetName: string }>;
 }
 
 interface Strategy {
@@ -36,6 +37,13 @@ interface Strategy {
   dependencies?: string[];
   dependencyColumns?: string[];
   strategyType?: string;
+  externalDatasets?: Record<string, { groupId: string; datasetName: string }>;
+}
+
+interface Dataset {
+  id: string;
+  symbol: string;
+  name: string;
 }
 
 export default function DependencyGraph() {
@@ -45,6 +53,7 @@ export default function DependencyGraph() {
   // Data state
   const [indicators, setIndicators] = useState<Indicator[]>([]);
   const [strategies, setStrategies] = useState<Strategy[]>([]);
+  const [datasets, setDatasets] = useState<Dataset[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -81,22 +90,25 @@ export default function DependencyGraph() {
   const cameraRef = useRef<Camera>({ x: 0, y: 0, zoom: 1 });
 
   // Computed values
-  const hasData = indicators.length > 0 || strategies.length > 0;
+  const hasData = indicators.length > 0 || strategies.length > 0 || datasets.length > 0;
 
   // Fetch data
   const fetchData = async () => {
     try {
       setError(null);
-      const [indRes, stratRes] = await Promise.all([
+      const [indRes, stratRes, dsRes] = await Promise.all([
         fetch('/api/indicators'),
         fetch('/api/strategies'),
+        fetch('/api/datasets'),
       ]);
 
       const indData = await indRes.json();
       const stratData = await stratRes.json();
+      const dsData = await dsRes.json();
 
       setIndicators(indData.indicators || []);
       setStrategies(stratData.strategies || []);
+      setDatasets((dsData.datasets || []).map((ds: any) => ({ id: ds.id, symbol: ds.code || ds.symbol, name: ds.name })));
     } catch {
       setError('Failed to load data');
     } finally {
@@ -125,19 +137,15 @@ export default function DependencyGraph() {
   // Build graph model ONLY when data changes (not when nodeGap/nodeSize changes)
   useEffect(() => {
     if (loading) return;
-    if (indicators.length === 0 && strategies.length === 0) return;
-
-    // Skip if already initialized with same data (StrictMode protection)
-    if (initializedRef.current && physicsRef.current && modelRef.current?.nodes.length === indicators.length + strategies.length) {
-      return;
-    }
+    if (indicators.length === 0 && strategies.length === 0 && datasets.length === 0) return;
 
     const model = buildGraphModel(
       indicators,
       strategies,
       nodeSize,
       dimensions.width,
-      dimensions.height
+      dimensions.height,
+      datasets,
     );
     modelRef.current = model;
 
@@ -156,7 +164,7 @@ export default function DependencyGraph() {
     physicsRef.current.startSettle('dataChange');
     initializedRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [indicators, strategies, loading, dimensions.width, dimensions.height]);
+  }, [indicators, strategies, datasets, loading, dimensions.width, dimensions.height]);
 
   // Update physics params when nodeGap/nodeSize changes (preserve positions)
   useEffect(() => {
@@ -702,7 +710,7 @@ export default function DependencyGraph() {
           {/* Legend and Settings - top left */}
           <div className="absolute top-4 left-4 flex flex-col gap-2">
             <div
-              className={`w-64 flex items-center gap-4 backdrop-blur-sm rounded-lg px-4 py-2 border ${
+              className={`flex items-center gap-4 backdrop-blur-sm rounded-lg px-4 py-2 border ${
                 isDark ? 'bg-black/50 border-white/10' : 'bg-white/70 border-gray-200'
               }`}
             >
@@ -716,6 +724,12 @@ export default function DependencyGraph() {
                 <div className="w-3 h-3 rounded-full bg-amber-500"></div>
                 <span className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
                   Strategy
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                <span className={`text-sm ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                  Dataset
                 </span>
               </div>
               <button
@@ -910,14 +924,16 @@ export default function DependencyGraph() {
                     <button
                       onClick={() => {
                         if (activeNode.type === 'indicator') {
-                          const ind = indicators.find((i) => i.id === activeNode.id);
+                          const ind = indicators.find((i) => i.id === activeNode.id || activeNode.id.startsWith(i.id + ':'));
                           if (ind) handleEditIndicator(ind);
-                        } else {
+                        } else if (activeNode.type === 'strategy') {
                           const strat = strategies.find((s) => s.id === activeNode.id);
                           if (strat) handleEditStrategy(strat);
                         }
+                        // Dataset nodes: no edit action
                       }}
-                      className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-400 transition-all hover:scale-105"
+                      disabled={activeNode.type === 'dataset'}
+                      className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-all hover:scale-105 ${activeNode.type === 'dataset' ? 'bg-gray-500 text-gray-300 cursor-not-allowed' : 'bg-blue-500 text-white hover:bg-blue-400'}`}
                     >
                       <svg
                         className="w-4 h-4"

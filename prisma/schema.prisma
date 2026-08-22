@@ -84,6 +84,9 @@ model User {
   sharePosts SharePost[]
   posts      Post[]
 
+  // System logs
+  systemLogs SystemLog[]
+
   // Teams (user collaboration groups)
   ownedTeams        Team[]           @relation("TeamOwner")
   teamMemberships   TeamMember[]
@@ -297,11 +300,13 @@ model Strategy {
   name             String
   description      String?  @db.Text
   pythonCode       String   @db.Text
-  strategyType     String   @default("single")
+  strategyType     String   @default("signal")
   constraints      Json?
   parameters       Json?
   externalDatasets Json?
   dependencies     String[]
+  category         String?
+  tags             String[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -314,6 +319,7 @@ model Strategy {
 
   @@unique([name]) // Globally unique names for shared strategies
   @@index([createdBy])
+  @@index([category])
 }
 
 /// User's strategy collection (subscriptions)
@@ -502,6 +508,41 @@ enum TicketStatus {
   PENDING  // Awaiting review
   APPROVED // Approved (processed or processing)
   REJECTED // Rejected
+}
+
+enum LogLevel {
+  INFO
+  WARN
+  ERROR
+}
+
+enum LogSource {
+  FRONTEND
+  API
+  DATA_SERVICE
+}
+
+// ============================================================================
+// SYSTEM LOGS
+// ============================================================================
+
+model SystemLog {
+  id        String    @id @default(cuid())
+  level     LogLevel
+  source    LogSource
+  action    String
+  message   String    @db.Text
+  userId    String?
+  metadata  Json?     @db.JsonB
+  createdAt DateTime  @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([level])
+  @@index([source])
+  @@index([action])
+  @@index([userId])
 }
 
 /// Tickets for admin approval

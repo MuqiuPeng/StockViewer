@@ -15,7 +15,7 @@ export interface BacktestHistoryEntry {
   // Backtest configuration
   strategyId: string;
   strategyName: string;
-  strategyType: 'single' | 'portfolio';
+  strategyType: 'signal' | 'portfolio';
 
   // Target information
   target: {

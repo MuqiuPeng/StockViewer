@@ -10,6 +10,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
+import { logger } from '@/lib/logger';
+import { LogSource } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -179,11 +181,14 @@ export async function DELETE(request: Request) {
       );
     }
 
+    logger.info(LogSource.API, 'remove_dataset', `Removed ${stock.symbol} from collection`, { userId, metadata: { stockId: stock.id, symbol: stock.symbol } });
+
     return NextResponse.json({
       success: true,
       message: `Removed ${stock.symbol} from your collection`,
     });
   } catch (error) {
+    logger.error(LogSource.API, 'remove_dataset', 'Failed to remove dataset', { error });
     console.error('Error removing dataset:', error);
     return NextResponse.json(
       { error: 'Failed to remove dataset', message: error instanceof Error ? error.message : 'Unknown error' },

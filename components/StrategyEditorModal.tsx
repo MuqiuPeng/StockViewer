@@ -1,20 +1,17 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Editor from '@monaco-editor/react';
 import { useTheme } from './ThemeProvider';
-import { BASE_COLUMNS } from './editor/placeholder-utils';
-import { useDataSourceFetcher } from '@/hooks/useDataSourceFetcher';
-import DataSourcePicker from './editor/DataSourcePicker';
-import type { PickerItem, PickerState, DataSourcesConfig } from './editor/types';
-import './editor/DataSourceChip.css';
 
 interface Strategy {
   id: string;
   name: string;
   description: string;
   pythonCode: string;
-  strategyType: 'single' | 'portfolio';
+  strategyType: 'signal' | 'portfolio';
+  category?: string;
+  tags?: string[];
   constraints?: {
     maxPositions?: number;
     positionSizing: 'equal' | 'custom';
@@ -230,7 +227,9 @@ export default function StrategyEditorModal({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [pythonCode, setPythonCode] = useState('');
-  const [strategyType, setStrategyType] = useState<'single' | 'portfolio'>('single');
+  const [strategyType, setStrategyType] = useState<'signal' | 'portfolio'>('signal');
+  const [category, setCategory] = useState('');
+  const [tagsInput, setTagsInput] = useState('');
   const [constraints, setConstraints] = useState({
     maxPositions: 5,
     positionSizing: 'equal' as 'equal' | 'custom',
@@ -239,40 +238,23 @@ export default function StrategyEditorModal({
   const [externalDatasets, setExternalDatasets] = useState<Record<string, { groupId: string; datasetName: string }>>({});
   const [editingDataset, setEditingDataset] = useState<string | null>(null);
   const [tempDatasetConfig, setTempDatasetConfig] = useState<{ paramName: string; groupId: string; datasetName: string } | null>(null);
-  const [dependencies, setDependencies] = useState<string[]>([]);
+  // dependencies are auto-detected by the backend from Python code
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<any>(null);
   const [isValidating, setIsValidating] = useState(false);
   const [validationSuccess, setValidationSuccess] = useState<string | null>(null);
 
-  // Editor refs for @ trigger
+  // Editor refs
   const editorRef = useRef<any>(null);
   const monacoRef = useRef<any>(null);
-  const pickerContainerRef = useRef<HTMLDivElement | null>(null);
-  const pickerWidgetRef = useRef<any>(null);
-
-  const [pickerState, setPickerState] = useState<PickerState>({
-    isOpen: false,
-    mode: 'insert',
-    position: null,
-    anchorPlaceholder: null,
-  });
-
-  // Shared data fetcher
-  const {
-    indicators: fetchedIndicators,
-    importableItems,
-    datasetColumns,
-    groups,
-    isLoading: loadingData,
-  } = useDataSourceFetcher(isOpen);
 
   // Local indicators for dependencies
   const [indicators, setIndicators] = useState<Indicator[]>([]);
 
   // Build a lookup from stock DB id to stock info
   const [datasets, setDatasets] = useState<Array<{ id: string; name: string; code: string; filename: string }>>([]);
+  const [groups, setGroups] = useState<Array<{ id: string; name: string; stockIds: string[] }>>([]);
   const stockLookup = new Map(datasets.map(ds => [ds.id, ds]));
 
   const getGroupStocks = (group: any) => {
@@ -296,6 +278,11 @@ export default function StrategyEditorModal({
         .then((res) => res.json())
         .then((data) => setIndicators(data.indicators || []))
         .catch(console.error);
+
+      fetch('/api/groups')
+        .then((res) => res.json())
+        .then((data) => { if (data.groups) setGroups(data.groups); })
+        .catch(console.error);
     }
   }, [isOpen]);
 
@@ -304,22 +291,26 @@ export default function StrategyEditorModal({
       setName(strategy.name);
       setDescription(strategy.description);
       setPythonCode(strategy.pythonCode);
-      setStrategyType(strategy.strategyType || 'single');
+      setStrategyType(strategy.strategyType || 'signal');
+      setCategory(strategy.category || '');
+      setTagsInput((strategy.tags || []).join(', '));
       setConstraints({
         maxPositions: strategy.constraints?.maxPositions ?? 5,
         positionSizing: strategy.constraints?.positionSizing ?? 'equal',
         reserveCash: strategy.constraints?.reserveCash ?? 10,
       });
       setExternalDatasets(strategy.externalDatasets || {});
-      setDependencies(strategy.dependencies || []);
+      // dependencies auto-detected
     } else {
       setName('');
       setDescription('');
-      setStrategyType('single');
+      setStrategyType('signal');
+      setCategory('');
+      setTagsInput('');
       setPythonCode(CODE_TEMPLATE);
       setConstraints({ maxPositions: 5, positionSizing: 'equal', reserveCash: 10 });
       setExternalDatasets({});
-      setDependencies([]);
+      // dependencies auto-detected
     }
     setError(null);
     setValidationSuccess(null);
@@ -330,143 +321,6 @@ export default function StrategyEditorModal({
       setPythonCode(strategyType === 'portfolio' ? PORTFOLIO_CODE_TEMPLATE : CODE_TEMPLATE);
     }
   }, [strategyType, strategy]);
-
-  // @ trigger handler for strategies - inserts raw data access code
-  useEffect(() => {
-    const editor = editorRef.current;
-    const monaco = monacoRef.current;
-    if (!editor || !monaco || readOnly) return;
-
-    const typeDisposable = editor.onDidType((text: string) => {
-      if (text === '@') {
-        const selection = editor.getSelection();
-        if (!selection) return;
-        const pos = selection.getPosition();
-
-        // Create picker container if needed
-        if (!pickerContainerRef.current) {
-          pickerContainerRef.current = document.createElement('div');
-          pickerContainerRef.current.className = 'visual-block-picker-container';
-        }
-
-        // Remove existing widget
-        if (pickerWidgetRef.current) {
-          editor.removeContentWidget(pickerWidgetRef.current);
-        }
-
-        const widget = {
-          getId: () => 'strategy-data-source-picker',
-          getDomNode: () => pickerContainerRef.current!,
-          getPosition: () => ({
-            position: { lineNumber: pos.lineNumber, column: pos.column },
-            preference: [monaco.editor.ContentWidgetPositionPreference.BELOW],
-          }),
-        };
-
-        pickerWidgetRef.current = widget;
-        editor.addContentWidget(widget);
-
-        setPickerState({
-          isOpen: true,
-          mode: 'insert',
-          position: { lineNumber: pos.lineNumber, column: pos.column },
-          anchorPlaceholder: null,
-        });
-      }
-    });
-
-    // Escape handler
-    const keyDisposable = editor.onKeyDown((e: any) => {
-      if (e.keyCode === monaco.KeyCode.Escape && pickerState.isOpen) {
-        e.preventDefault();
-        e.stopPropagation();
-        closePicker();
-      }
-    });
-
-    return () => {
-      typeDisposable.dispose();
-      keyDisposable.dispose();
-    };
-  }, [readOnly, pickerState.isOpen]);
-
-  const closePicker = useCallback(() => {
-    setPickerState({
-      isOpen: false,
-      mode: 'insert',
-      position: null,
-      anchorPlaceholder: null,
-    });
-    const editor = editorRef.current;
-    if (editor && pickerWidgetRef.current) {
-      editor.removeContentWidget(pickerWidgetRef.current);
-      pickerWidgetRef.current = null;
-    }
-  }, []);
-
-  // Insert raw data access code when selecting from picker
-  const handlePickerSelect = useCallback((item: PickerItem) => {
-    const editor = editorRef.current;
-    const monaco = monacoRef.current;
-    if (!editor || !monaco) return;
-
-    let codeToInsert = '';
-    if (item.type === 'base') {
-      codeToInsert = `data['${item.column}']`;
-    } else if (item.type === 'indicator') {
-      if (item.isGroupColumn) {
-        codeToInsert = `data['${item.indicatorName}:${item.columnName}']`;
-      } else {
-        codeToInsert = `data['${item.indicatorName}']`;
-      }
-    } else if (item.type === 'dataset') {
-      codeToInsert = `data['${item.datasetSymbol}@${item.datasetColumn}']`;
-    }
-
-    if (!codeToInsert) return;
-
-    // Remove the '@' trigger and insert the code
-    const model = editor.getModel();
-    if (!model) return;
-
-    const selection = editor.getSelection();
-    if (!selection) return;
-
-    const cursorPos = selection.getPosition();
-    const offset = model.getOffsetAt(cursorPos);
-    const textBefore = model.getValue().substring(Math.max(0, offset - 1), offset);
-
-    if (textBefore === '@') {
-      const startPos = model.getPositionAt(offset - 1);
-      editor.executeEdits('insert-data-ref', [{
-        range: new monaco.Range(
-          startPos.lineNumber, startPos.column,
-          cursorPos.lineNumber, cursorPos.column
-        ),
-        text: codeToInsert,
-        forceMoveMarkers: true,
-      }]);
-    } else {
-      const insertRange = new monaco.Range(
-        cursorPos.lineNumber, cursorPos.column,
-        cursorPos.lineNumber, cursorPos.column
-      );
-      editor.executeEdits('insert-data-ref', [{
-        range: insertRange,
-        text: codeToInsert,
-        forceMoveMarkers: true,
-      }]);
-    }
-
-    editor.focus();
-    closePicker();
-  }, [closePicker]);
-
-  const dataSources: DataSourcesConfig = {
-    baseColumns: BASE_COLUMNS,
-    indicators: importableItems,
-    datasetColumns,
-  };
 
   const handleValidate = async () => {
     setError(null);
@@ -525,6 +379,8 @@ export default function StrategyEditorModal({
         )
       );
 
+      const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
+
       const response = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -533,9 +389,11 @@ export default function StrategyEditorModal({
           description,
           pythonCode,
           strategyType,
+          category: category || undefined,
+          tags: tags.length > 0 ? tags : undefined,
           constraints: strategyType === 'portfolio' ? constraints : undefined,
           externalDatasets: Object.keys(validExternalDatasets).length > 0 ? validExternalDatasets : undefined,
-          dependencies: dependencies.length > 0 ? dependencies : undefined,
+          // dependencies are auto-detected by backend
         }),
       });
 
@@ -627,18 +485,52 @@ export default function StrategyEditorModal({
               <label className="block text-xs font-medium mb-1 dark:text-white">Type</label>
               <select
                 value={strategyType}
-                onChange={(e) => setStrategyType(e.target.value as 'single' | 'portfolio')}
+                onChange={(e) => setStrategyType(e.target.value as 'signal' | 'portfolio')}
                 className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
                 disabled={isLoading || !!strategy || readOnly}
               >
-                <option value="single">Single Stock</option>
-                <option value="portfolio">Portfolio (Multi-Stock)</option>
+                <option value="signal">Signal</option>
+                <option value="portfolio">Portfolio</option>
               </select>
               {!!strategy && (
                 <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
                   Cannot change after creation
                 </p>
               )}
+            </div>
+
+            {/* Category */}
+            <div>
+              <label className="block text-xs font-medium mb-1 dark:text-white">Category</label>
+              <input
+                type="text"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                list="strategy-categories"
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
+                placeholder="e.g., Trend Following"
+                disabled={isLoading || readOnly}
+              />
+              <datalist id="strategy-categories">
+                <option value="Trend Following" />
+                <option value="Mean Reversion" />
+                <option value="Momentum" />
+                <option value="Breakout" />
+                <option value="Hedging" />
+              </datalist>
+            </div>
+
+            {/* Tags */}
+            <div>
+              <label className="block text-xs font-medium mb-1 dark:text-white">Tags</label>
+              <input
+                type="text"
+                value={tagsInput}
+                onChange={(e) => setTagsInput(e.target.value)}
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
+                placeholder="Comma-separated tags"
+                disabled={isLoading || readOnly}
+              />
             </div>
 
             {/* Name */}
@@ -667,45 +559,6 @@ export default function StrategyEditorModal({
               />
             </div>
 
-            {/* Dependencies */}
-            <div>
-              <label className="block text-xs font-medium mb-1 dark:text-white">Dependencies</label>
-              <p className="text-[10px] text-gray-500 dark:text-gray-400 mb-1">
-                Required indicators for this strategy
-              </p>
-              {indicators.length === 0 ? (
-                <p className="text-xs text-gray-400 italic">No indicators</p>
-              ) : (
-                <div className="flex flex-wrap gap-1 p-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 max-h-24 overflow-y-auto">
-                  {indicators.map((indicator) => (
-                    <label
-                      key={indicator.id}
-                      className={`flex items-center px-2 py-0.5 rounded cursor-pointer text-xs transition-colors ${
-                        dependencies.includes(indicator.name)
-                          ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-800 dark:text-blue-200'
-                          : 'bg-gray-100 dark:bg-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-500'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={dependencies.includes(indicator.name)}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setDependencies([...dependencies, indicator.name]);
-                          } else {
-                            setDependencies(dependencies.filter((d) => d !== indicator.name));
-                          }
-                        }}
-                        className="sr-only"
-                        disabled={readOnly}
-                      />
-                      {indicator.name}
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-
             {/* Template Button */}
             <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
               <button
@@ -720,7 +573,7 @@ export default function StrategyEditorModal({
 
             {/* Hint */}
             <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-2">
-              Type <span className="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded">@</span> in the editor to insert data references
+              Use <span className="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded">{"data['close']"}</span> format for data references
             </div>
           </div>
 
@@ -964,14 +817,6 @@ export default function StrategyEditorModal({
         </div>
       </div>
 
-      {/* Inline DataSource Picker (rendered via Monaco ContentWidget) */}
-      <DataSourcePicker
-        container={pickerContainerRef.current}
-        pickerState={pickerState}
-        dataSources={dataSources}
-        onSelect={handlePickerSelect}
-        onClose={closePicker}
-      />
     </div>
   );
 }

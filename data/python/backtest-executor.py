@@ -1173,7 +1173,7 @@ def main():
 
         # Extract common components
         strategy_code = input_data['strategyCode']
-        strategy_type = input_data.get('strategyType', 'single')
+        strategy_type = input_data.get('strategyType', 'signal')
         initial_cash = input_data.get('initialCash', 100000.0)
         commission = input_data.get('commission', 0.001)
         parameters = input_data.get('parameters', {})

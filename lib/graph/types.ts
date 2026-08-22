@@ -1,6 +1,6 @@
 // Graph model types for custom physics-based graph visualization
 
-export type NodeType = 'indicator' | 'strategy';
+export type NodeType = 'indicator' | 'strategy' | 'dataset';
 
 export interface GraphNode {
   id: string;

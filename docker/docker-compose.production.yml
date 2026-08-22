@@ -12,6 +12,12 @@ services:
     environment:
       - LOG_LEVEL=info
       - CACHE_TTL=300
+      - DATA_PROVIDER=eastmoney
+      - LOG_INGEST_URL=http://stockviewer:3000/api/admin/logs/ingest/service
+      - LOG_INGEST_SECRET=${LOG_INGEST_SECRET}
+    dns:
+      - 2001:4860:4860::8888
+      - 8.8.8.8
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
@@ -27,16 +33,17 @@ services:
       context: ..
       dockerfile: docker/Dockerfile.combined
       args:
-        - NEXT_PUBLIC_BASE_PATH=/stockviewer
+        - NEXT_PUBLIC_BASE_PATH=
     ports:
-      - "3000:3000"
+      - "3002:3000"
     environment:
       - NODE_ENV=production
       - DATA_SERVICE_URL=http://data-service:8000
       - DATA_SERVICE_TIMEOUT_MS=60000
       - DATA_SERVICE_RETRIES=2
       - NEXT_PUBLIC_STORAGE_MODE=database
-      - NEXT_PUBLIC_BASE_PATH=/stockviewer
+      - NEXT_PUBLIC_BASE_PATH=
+      - AUTH_TRUST_HOST=true
       - PYTHON_EXECUTABLE=/opt/venv/bin/python
       - PYTHON_TIMEOUT_MS=300000
       # Auth (from .env.production)
@@ -46,6 +53,8 @@ services:
       - AUTH_GOOGLE_SECRET=${AUTH_GOOGLE_SECRET}
       - AUTH_GITHUB_ID=${AUTH_GITHUB_ID}
       - AUTH_GITHUB_SECRET=${AUTH_GITHUB_SECRET}
+      - ADMIN_GITHUB_ID=${ADMIN_GITHUB_ID}
+      - LOG_INGEST_SECRET=${LOG_INGEST_SECRET}
       # Database
       - DATABASE_URL=postgresql://stockviewer:${POSTGRES_PASSWORD}@db:5432/stockviewer
     volumes:
@@ -79,6 +88,11 @@ services:
 networks:
   stockviewer-network:
     driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+        - subnet: fd00:dead:beef::/48
 
 volumes:
   stockviewer-data:

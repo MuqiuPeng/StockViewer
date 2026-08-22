@@ -7,17 +7,25 @@ interface RawIndicator {
   name: string;
   outputColumn: string;
   dependencies?: string[];
-  dependencyColumns?: string[]; // Specific column names referenced (e.g., "MACD:DIF")
+  dependencyColumns?: string[];
   isGroup?: boolean;
   groupName?: string;
   expectedOutputs?: string[];
+  externalDatasets?: Record<string, { groupId: string; datasetName: string }>;
 }
 
 interface RawStrategy {
   id: string;
   name: string;
   dependencies?: string[];
-  dependencyColumns?: string[]; // Specific column names referenced
+  dependencyColumns?: string[];
+  externalDatasets?: Record<string, { groupId: string; datasetName: string }>;
+}
+
+interface RawDataset {
+  id: string;
+  symbol: string;
+  name: string;
 }
 
 /**
@@ -30,7 +38,8 @@ export function buildGraphModel(
   strategies: RawStrategy[],
   nodeRadius: number,
   viewWidth: number,
-  viewHeight: number
+  viewHeight: number,
+  datasets?: RawDataset[],
 ): GraphModel {
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
@@ -179,6 +188,94 @@ export function buildGraphModel(
       }
     });
   });
+
+  // Create dataset nodes and edges
+  // Datasets are referenced via externalDatasets field in indicators/strategies
+  const datasetNodeIds = new Set<string>();
+  const datasetLookup = new Map<string, string>(); // symbol/name -> nodeId
+
+  if (datasets && datasets.length > 0) {
+    // Collect which datasets are actually referenced
+    const referencedDatasets = new Set<string>();
+
+    // Check indicator externalDatasets
+    indicators.forEach((ind) => {
+      if (ind.externalDatasets && typeof ind.externalDatasets === 'object') {
+        Object.values(ind.externalDatasets).forEach((ds) => {
+          if (ds?.datasetName) referencedDatasets.add(ds.datasetName);
+        });
+      }
+    });
+
+    // Check strategy externalDatasets
+    strategies.forEach((strat) => {
+      if (strat.externalDatasets && typeof strat.externalDatasets === 'object') {
+        Object.values(strat.externalDatasets).forEach((ds) => {
+          if (ds?.datasetName) referencedDatasets.add(ds.datasetName);
+        });
+      }
+    });
+
+    // Create nodes only for referenced datasets
+    datasets.forEach((ds) => {
+      if (!referencedDatasets.has(ds.symbol) && !referencedDatasets.has(ds.name)) return;
+
+      const nodeId = `ds:${ds.id}`;
+      const displayName = ds.name !== ds.symbol ? `${ds.symbol} ${ds.name}` : ds.symbol;
+
+      datasetLookup.set(ds.symbol, nodeId);
+      datasetLookup.set(ds.name, nodeId);
+      datasetLookup.set(ds.id, nodeId);
+
+      const node: GraphNode = {
+        id: nodeId,
+        name: displayName,
+        type: 'dataset',
+        color: '#22c55e', // green
+        x: 0,
+        y: 0,
+        vx: 0,
+        vy: 0,
+        radius: nodeRadius,
+        componentId: 0,
+      };
+
+      nodeIndex.set(nodeId, nodes.length);
+      nodes.push(node);
+      datasetNodeIds.add(nodeId);
+    });
+
+    // Create edges: dataset → indicator/strategy
+    // Dataset is the source (resource), indicator/strategy is the target (consumer)
+    indicators.forEach((ind) => {
+      if (!ind.externalDatasets || typeof ind.externalDatasets !== 'object') return;
+
+      const targetIds: string[] = [];
+      if (ind.isGroup && ind.groupName && ind.expectedOutputs && ind.expectedOutputs.length > 0) {
+        targetIds.push(`${ind.id}:${ind.expectedOutputs[0]}`);
+      } else {
+        targetIds.push(ind.id);
+      }
+
+      Object.values(ind.externalDatasets).forEach((ds) => {
+        const dsNodeId = ds?.datasetName ? datasetLookup.get(ds.datasetName) : null;
+        if (dsNodeId && nodeIndex.has(dsNodeId) && targetIds[0] && nodeIndex.has(targetIds[0])) {
+          edges.push({ id: `e${edgeId++}`, sourceId: dsNodeId, targetId: targetIds[0] });
+        }
+      });
+    });
+
+    strategies.forEach((strat) => {
+      if (!strat.externalDatasets || typeof strat.externalDatasets !== 'object') return;
+
+      Object.values(strat.externalDatasets).forEach((ds) => {
+        const dsNodeId = ds?.datasetName ? datasetLookup.get(ds.datasetName) : null;
+        if (dsNodeId && nodeIndex.has(dsNodeId) && nodeIndex.has(strat.id)) {
+          edges.push({ id: `e${edgeId++}`, sourceId: dsNodeId, targetId: strat.id });
+        }
+      });
+    });
+  }
 
   // Compute connected components using Union-Find
   const componentCount = computeConnectedComponents(nodes, edges, nodeIndex);

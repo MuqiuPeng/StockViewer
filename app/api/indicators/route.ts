@@ -10,6 +10,8 @@ import { getApiStorage } from '@/lib/api-auth';
 import { validatePythonCode } from '@/lib/indicator-validator';
 import { detectDependencies } from '@/lib/detect-dependencies';
 import { computeCodeHash } from '@/lib/code-hash';
+import { logger } from '@/lib/logger';
+import { LogSource } from '@prisma/client';
 
 export const runtime = 'nodejs';
 
@@ -136,7 +138,27 @@ export async function POST(request: Request) {
     const allIndicators = await prisma.indicator.findMany({
       select: { id: true, name: true, outputColumn: true, isGroup: true, groupName: true, expectedOutputs: true },
     });
-    const { dependencies, dependencyColumns } = detectDependencies(pythonCode, allIndicators);
+    const { dependencies, dependencyColumns, importedDatasets } = detectDependencies(pythonCode, allIndicators);
+
+    // Auto-detect external dataset references from code
+    let resolvedExternalDatasets = externalDatasets || {};
+    if (importedDatasets.length > 0) {
+      // Look up dataset symbols in the Stock table
+      const dsStocks = await prisma.stock.findMany({
+        where: { symbol: { in: importedDatasets } },
+        select: { id: true, symbol: true, name: true },
+      });
+      for (const ds of dsStocks) {
+        // Add to externalDatasets if not already present
+        const alreadyPresent = Object.values(resolvedExternalDatasets as Record<string, any>).some(
+          (v: any) => v?.datasetName === ds.symbol
+        );
+        if (!alreadyPresent) {
+          const key = `auto_${ds.symbol}`;
+          (resolvedExternalDatasets as Record<string, any>)[key] = { groupId: '', datasetName: ds.symbol };
+        }
+      }
+    }
 
     // Compute code hash for versioning
     const codeHash = computeCodeHash(pythonCode);
@@ -156,7 +178,7 @@ export async function POST(request: Request) {
         isGroup: isGroup || false,
         groupName: isGroup ? groupName : null,
         expectedOutputs: isGroup ? expectedOutputs.filter((o: string) => o.trim() !== '') : [],
-        externalDatasets: externalDatasets || undefined,
+        externalDatasets: Object.keys(resolvedExternalDatasets as Record<string, any>).length > 0 ? resolvedExternalDatasets : undefined,
         category: category || null,
         tags: tags || [],
         period: period || 'daily',
@@ -170,6 +192,8 @@ export async function POST(request: Request) {
         indicatorId: indicator.id,
       },
     });
+
+    logger.info(LogSource.API, 'save_indicator', 'Created indicator', { userId, metadata: { indicatorId: indicator.id } });
 
     return NextResponse.json({
       success: true,

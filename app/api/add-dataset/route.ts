@@ -14,7 +14,9 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
 import { Prisma } from '@prisma/client';
+import { LogSource } from '@prisma/client';
 import { fetchStockDataFromService } from '@/lib/data-service-client';
+import { logger } from '@/lib/logger';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -157,7 +159,7 @@ export async function POST(request: Request) {
     const records = result.data || [];
     if (records.length === 0 && !isIncremental) {
       return NextResponse.json(
-        { error: 'No data returned', message: 'AKShare returned no data for this symbol' },
+        { error: 'No data returned', message: 'Data source returned no data for this symbol' },
         { status: 400 }
       );
     }
@@ -169,8 +171,9 @@ export async function POST(request: Request) {
     });
 
     // Determine stock name: user-provided > API-fetched > existing real name > symbol
-    const hasRealName = existingStock && existingStock.name !== symbol;
-    const finalStockName = name || result.stockName || (hasRealName ? existingStock.name : symbol);
+    // Always prefer API-returned name over a stale name that equals the symbol
+    const existingRealName = existingStock?.name && existingStock.name !== symbol ? existingStock.name : null;
+    const finalStockName = name || result.stockName || existingRealName || symbol;
 
     // Create or update stock in shared pool
     stock = await prisma.stock.upsert({
@@ -230,11 +233,11 @@ export async function POST(request: Request) {
                 low: new Prisma.Decimal(r.low || 0),
                 close: new Prisma.Decimal(r.close || 0),
                 volume: BigInt(Math.round(r.volume || 0)),
-                turnover: r.turnover !== undefined ? new Prisma.Decimal(r.turnover) : null,
-                amplitude: r.amplitude !== undefined ? new Prisma.Decimal(r.amplitude) : null,
-                changePct: r.change_pct !== undefined ? new Prisma.Decimal(r.change_pct) : null,
-                changeAmount: r.change_amount !== undefined ? new Prisma.Decimal(r.change_amount) : null,
-                turnoverRate: r.turnover_rate !== undefined ? new Prisma.Decimal(r.turnover_rate) : null,
+                turnover: r.turnover != null ? new Prisma.Decimal(r.turnover) : null,
+                amplitude: r.amplitude != null ? new Prisma.Decimal(r.amplitude) : null,
+                changePct: r.change_pct != null ? new Prisma.Decimal(r.change_pct) : null,
+                changeAmount: r.change_amount != null ? new Prisma.Decimal(r.change_amount) : null,
+                turnoverRate: r.turnover_rate != null ? new Prisma.Decimal(r.turnover_rate) : null,
               },
             });
             updatedRecordsCount++;
@@ -249,11 +252,11 @@ export async function POST(request: Request) {
                 low: new Prisma.Decimal(r.low || 0),
                 close: new Prisma.Decimal(r.close || 0),
                 volume: BigInt(Math.round(r.volume || 0)),
-                turnover: r.turnover !== undefined ? new Prisma.Decimal(r.turnover) : null,
-                amplitude: r.amplitude !== undefined ? new Prisma.Decimal(r.amplitude) : null,
-                changePct: r.change_pct !== undefined ? new Prisma.Decimal(r.change_pct) : null,
-                changeAmount: r.change_amount !== undefined ? new Prisma.Decimal(r.change_amount) : null,
-                turnoverRate: r.turnover_rate !== undefined ? new Prisma.Decimal(r.turnover_rate) : null,
+                turnover: r.turnover != null ? new Prisma.Decimal(r.turnover) : null,
+                amplitude: r.amplitude != null ? new Prisma.Decimal(r.amplitude) : null,
+                changePct: r.change_pct != null ? new Prisma.Decimal(r.change_pct) : null,
+                changeAmount: r.change_amount != null ? new Prisma.Decimal(r.change_amount) : null,
+                turnoverRate: r.turnover_rate != null ? new Prisma.Decimal(r.turnover_rate) : null,
               },
             });
             newRecordsCount++;
@@ -280,11 +283,11 @@ export async function POST(request: Request) {
               low: new Prisma.Decimal(r.low || 0),
               close: new Prisma.Decimal(r.close || 0),
               volume: BigInt(Math.round(r.volume || 0)),
-              turnover: r.turnover !== undefined ? new Prisma.Decimal(r.turnover) : null,
-              amplitude: r.amplitude !== undefined ? new Prisma.Decimal(r.amplitude) : null,
-              changePct: r.change_pct !== undefined ? new Prisma.Decimal(r.change_pct) : null,
-              changeAmount: r.change_amount !== undefined ? new Prisma.Decimal(r.change_amount) : null,
-              turnoverRate: r.turnover_rate !== undefined ? new Prisma.Decimal(r.turnover_rate) : null,
+              turnover: r.turnover != null ? new Prisma.Decimal(r.turnover) : null,
+              amplitude: r.amplitude != null ? new Prisma.Decimal(r.amplitude) : null,
+              changePct: r.change_pct != null ? new Prisma.Decimal(r.change_pct) : null,
+              changeAmount: r.change_amount != null ? new Prisma.Decimal(r.change_amount) : null,
+              turnoverRate: r.turnover_rate != null ? new Prisma.Decimal(r.turnover_rate) : null,
             })),
             skipDuplicates: true,
           });
@@ -335,6 +338,8 @@ export async function POST(request: Request) {
       message = `Successfully imported ${records.length} records`;
     }
 
+    logger.info(LogSource.API, 'add_dataset', message, { userId, metadata: { symbol, dataSource, rowCount: finalRowCount } });
+
     return NextResponse.json({
       success: true,
       message,
@@ -351,6 +356,7 @@ export async function POST(request: Request) {
       } : undefined,
     });
   } catch (error) {
+    logger.error(LogSource.API, 'add_dataset', error instanceof Error ? error.message : 'Unknown error', { error });
     console.error('Error adding dataset:', error);
     return NextResponse.json(
       { error: 'Failed to add dataset', message: error instanceof Error ? error.message : 'Unknown error' },

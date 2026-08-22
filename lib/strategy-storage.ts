@@ -11,7 +11,7 @@ export interface Strategy {
   name: string;
   description: string;
   pythonCode: string;
-  strategyType: 'single' | 'portfolio';  // Strategy type
+  strategyType: 'signal' | 'portfolio';  // Strategy type
   constraints?: PortfolioConstraints;     // Portfolio constraints (only for portfolio type)
   parameters?: Record<string, any>;      // Configurable parameters
   externalDatasets?: Record<string, { groupId: string; datasetName: string }>;  // External datasets
@@ -43,7 +43,7 @@ export async function loadStrategies(storage: StorageProvider): Promise<Strategy
       needsSave = true;
       return {
         ...strategy,
-        strategyType: 'single' as const,
+        strategyType: 'signal' as const,
       };
     }
     return strategy;
@@ -97,7 +97,7 @@ export async function saveStrategy(
   // Ensure defaults
   const dataWithDefaults = {
     ...strategyData,
-    strategyType: strategyData.strategyType || 'single',
+    strategyType: strategyData.strategyType || 'signal',
     parameters: strategyData.parameters || {},
   };
 

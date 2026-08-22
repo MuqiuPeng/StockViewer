@@ -422,8 +422,10 @@ class EastMoneyProvider(BaseDataProvider):
           105 NASDAQ / 106 NYSE / 107 AMEX  (US stocks — best-effort)
         """
         if data_source in ("cn.stock", "cn.stock.b", "cn.stock.cdr"):
-            # SSE: 6xxxxx / 9xxxxx (科创板);  SZSE: everything else
-            mkt = "1" if symbol.startswith(("6", "9")) else "0"
+            # SSE: 6xxxxx (主板/科创板), 900xxx (B股)
+            # BSE: 92xxxx, 8xxxxx, 4xxxxx — uses market code 0 (same as SZSE)
+            # SZSE: everything else
+            mkt = "1" if symbol.startswith("6") or symbol.startswith("900") else "0"
             return f"{mkt}.{symbol}"
 
         if data_source == "hk.stock":

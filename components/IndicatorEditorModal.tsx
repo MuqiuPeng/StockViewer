@@ -1,20 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import Editor from '@monaco-editor/react';
 import { useTheme } from './ThemeProvider';
 import {
-  transformPlaceholdersToCode,
-  transformCodeToPlaceholders,
   wrapCodeBody,
   extractCodeBody,
-  BASE_COLUMNS,
 } from './editor/placeholder-utils';
 import type { Period } from './editor/types';
-import { useDataSourceFetcher } from '@/hooks/useDataSourceFetcher';
-import { useMonacoVisualBlocks } from '@/hooks/useMonacoVisualBlocks';
-import DataSourcePicker from './editor/DataSourcePicker';
-import './editor/DataSourceChip.css';
 
 interface Indicator {
   id: string;
@@ -27,6 +20,8 @@ interface Indicator {
   expectedOutputs?: string[];
   externalDatasets?: Record<string, { groupId: string; datasetName: string }>;
   period?: Period;
+  category?: string;
+  tags?: string[];
 }
 
 interface IndicatorEditorModalProps {
@@ -37,12 +32,12 @@ interface IndicatorEditorModalProps {
   readOnly?: boolean;
 }
 
-// Templates - use placeholders for columns
+// Templates - use direct data['column'] format
 const CODE_TEMPLATE = `# Example: 20-day Simple Moving Average
-return ◈close◈.rolling(20).mean()`;
+return data['close'].rolling(20).mean()`;
 
 const MYTT_TEMPLATE = `# Example: MACD indicator group
-DIF, DEA, MACD_hist = MACD(◈close◈.values, SHORT=12, LONG=26, M=9)
+DIF, DEA, MACD_hist = MACD(data['close'].values, SHORT=12, LONG=26, M=9)
 
 return {
     'DIF': DIF,
@@ -58,7 +53,7 @@ export default function IndicatorEditorModal({
   readOnly = false,
 }: IndicatorEditorModalProps) {
   const { theme } = useTheme();
-  const [indicatorType, setIndicatorType] = useState<'custom' | 'mytt_group'>('custom');
+  const [indicatorType, setIndicatorType] = useState<'scalar' | 'vector'>('scalar');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [outputColumn, setOutputColumn] = useState('');
@@ -67,6 +62,8 @@ export default function IndicatorEditorModal({
   const [pythonCode, setPythonCode] = useState('');
   const [externalDatasets, setExternalDatasets] = useState<Record<string, { groupId: string; datasetName: string }>>({});
   const [period, setPeriod] = useState<Period>('daily');
+  const [category, setCategory] = useState(indicator?.category || '');
+  const [tagsInput, setTagsInput] = useState((indicator?.tags || []).join(', '));
   const [activeTab, setActiveTab] = useState<'text' | 'upload'>('text');
   const [isLoading, setIsLoading] = useState(false);
   const [isValidating, setIsValidating] = useState(false);
@@ -76,7 +73,6 @@ export default function IndicatorEditorModal({
   const [syntaxWarnings, setSyntaxWarnings] = useState<string[]>([]);
   const [editorInstance, setEditorInstance] = useState<any>(null);
   const [monacoInstance, setMonacoInstance] = useState<any>(null);
-
   // Orphaned columns check state
   const [showOrphanedColumnsModal, setShowOrphanedColumnsModal] = useState(false);
   const [orphanedColumnsData, setOrphanedColumnsData] = useState<{
@@ -95,47 +91,32 @@ export default function IndicatorEditorModal({
   // Track if outputColumn was manually edited by user
   const [outputColumnManuallyEdited, setOutputColumnManuallyEdited] = useState(false);
 
-  // Track the raw Python code before transformation
-  const [rawPythonCode, setRawPythonCode] = useState<string | null>(null);
-
-  // Shared hooks
-  const { importableItems, datasetColumns, isLoading: loadingData } = useDataSourceFetcher(isOpen);
-
-  const visualBlocks = useMonacoVisualBlocks({
-    code: pythonCode,
-    onCodeChange: setPythonCode,
-    dataSources: {
-      baseColumns: BASE_COLUMNS,
-      indicators: importableItems,
-      datasetColumns,
-    },
-    mode: 'indicator',
-    readOnly,
-  });
-
   // Initialize form when indicator changes
   useEffect(() => {
     if (indicator) {
-      setIndicatorType(indicator.isGroup ? 'mytt_group' : 'custom');
+      setIndicatorType(indicator.isGroup ? 'vector' : 'scalar');
       setName(indicator.name);
       setDescription(indicator.description);
       setOutputColumn(indicator.outputColumn);
       setGroupName(indicator.groupName || '');
       setExpectedOutputs(indicator.expectedOutputs || ['']);
-      setRawPythonCode(indicator.pythonCode);
+      setPythonCode(extractCodeBody(indicator.pythonCode));
       setExternalDatasets(indicator.externalDatasets || {});
       setPeriod(indicator.period || 'daily');
+      setCategory(indicator.category || '');
+      setTagsInput((indicator.tags || []).join(', '));
     } else {
-      setIndicatorType('custom');
+      setIndicatorType('scalar');
       setName('');
       setDescription('');
       setOutputColumn('');
       setGroupName('');
       setExpectedOutputs(['']);
       setPythonCode('');
-      setRawPythonCode(null);
       setExternalDatasets({});
       setPeriod('daily');
+      setCategory('');
+      setTagsInput('');
     }
     setError(null);
     setValidationMessage(null);
@@ -144,25 +125,15 @@ export default function IndicatorEditorModal({
     setOutputColumnManuallyEdited(!!indicator);
   }, [indicator, isOpen]);
 
-  // Transform raw Python code to visual placeholders
-  useEffect(() => {
-    if (rawPythonCode) {
-      const withPlaceholders = transformCodeToPlaceholders(rawPythonCode);
-      const bodyCode = extractCodeBody(withPlaceholders);
-      setPythonCode(bodyCode);
-      setRawPythonCode(null);
-    }
-  }, [rawPythonCode]);
-
   // Auto-fill output column / groupName from name
   useEffect(() => {
     if (name) {
       const normalized = name.replace(/\s+/g, '_');
-      if (indicatorType === 'mytt_group') {
+      if (indicatorType === 'vector') {
         if (!indicator || !outputColumnManuallyEdited) {
           setGroupName(normalized);
         }
-      } else if (indicatorType === 'custom') {
+      } else if (indicatorType === 'scalar') {
         if (!outputColumnManuallyEdited) {
           setOutputColumn(normalized);
         }
@@ -200,12 +171,11 @@ export default function IndicatorEditorModal({
         )
       );
 
-      const codeWithImports = transformPlaceholdersToCode(pythonCode);
-      const codeToValidate = wrapCodeBody(codeWithImports);
+      const codeToValidate = wrapCodeBody(pythonCode);
 
       const requestBody: any = {
         pythonCode: codeToValidate,
-        isGroup: indicatorType === 'mytt_group'
+        isGroup: indicatorType === 'vector'
       };
 
       if (Object.keys(validExternalDatasets).length > 0) {
@@ -244,14 +214,14 @@ export default function IndicatorEditorModal({
       return;
     }
 
-    if (indicatorType === 'mytt_group') {
+    if (indicatorType === 'vector') {
       if (!groupName) {
-        setError('Group name is required for MyTT indicators');
+        setError('Group name is required for vector indicators');
         return;
       }
       const filteredOutputs = expectedOutputs.filter(o => o.trim() !== '');
       if (filteredOutputs.length === 0) {
-        setError('At least one expected output is required for MyTT indicators');
+        setError('At least one expected output is required for vector indicators');
         return;
       }
     }
@@ -264,17 +234,19 @@ export default function IndicatorEditorModal({
         : '/api/indicators';
       const method = indicator ? 'PUT' : 'POST';
 
-      const codeWithImports = transformPlaceholdersToCode(pythonCode);
-      const codeToSave = wrapCodeBody(codeWithImports);
+      const codeToSave = wrapCodeBody(pythonCode);
 
+      const tags = tagsInput.split(',').map(t => t.trim()).filter(Boolean);
       const requestBody: any = {
         name,
         description,
         pythonCode: codeToSave,
         period,
+        category: category || null,
+        tags,
       };
 
-      if (indicatorType === 'mytt_group') {
+      if (indicatorType === 'vector') {
         requestBody.isGroup = true;
         requestBody.groupName = groupName;
         requestBody.expectedOutputs = expectedOutputs.filter(o => o.trim() !== '');
@@ -603,13 +575,16 @@ export default function IndicatorEditorModal({
               <label className="block text-xs font-medium mb-1 dark:text-white">Type</label>
               <select
                 value={indicatorType}
-                onChange={(e) => setIndicatorType(e.target.value as 'custom' | 'mytt_group')}
+                onChange={(e) => setIndicatorType(e.target.value as 'scalar' | 'vector')}
                 className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
                 disabled={isLoading || !!indicator}
               >
-                <option value="custom">Custom (Single)</option>
-                <option value="mytt_group">MyTT Group</option>
+                <option value="scalar">Scalar</option>
+                <option value="vector">Vector</option>
               </select>
+              <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5">
+                {indicatorType === 'scalar' ? 'Single output value' : 'Multiple output values'}
+              </p>
             </div>
 
             {/* Name */}
@@ -654,8 +629,42 @@ export default function IndicatorEditorModal({
               </select>
             </div>
 
+            {/* Category */}
+            <div>
+              <label className="block text-xs font-medium mb-1 dark:text-white">Category</label>
+              <input
+                type="text"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                list="indicator-categories"
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
+                placeholder="e.g., Trend, Oscillator"
+                disabled={isLoading || readOnly}
+              />
+              <datalist id="indicator-categories">
+                <option value="Trend" />
+                <option value="Oscillator" />
+                <option value="Volume" />
+                <option value="Momentum" />
+                <option value="Volatility" />
+              </datalist>
+            </div>
+
+            {/* Tags */}
+            <div>
+              <label className="block text-xs font-medium mb-1 dark:text-white">Tags</label>
+              <input
+                type="text"
+                value={tagsInput}
+                onChange={(e) => setTagsInput(e.target.value)}
+                className="w-full px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 dark:text-white"
+                placeholder="Comma-separated tags"
+                disabled={isLoading || readOnly}
+              />
+            </div>
+
             {/* Output Settings */}
-            {indicatorType === 'custom' ? (
+            {indicatorType === 'scalar' ? (
               <div>
                 <label className="block text-xs font-medium mb-1 dark:text-white">Output Column</label>
                 <input
@@ -725,7 +734,7 @@ export default function IndicatorEditorModal({
 
             {/* Template Button */}
             <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-              {indicatorType === 'custom' ? (
+              {indicatorType === 'scalar' ? (
                 <button
                   type="button"
                   onClick={handleInsertTemplate}
@@ -746,7 +755,7 @@ export default function IndicatorEditorModal({
 
             {/* Hint */}
             <div className="text-[10px] text-gray-400 dark:text-gray-500 mt-2">
-              Type <span className="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded">@</span> in the editor to insert data references
+              Use <span className="font-mono bg-gray-100 dark:bg-gray-700 px-1 rounded">{"data['close']"}</span> format for data references
             </div>
           </div>
 
@@ -761,7 +770,6 @@ export default function IndicatorEditorModal({
                 onMount={(editor, monaco) => {
                   setEditorInstance(editor);
                   setMonacoInstance(monaco);
-                  visualBlocks.onEditorMount(editor, monaco);
                 }}
                 theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
                 options={{
@@ -790,17 +798,9 @@ export default function IndicatorEditorModal({
               />
             </div>
           </div>
+
         </div>
       </div>
-
-      {/* Inline DataSource Picker (rendered via Monaco ContentWidget) */}
-      <DataSourcePicker
-        container={visualBlocks.pickerContainerRef.current}
-        pickerState={visualBlocks.pickerState}
-        dataSources={visualBlocks.dataSources}
-        onSelect={visualBlocks.insertPlaceholder}
-        onClose={visualBlocks.closePicker}
-      />
 
       {/* Orphaned Columns Confirmation Modal */}
       {showOrphanedColumnsModal && orphanedColumnsData && (

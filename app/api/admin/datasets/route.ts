@@ -8,6 +8,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
 import { isAdmin } from '@/lib/admin';
+import { LogSource } from '@prisma/client';
+import { logger } from '@/lib/logger';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -157,6 +159,8 @@ export async function DELETE(request: NextRequest) {
     await prisma.stock.delete({
       where: { id: stockId },
     });
+
+    logger.info(LogSource.API, 'admin_delete_dataset', 'Deleted dataset', { userId, metadata: { stockId } });
 
     return NextResponse.json({
       success: true,
