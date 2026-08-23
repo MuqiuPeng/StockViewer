@@ -68,6 +68,43 @@ failure_ratio = 0.5
 open_seconds = 60
 
 
+# ─────────────────────────────── Tencent ──────────────────────────────────
+
+[providers.tencent]
+enabled = true
+allowed_usage = ["internal_research"]
+capabilities = ["ohlcv"]
+markets = ["CN", "HK", "US"]
+api_key_setting = ""          # public endpoints, no key
+notes = """
+Second independent source for the markets EastMoney was alone on. Unofficial
+in the same way — no published quota, no terms — but it fails separately,
+which is the whole point of having it: when EastMoney refused this machine,
+Tencent kept answering.
+
+Rows are [date, open, close, high, low, volume]; close is second, not last.
+Cross-checked rather than assumed — 600104 on 2026-08-21 reads 10.14 here,
+matching Tiingo, EastMoney and Alpha Vantage independently.
+"""
+
+[providers.tencent.limits]
+# No published limit. Kept conservative for the same reason as EastMoney: the
+# only evidence about an unofficial endpoint's tolerance is the block you earn
+# by exceeding it.
+requests_per_minute = 30
+requests_per_hour = 600
+concurrency = 2
+min_interval_seconds = 0.5
+verified = false
+reviewed_at = ""
+source = "no official rate-limit documentation exists"
+
+[providers.tencent.circuit_breaker]
+window = 20
+failure_ratio = 0.5
+open_seconds = 60
+
+
 # ─────────────────────────────── Tiingo ───────────────────────────────────
 
 [providers.tiingo]
@@ -140,12 +177,14 @@ open_seconds = 60
 # order, so listing one here is a preference, not an assertion of coverage.
 
 [routing]
-"cn.stock"      = ["tiingo", "eastmoney", "alphavantage"]
-"us.stock"      = ["tiingo", "eastmoney", "alphavantage"]
+"cn.stock"      = ["tiingo", "tencent", "eastmoney", "alphavantage"]
+"us.stock"      = ["tiingo", "tencent", "eastmoney", "alphavantage"]
 "cn.stock.b"    = ["eastmoney"]
 "cn.stock.cdr"  = ["eastmoney"]
-"hk.stock"      = ["eastmoney"]
-"cn.index"      = ["eastmoney"]
+# Hong Kong had one source until Tencent; an EastMoney block took the whole
+# market with it.
+"hk.stock"      = ["tencent", "eastmoney"]
+"cn.index"      = ["tencent", "eastmoney"]
 "hk.index"      = ["eastmoney"]
 "us.index"      = ["eastmoney"]
 "global.index"  = ["eastmoney"]
@@ -155,7 +194,7 @@ open_seconds = 60
 "global.futures" = ["eastmoney"]
 
 # Applied to sources with no explicit chain, and to the listing endpoints.
-default = ["eastmoney", "tiingo", "alphavantage"]
+default = ["eastmoney", "tencent", "tiingo", "alphavantage"]
 
 
 # ─────────────────────────────── Caching ──────────────────────────────────

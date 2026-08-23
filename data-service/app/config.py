@@ -48,6 +48,17 @@ class Settings(BaseSettings):
     tiingo_hourly_limit: int = 50
     tiingo_daily_limit: int = 1000
 
+    # Fiscal.ai
+    fiscal_api_key: str = ""
+
+    # Alpaca settings. Free tier: US equities and ETFs, historical from 2016;
+    # real-time quotes are the IEX feed only, which is not consolidated tape.
+    alpaca_api_key: str = ""
+    alpaca_secret_key: str = ""
+    alpaca_endpoint: str = "https://paper-api.alpaca.markets/v2"
+    alpaca_data_endpoint: str = "https://data.alpaca.markets/v2"
+    alpaca_timeout: int = 30
+
     # Alpha Vantage settings
     alphavantage_api_key: str = ""
     alphavantage_timeout: int = 30  # seconds
@@ -60,6 +71,11 @@ class Settings(BaseSettings):
         # Later files win, so the service-local .env can override the root one.
         env_file = (_REPO_ROOT / ".env", _SERVICE_DIR / ".env")
         env_file_encoding = "utf-8"
+        # .env is shared with the web app and holds keys for tools this service
+        # knows nothing about. Refusing to start because an unrecognised
+        # variable appeared makes adding a provider key a service outage, which
+        # it should not be.
+        extra = "ignore"
 
 
 @lru_cache()
