@@ -3,16 +3,23 @@ Alpha Vantage data provider.
 
 Scope
 -----
-Alpha Vantage covers US-listed equities and ETFs. It has no Chinese A-shares,
-B-shares, CDRs, Hong Kong equities, Chinese indices, LOFs or futures, so of the
-thirteen canonical data sources this service defines it can serve exactly one:
-``us.stock``. Every other source returns UNSUPPORTED_SOURCE naming what is
-missing, rather than failing in a way that looks like a network problem.
+Alpha Vantage serves US-listed equities and ETFs, and also several non-US
+exchanges through a symbol suffix. Two of those matter here: ``.SHH`` for the
+Shanghai Stock Exchange and ``.SHZ`` for Shenzhen, which together cover
+mainland A-shares. So of the thirteen canonical data sources it serves
+``us.stock`` and ``cn.stock``.
+
+Hong Kong is not among the supported suffixes (neither ``.HK`` nor ``.HKG``
+resolves), and there are no index, ETF-listing, LOF or futures endpoints, so
+the remaining sources return UNSUPPORTED_SOURCE naming what is missing rather
+than failing in a way that looks like a network problem.
 
 Free-tier limits
 ----------------
-The free tier allows 25 requests per day, which this provider tracks and
-enforces locally (``alphavantage_daily_limit``). Two consequences worth knowing:
+The free tier allows 25 requests per day and roughly one request per second;
+this provider tracks the daily budget locally (``alphavantage_daily_limit``)
+and spaces calls out to respect the per-second limit. Two consequences of the
+daily counter are worth knowing:
 
 - The counter lives in memory, so restarting the service forgets it. Alpha
   Vantage still enforces its own limit; ours only exists to fail early with a
@@ -50,6 +57,9 @@ _BASE_URL = "https://www.alphavantage.co/query"
 _HISTORY_TTL = 3600
 _LISTING_TTL = 86400
 
+# Free tier accepts roughly one request per second; leave a little headroom.
+_MIN_CALL_GAP = 1.2
+
 
 class AlphaVantageProvider(BaseDataProvider):
     """Data provider backed by the Alpha Vantage HTTP API."""
@@ -65,12 +75,18 @@ class AlphaVantageProvider(BaseDataProvider):
             "example": "AAPL",
             "params": ["symbol", "period", "start_date", "end_date"],
         },
+        "cn.stock": {
+            "name": "A股历史数据",
+            "category": "A股",
+            "symbol_format": "6位数字",
+            "example": "600104",
+            "params": ["symbol", "period", "start_date", "end_date"],
+        },
     }
 
     # Canonical IDs the rest of the app knows about but Alpha Vantage cannot
     # serve. Kept explicit so the error can say what is missing and why.
     UNSUPPORTED: Dict[str, str] = {
-        "cn.stock": "A股",
         "cn.stock.b": "B股",
         "cn.stock.cdr": "CDR",
         "hk.stock": "港股",
@@ -102,6 +118,12 @@ class AlphaVantageProvider(BaseDataProvider):
         self._lock = threading.Lock()
         self._request_count = 0
         self._count_date = self._utc_today()
+
+        # The free tier also rejects bursts with "please spread out your free
+        # API requests more sparingly (1 request per second)". Serialising
+        # calls behind a minimum gap turns that from an error into a wait.
+        self._pace_lock = threading.Lock()
+        self._last_call = 0.0
 
         if not self._api_key:
             logger.warning(
@@ -179,6 +201,14 @@ class AlphaVantageProvider(BaseDataProvider):
     # HTTP
     # ------------------------------------------------------------------
 
+    def _pace(self) -> None:
+        """Block until at least _MIN_CALL_GAP has passed since the last call."""
+        with self._pace_lock:
+            wait = self._last_call + _MIN_CALL_GAP - time.monotonic()
+            if wait > 0:
+                time.sleep(wait)
+            self._last_call = time.monotonic()
+
     def _get(self, params: Dict[str, str], *, as_csv: bool = False) -> Any:
         """
         Call Alpha Vantage and return parsed JSON, or raw text for CSV endpoints.
@@ -188,6 +218,7 @@ class AlphaVantageProvider(BaseDataProvider):
         (rate limited) and "Information" (endpoint needs a premium plan).
         """
         params = {**params, "apikey": self._api_key}
+        self._pace()
 
         last_exc: Optional[Exception] = None
         for attempt in range(1, 4):
@@ -224,6 +255,33 @@ class AlphaVantageProvider(BaseDataProvider):
         return payload
 
     # ------------------------------------------------------------------
+    # Symbol mapping
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _api_symbol(data_source: str, symbol: str) -> str:
+        """
+        Translate an app-level symbol into the one Alpha Vantage expects.
+
+        US symbols pass through. A-shares take an exchange suffix: .SHH for
+        Shanghai, .SHZ for Shenzhen. The split follows the same rule the
+        EastMoney provider uses — 6xxxxx and 900xxx are Shanghai, everything
+        else (000/002/300 and the Beijing 4/8/92 ranges) is Shenzhen.
+        """
+        symbol = symbol.strip().upper()
+
+        if data_source != "cn.stock":
+            return symbol
+
+        # Already carries an exchange suffix — trust the caller.
+        if "." in symbol:
+            return symbol
+
+        if symbol.startswith("6") or symbol.startswith("900"):
+            return f"{symbol}.SHH"
+        return f"{symbol}.SHZ"
+
+    # ------------------------------------------------------------------
     # Historical OHLCV
     # ------------------------------------------------------------------
 
@@ -241,8 +299,9 @@ class AlphaVantageProvider(BaseDataProvider):
                 "success": False,
                 "error": (
                     f"Alpha Vantage does not carry {self.UNSUPPORTED[data_source]} "
-                    f"({data_source}). It covers US-listed equities and ETFs only; "
-                    f"use the akshare or eastmoney provider for this market."
+                    f"({data_source}). It serves US equities/ETFs and mainland "
+                    f"A-shares (.SHH/.SHZ) only; use the akshare or eastmoney "
+                    f"provider for this market."
                 ),
                 "error_code": "UNSUPPORTED_SOURCE",
             }
@@ -263,8 +322,9 @@ class AlphaVantageProvider(BaseDataProvider):
             }
 
         symbol = symbol.strip().upper()
+        api_symbol = self._api_symbol(data_source, symbol)
         function, series_key = self._PERIOD_TO_FUNCTION[period]
-        cache_key = (function, symbol)
+        cache_key = (function, api_symbol)
 
         records = self._history_cache.get(cache_key)
         if records is None:
@@ -277,7 +337,7 @@ class AlphaVantageProvider(BaseDataProvider):
             if not self._claim_request_slot():
                 return self._quota_error()
 
-            params = {"function": function, "symbol": symbol}
+            params = {"function": function, "symbol": api_symbol}
             if function == "TIME_SERIES_DAILY":
                 # outputsize=full (20+ years) became a premium feature, so the
                 # free tier caps daily history at the most recent 100 bars.
@@ -286,14 +346,14 @@ class AlphaVantageProvider(BaseDataProvider):
             try:
                 payload = self._get(params)
             except Exception as exc:
-                logger.error("Alpha Vantage fetch error for %s: %s", symbol, exc)
+                logger.error("Alpha Vantage fetch error for %s: %s", api_symbol, exc)
                 return {"success": False, "error": str(exc), "error_code": "FETCH_ERROR"}
 
             series = payload.get(series_key)
             if not series:
                 return {
                     "success": False,
-                    "error": f"No data returned for symbol: {symbol}",
+                    "error": f"No data returned for symbol: {api_symbol}",
                     "error_code": "NO_DATA",
                 }
 
@@ -404,8 +464,9 @@ class AlphaVantageProvider(BaseDataProvider):
             return {
                 "success": False,
                 "error": (
-                    f"Alpha Vantage only lists US securities; '{market}' is not "
-                    f"available. Use the akshare or eastmoney provider."
+                    f"Alpha Vantage's listing endpoint covers US securities only, "
+                    f"so '{market}' is not available. A-share history works, but "
+                    f"the symbol list has to come from akshare or eastmoney."
                 ),
                 "error_code": "INVALID_MARKET",
             }
