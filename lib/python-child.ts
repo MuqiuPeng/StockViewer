@@ -9,7 +9,8 @@
  * Two things it should not reach, both of which it could before this module.
  */
 
-import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'child_process';
+import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
@@ -132,12 +133,109 @@ export async function withPythonSlot<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-/** Spawn a Python child under the shared environment policy. */
+/* ── Filesystem confinement ──────────────────────────────────────────────
+ *
+ * Closing the environment stopped the child reading secrets out of
+ * process.env, but not off disk: .env sits at a known path and the strategy
+ * can open it. Returning the contents inside a signal reason is the same
+ * exfiltration route, one step longer.
+ *
+ * macOS enforces this in the kernel through sandbox-exec, which needs no root
+ * and no container. The profile is allow-by-default with targeted denials
+ * rather than deny-by-default: a deny-all profile aborts CPython before it
+ * reaches main, and a list of everything pandas and numpy touch would be a
+ * list we get wrong on the next release. Naming what must stay unreachable is
+ * both shorter and more stable than naming what may be reached.
+ *
+ * Network is denied outright. The executors do no I/O of their own — data
+ * arrives on stdin and results leave on stdout — so nothing legitimate breaks,
+ * and it removes the direct route for anything the child does manage to read.
+ *
+ * .pgdata is on the list because the database files are the database: user
+ * password hashes and stored credential ciphertext both live there, and
+ * reading them needs no connection and no password.
+ */
+
+/** Escape a path for use inside a sandbox profile regex literal. */
+function sbRegex(p: string): string {
+  return p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function sandboxProfile(): string {
+  const root = process.cwd();
+  const home = os.homedir();
+  return [
+    '(version 1)',
+    '(allow default)',
+    '(deny file-read*',
+    `  (regex #"^${sbRegex(path.join(root, '.env'))}")`,
+    `  (regex #"^${sbRegex(path.join(root, 'data-service', '.env'))}")`,
+    `  (subpath "${path.join(root, '.pgdata')}")`,
+    `  (subpath "${path.join(root, '.git')}")`,
+    `  (subpath "${path.join(home, '.ssh')}")`,
+    `  (subpath "${path.join(home, '.aws')}")`,
+    `  (subpath "${path.join(home, '.gnupg')}")`,
+    `  (subpath "${path.join(home, '.config')}")`,
+    `  (subpath "${path.join(home, 'Library', 'Keychains')}"))`,
+    '(deny network*)',
+    '',
+  ].join('\n');
+}
+
+/**
+ * Path to the written profile, or null when confinement is unavailable.
+ *
+ * Probed once at startup rather than trusted: sandbox-exec is deprecated and
+ * could stop working on a future macOS, and discovering that when the first
+ * backtest of the day fails would be worse than running without it. If the
+ * probe fails the executors still run — unconfined, and saying so.
+ */
+const sandboxProfilePath: string | null = (() => {
+  if (process.platform !== 'darwin') return null;
+
+  try {
+    const file = path.join(os.tmpdir(), 'stockviewer-python.sb');
+    fs.writeFileSync(file, sandboxProfile(), { mode: 0o600 });
+
+    // Prove it both runs Python and actually denies, so that a profile which
+    // silently stopped applying does not read as success.
+    const probe = spawnSync(
+      'sandbox-exec',
+      ['-f', file, process.execPath, '-e',
+       `try{require('fs').readFileSync(${JSON.stringify(path.join(process.cwd(), '.env'))});console.log('READABLE')}` +
+       `catch(e){console.log(e.code==='EPERM'?'DENIED':'ABSENT')}`],
+      { encoding: 'utf8', timeout: 15_000 }
+    );
+    const verdict = (probe.stdout || '').trim();
+    if (probe.status === 0 && (verdict === 'DENIED' || verdict === 'ABSENT')) return file;
+
+    console.warn(
+      '[python-child] sandbox-exec did not confine as expected (%s); ' +
+        'user Python will run unconfined and can read files this process can read.',
+      verdict || probe.stderr?.trim() || `exit ${probe.status}`
+    );
+    return null;
+  } catch (e) {
+    console.warn('[python-child] filesystem confinement unavailable:', e);
+    return null;
+  }
+})();
+
+/** Whether user Python is confined, for health endpoints. */
+export function pythonSandboxActive(): boolean {
+  return sandboxProfilePath !== null;
+}
+
+/** Spawn a Python child under the shared environment and confinement policy. */
 export function spawnPython(
   executable: string,
   args: string[]
 ): ChildProcessWithoutNullStreams {
-  return spawn(executable, args, {
+  const [cmd, argv] = sandboxProfilePath
+    ? ['sandbox-exec', ['-f', sandboxProfilePath, executable, ...args]]
+    : [executable, args];
+
+  return spawn(cmd as string, argv as string[], {
     stdio: ['pipe', 'pipe', 'pipe'] as const,
     env: pythonChildEnv(),
   });
