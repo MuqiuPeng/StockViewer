@@ -33,11 +33,13 @@ class Settings(BaseSettings):
     cache_max_size: int = 1000
 
     # Active data provider (must match a registered provider name)
-    # Built-in: "akshare"
+    # Built-in: "eastmoney", "alphavantage"
     # Add more by registering them in app/providers/registry.py
-    data_provider: str = "akshare"
+    data_provider: str = "eastmoney"
 
-    # AKShare settings
+    # Upstream HTTP timeout for the EastMoney provider. Still named
+    # akshare_timeout in the environment so existing .env files keep working;
+    # AKShare itself is gone, it was only ever a wrapper over the same host.
     akshare_timeout: int = 60  # seconds
 
     # Alpha Vantage settings

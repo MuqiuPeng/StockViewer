@@ -14,7 +14,7 @@ Retrieve the currently active provider (selected by DATA_PROVIDER env var)::
 
     from app.providers.registry import get_provider
     provider = get_provider()          # uses settings.data_provider
-    provider = get_provider("akshare") # explicit name
+    provider = get_provider("eastmoney") # explicit name
 """
 from typing import Dict, Type, Optional
 import logging
@@ -87,10 +87,8 @@ def list_providers() -> Dict[str, str]:
 # ------------------------------------------------------------------
 # Register built-in providers
 # ------------------------------------------------------------------
-from .akshare_provider import AKShareProvider              # noqa: E402
 from .eastmoney_provider import EastMoneyProvider          # noqa: E402
 from .alphavantage_provider import AlphaVantageProvider    # noqa: E402
 
-register_provider("akshare", AKShareProvider)
 register_provider("eastmoney", EastMoneyProvider)
 register_provider("alphavantage", AlphaVantageProvider)

@@ -5,7 +5,6 @@ pydantic>=2.6.1
 pydantic-settings>=2.1.0
 
 # AKShare for stock data
-akshare>=1.18.0
 
 # Data processing
 pandas>=2.2.0
@@ -13,8 +12,6 @@ numpy>=1.26.4
 
 # HTTP client
 httpx==0.26.0
-# requests is pulled in transitively by akshare, but the AKShare provider now
-# imports it directly (retry/exception handling), so declare it explicitly.
 requests>=2.31.0
 
 # Caching (optional)

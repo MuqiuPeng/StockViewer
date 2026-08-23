@@ -2,7 +2,8 @@
 EastMoney (东方财富) direct HTTP API data provider.
 
 Calls EastMoney's public push2/push2his endpoints directly — no third-party
-library dependency required.  Works as a drop-in replacement for AKShare.
+library dependency required.  Replaced the AKShare provider, which was a
+wrapper over these same EastMoney endpoints.
 
 Supported data sources
 ----------------------
@@ -129,6 +130,22 @@ class EastMoneyProvider(BaseDataProvider):
             "defaults": {"period": "daily", "adjust": "qfq"},
             "symbol_format": "6位数字 (自动识别沪/深)",
             "example": "600519",
+        },
+        "cn.stock.b": {
+            "name": "B股历史数据",
+            "category": "B股",
+            "params": ["symbol", "period", "start_date", "end_date", "adjust"],
+            "defaults": {"period": "daily", "adjust": "qfq"},
+            "symbol_format": "6位数字 (沪900xxx / 深200xxx)",
+            "example": "900901",
+        },
+        "cn.stock.cdr": {
+            "name": "CDR历史数据",
+            "category": "CDR",
+            "params": ["symbol", "period", "start_date", "end_date", "adjust"],
+            "defaults": {"period": "daily", "adjust": "qfq"},
+            "symbol_format": "6位数字",
+            "example": "689009",
         },
         "hk.stock": {
             "name": "港股历史数据",
