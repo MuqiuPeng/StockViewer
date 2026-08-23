@@ -48,8 +48,25 @@ def generate_key() -> str:
     return base64.b64encode(os.urandom(_KEY_BYTES)).decode()
 
 
+def _key_from_settings() -> str:
+    """
+    The configured key, via Settings so that .env is honoured.
+
+    Imported lazily: this module is used by the standalone credential script,
+    which must keep working even if application settings fail to construct.
+    """
+    try:
+        from ..config import get_settings
+
+        return getattr(get_settings(), "credential_encryption_key", "") or ""
+    except Exception:  # pragma: no cover - settings are optional here
+        return ""
+
+
 def _load_key(key_b64: Optional[str] = None) -> bytes:
-    raw = key_b64 if key_b64 is not None else os.environ.get(ENV_KEY_NAME, "")
+    raw = key_b64 if key_b64 is not None else (
+        os.environ.get(ENV_KEY_NAME) or _key_from_settings()
+    )
     if not raw:
         raise CredentialCryptoError(
             f"{ENV_KEY_NAME} is not set. Generate one with "

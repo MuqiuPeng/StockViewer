@@ -202,6 +202,44 @@ failure_ratio = 0.5
 open_seconds = 60
 
 
+# ─────────────────────────────── Alpaca ───────────────────────────────────
+
+[providers.alpaca]
+enabled = true
+allowed_usage = ["internal_research"]
+capabilities = ["ohlcv"]
+markets = ["US"]
+api_key_setting = ""          # credential holds a {key, secret} JSON pair
+notes = """
+The only US source with an account and terms behind it — the others are either
+undocumented public endpoints or free tiers. Verified: AAPL agrees with the
+other four providers to the cent, and MSFT returns 2674 daily bars back to
+2016-01-04, matching Alpaca's stated history start.
+
+This is a brokerage credential, not a market-data key. The endpoint points at
+paper trading today, but the same key shape reaches a live account, so treat a
+leak as higher-consequence than any other credential here. Only the market
+data API is used; nothing in this service places orders or reads positions.
+
+Free-tier real-time quotes are the IEX feed rather than the consolidated tape,
+which is why only daily bars are wired up — that distinction does not arise
+for settled bars.
+"""
+
+[providers.alpaca.limits]
+requests_per_minute = 180     # official 200, with the usual margin
+concurrency = 4
+min_interval_seconds = 0.0
+verified = false
+reviewed_at = ""
+source = "https://docs.alpaca.markets/docs/about-market-data-api"
+
+[providers.alpaca.circuit_breaker]
+window = 20
+failure_ratio = 0.5
+open_seconds = 60
+
+
 # ──────────────────────────────── EODHD ───────────────────────────────────
 
 [providers.eodhd]
@@ -253,6 +291,8 @@ differently — so the budget is declared in credits.
 """
 
 [providers.twelvedata.limits]
+# Declared as requests here for the pacing limiter; the credential carries the
+# credit budget, which is the quantity actually billed.
 requests_per_minute = 8
 requests_per_day = 800
 concurrency = 2
@@ -272,7 +312,7 @@ source = "https://twelvedata.com/pricing"
 
 [routing]
 "cn.stock"      = ["tiingo", "tencent", "eastmoney", "alphavantage"]
-"us.stock"      = ["twelvedata", "tiingo", "tencent", "eastmoney", "alphavantage"]
+"us.stock"      = ["twelvedata", "alpaca", "tiingo", "tencent", "eastmoney", "alphavantage"]
 # Australia had no path at all until EODHD; it is still the only one.
 "au.stock"      = ["eodhd"]
 "cn.stock.b"    = ["tencent", "eastmoney"]

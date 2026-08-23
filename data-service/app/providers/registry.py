@@ -87,14 +87,18 @@ def list_providers() -> Dict[str, str]:
 # ------------------------------------------------------------------
 # Register built-in providers
 # ------------------------------------------------------------------
+from .alpaca_provider import AlpacaProvider                # noqa: E402
 from .eastmoney_provider import EastMoneyProvider          # noqa: E402
 from .eodhd_provider import EODHDProvider                  # noqa: E402
 from .tencent_provider import TencentProvider              # noqa: E402
 from .tiingo_provider import TiingoProvider                # noqa: E402
+from .twelvedata_provider import TwelveDataProvider        # noqa: E402
 from .alphavantage_provider import AlphaVantageProvider    # noqa: E402
 
+register_provider("alpaca", AlpacaProvider)
 register_provider("eastmoney", EastMoneyProvider)
 register_provider("eodhd", EODHDProvider)
 register_provider("tencent", TencentProvider)
 register_provider("tiingo", TiingoProvider)
+register_provider("twelvedata", TwelveDataProvider)
 register_provider("alphavantage", AlphaVantageProvider)

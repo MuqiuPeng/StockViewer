@@ -7,8 +7,13 @@ from pydantic_settings import BaseSettings
 from functools import lru_cache
 
 # The service runs with its own directory as the working directory, so a bare
-# ".env" only ever finds data-service/.env. Secrets shared with the web app
-# live in the repository root, so load that too - the local file wins.
+# ".env" only ever finds data-service/.env. What it needs is spread across
+# three files: the repository root .env holds shared settings, .env.local holds
+# DATABASE_URL because the web app owns it, and data-service/.env is for
+# service-only overrides. All three are declared rather than relying on a
+# supervisor to inject them — the service was reaching the database only
+# because the launcher happened to export DATABASE_URL, and would have fallen
+# back silently under any other way of starting it.
 _SERVICE_DIR = Path(__file__).resolve().parent.parent
 _REPO_ROOT = _SERVICE_DIR.parent
 
@@ -48,6 +53,12 @@ class Settings(BaseSettings):
     tiingo_hourly_limit: int = 50
     tiingo_daily_limit: int = 1000
 
+    # Decrypts stored credentials. Read through Settings rather than straight
+    # from os.environ so it loads from .env like everything else: relying on
+    # the environment meant it worked under a supervisor that injects .env and
+    # silently fell back to .env credentials anywhere else.
+    credential_encryption_key: str = ""
+
     # Where stored credentials live. Shared with the web app, which owns the
     # ProviderCredential table.
     database_url: str = ""
@@ -73,7 +84,11 @@ class Settings(BaseSettings):
 
     class Config:
         # Later files win, so the service-local .env can override the root one.
-        env_file = (_REPO_ROOT / ".env", _SERVICE_DIR / ".env")
+        env_file = (
+            _REPO_ROOT / ".env",
+            _REPO_ROOT / ".env.local",
+            _SERVICE_DIR / ".env",
+        )
         env_file_encoding = "utf-8"
         # .env is shared with the web app and holds keys for tools this service
         # knows nothing about. Refusing to start because an unrecognised
