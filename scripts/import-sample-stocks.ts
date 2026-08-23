@@ -12,9 +12,9 @@ import { resolve } from 'path';
 config({ path: resolve(process.cwd(), '.env.local') });
 
 import { PrismaClient, Prisma } from '@prisma/client';
-import { spawn } from 'child_process';
+import { dataService } from '../lib/data-service-client';
+import { resolveDataSourceId } from '../lib/data-sources';
 import path from 'path';
-import { existsSync } from 'fs';
 
 const prisma = new PrismaClient({
   datasources: {
@@ -41,26 +41,6 @@ const SAMPLE_STOCKS = [
   { symbol: '510500', dataSource: 'cn.etf', name: '中证500ETF' },
 ];
 
-/**
- * Get Python executable path
- */
-function getPythonExecutable(): string {
-  const projectRoot = process.cwd();
-  const venvNames = ['python-venv', 'venv', '.venv', 'aktools-env'];
-
-  for (const venvName of venvNames) {
-    const venvPath = path.join(projectRoot, venvName);
-    const venvPython = process.platform === 'win32'
-      ? path.join(venvPath, 'Scripts', 'python.exe')
-      : path.join(venvPath, 'bin', 'python');
-
-    if (existsSync(venvPython)) {
-      return venvPython;
-    }
-  }
-
-  return 'python3';
-}
 
 /**
  * Fetch stock data from AKShare
@@ -77,100 +57,32 @@ async function fetchStockData(
   lastDate?: string;
   error?: string;
 }> {
-  const pythonCode = `
-import akshare as ak
-import json
-import sys
-
-symbol = "${symbol}"
-data_source = "${dataSource}"
-start_date = "${startDate}"
-end_date = "${endDate}"
-
-try:
-    # Fetch data based on data source
-    if data_source == "cn.stock":
-        df = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
-    elif data_source == "hk.stock":
-        df = ak.stock_hk_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
-    elif data_source == "us.stock":
-        df = ak.stock_us_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
-    elif data_source == "cn.etf":
-        df = ak.fund_etf_hist_em(symbol=symbol, period="daily", start_date=start_date, end_date=end_date, adjust="qfq")
-    elif data_source == "cn.index":
-        df = ak.index_zh_a_hist(symbol=symbol, period="daily", start_date=start_date, end_date=end_date)
-    else:
-        raise ValueError(f"Unsupported data source: {data_source}")
-
-    # Rename columns to English
-    column_map = {
-        "日期": "date",
-        "开盘": "open",
-        "收盘": "close",
-        "最高": "high",
-        "最低": "low",
-        "成交量": "volume",
-        "成交额": "turnover",
-        "振幅": "amplitude",
-        "涨跌幅": "change_pct",
-        "涨跌额": "change_amount",
-        "换手率": "turnover_rate",
-    }
-    df = df.rename(columns=column_map)
-
-    # Convert date to string
-    if "date" in df.columns:
-        df["date"] = df["date"].astype(str)
-
-    # Convert to list of dicts
-    records = df.to_dict(orient="records")
-
-    print(json.dumps({
-        "success": True,
-        "rowCount": len(records),
-        "firstDate": records[0]["date"] if records else None,
-        "lastDate": records[-1]["date"] if records else None,
-        "data": records
-    }))
-except Exception as e:
-    print(json.dumps({
-        "success": False,
-        "error": str(e)
-    }))
-`;
-
-  return new Promise((resolve) => {
-    const pythonExecutable = getPythonExecutable();
-    const python = spawn(pythonExecutable, ['-c', pythonCode]);
-    let stdout = '';
-    let stderr = '';
-
-    python.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    python.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    python.on('close', (code) => {
-      if (code !== 0) {
-        resolve({ success: false, error: `Python exited with code ${code}: ${stderr}` });
-        return;
-      }
-
-      try {
-        const result = JSON.parse(stdout);
-        resolve(result);
-      } catch (e) {
-        resolve({ success: false, error: `Failed to parse Python output: ${stdout}` });
-      }
-    });
-
-    python.on('error', (err) => {
-      resolve({ success: false, error: `Failed to spawn Python: ${err.message}` });
-    });
+  // Goes through the data-service rather than spawning AKShare here, so that
+  // provider access stays in one place. It also removes a code-injection hole:
+  // symbol and dataSource were interpolated straight into Python source that
+  // was then executed.
+  const response = await dataService.getHistory({
+    dataSource: resolveDataSourceId(dataSource),
+    symbol,
+    startDate,
+    endDate,
+    adjust: 'qfq',
+    period: 'daily',
   });
+
+  if (!response.success || !response.data) {
+    return {
+      success: false,
+      error: response.error?.message ?? 'Unknown data-service error',
+    };
+  }
+
+  return {
+    success: true,
+    data: response.data.records,
+    firstDate: response.data.first_date,
+    lastDate: response.data.last_date,
+  };
 }
 
 /**
@@ -276,7 +188,7 @@ async function importStock(
  */
 async function main() {
   console.log('=== Import Sample Stocks ===\n');
-  console.log(`Python executable: ${getPythonExecutable()}`);
+  console.log(`Data service: ${process.env.DATA_SERVICE_URL || 'http://localhost:8000'}`);
 
   const results: { symbol: string; name: string; success: boolean; rowCount?: number; error?: string }[] = [];
 

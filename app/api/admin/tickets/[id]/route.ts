@@ -6,6 +6,8 @@
 
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { dataService } from '@/lib/data-service-client';
+import { resolveDataSourceId } from '@/lib/data-sources';
 import { getApiStorage } from '@/lib/api-auth';
 import { isAdmin } from '@/lib/admin';
 import { Prisma, LogSource } from '@prisma/client';
@@ -208,94 +210,27 @@ async function performFullRefresh(
   symbol: string,
   dataSource: string
 ): Promise<{ success: boolean; message?: string; error?: string }> {
-  const { spawn } = await import('child_process');
-
-  // Build Python code to fetch data
-  const pythonCode = `
-import akshare as ak
-import json
-
-symbol = "${symbol}"
-data_source = "${dataSource}"
-
-try:
-    stock_name = None
-
-    if data_source == "stock_zh_a_hist":
-        df = ak.stock_zh_a_hist(symbol=symbol, period="daily", start_date="19900101", end_date="21001231", adjust="qfq")
-        try:
-            info_df = ak.stock_individual_info_em(symbol=symbol)
-            if info_df is not None and len(info_df) > 0:
-                name_row = info_df[info_df['item'] == '股票简称']
-                if len(name_row) > 0:
-                    stock_name = name_row.iloc[0]['value']
-        except:
-            pass
-    elif data_source == "stock_hk_hist":
-        df = ak.stock_hk_hist(symbol=symbol, period="daily", start_date="19900101", end_date="21001231", adjust="qfq")
-    elif data_source == "stock_us_hist":
-        df = ak.stock_us_hist(symbol=symbol, period="daily", start_date="19900101", end_date="21001231", adjust="qfq")
-    elif data_source == "fund_etf_hist_em":
-        df = ak.fund_etf_hist_em(symbol=symbol, period="daily", start_date="19900101", end_date="21001231", adjust="qfq")
-    elif data_source == "index_zh_a_hist":
-        df = ak.index_zh_a_hist(symbol=symbol, period="daily", start_date="19900101", end_date="21001231")
-    else:
-        raise ValueError(f"Unsupported data source: {data_source}")
-
-    column_map = {
-        "日期": "date", "开盘": "open", "收盘": "close", "最高": "high", "最低": "low",
-        "成交量": "volume", "成交额": "turnover", "振幅": "amplitude",
-        "涨跌幅": "change_pct", "涨跌额": "change_amount", "换手率": "turnover_rate",
-    }
-    df = df.rename(columns=column_map)
-    if "date" in df.columns:
-        df["date"] = df["date"].astype(str)
-
-    records = df.to_dict(orient="records")
-    print(json.dumps({
-        "success": True,
-        "rowCount": len(records),
-        "firstDate": records[0]["date"] if records else None,
-        "lastDate": records[-1]["date"] if records else None,
-        "stockName": stock_name,
-        "data": records
-    }))
-except Exception as e:
-    print(json.dumps({"success": False, "error": str(e)}))
-`;
-
-  // Execute Python
-  const result = await new Promise<any>((resolve) => {
-    const pythonExecutable = process.env.PYTHON_EXECUTABLE || 'python3';
-    const python = spawn(pythonExecutable, ['-c', pythonCode]);
-    let stdout = '';
-    let stderr = '';
-
-    python.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-
-    python.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-
-    python.on('close', (code) => {
-      if (code !== 0) {
-        resolve({ success: false, error: `Python exited with code ${code}: ${stderr}` });
-        return;
-      }
-
-      try {
-        resolve(JSON.parse(stdout));
-      } catch (e) {
-        resolve({ success: false, error: `Failed to parse output: ${stdout}` });
-      }
-    });
-
-    python.on('error', (err) => {
-      resolve({ success: false, error: `Failed to spawn Python: ${err.message}` });
-    });
+  // Goes through the data-service rather than spawning AKShare here. Besides
+  // keeping provider access in one place, it removes a code-injection hole:
+  // symbol and dataSource arrive from ticket.payload, which is user-submitted
+  // JSON, and they used to be interpolated straight into Python source that
+  // was then executed.
+  const response = await dataService.getHistory({
+    dataSource: resolveDataSourceId(dataSource),
+    symbol,
+    adjust: 'qfq',
+    period: 'daily',
   });
+
+  const result = response.success && response.data
+    ? {
+        success: true as const,
+        data: response.data.records,
+        stockName: response.data.name,
+        firstDate: response.data.first_date,
+        lastDate: response.data.last_date,
+      }
+    : { success: false as const, error: response.error?.message ?? 'Unknown data-service error' };
 
   if (!result.success) {
     return { success: false, error: result.error };
