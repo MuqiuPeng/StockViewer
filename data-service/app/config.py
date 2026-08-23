@@ -1,8 +1,16 @@
 """
 Configuration for the Stock Data Service.
 """
+from pathlib import Path
+
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+# The service runs with its own directory as the working directory, so a bare
+# ".env" only ever finds data-service/.env. Secrets shared with the web app
+# live in the repository root, so load that too - the local file wins.
+_SERVICE_DIR = Path(__file__).resolve().parent.parent
+_REPO_ROOT = _SERVICE_DIR.parent
 
 
 class Settings(BaseSettings):
@@ -32,8 +40,17 @@ class Settings(BaseSettings):
     # AKShare settings
     akshare_timeout: int = 60  # seconds
 
+    # Alpha Vantage settings
+    alphavantage_api_key: str = ""
+    alphavantage_timeout: int = 30  # seconds
+    # Free tier allows 25 requests/day. The provider stops before exceeding
+    # this and says so, rather than letting Alpha Vantage return an opaque
+    # rate-limit note that looks like empty data.
+    alphavantage_daily_limit: int = 25
+
     class Config:
-        env_file = ".env"
+        # Later files win, so the service-local .env can override the root one.
+        env_file = (_REPO_ROOT / ".env", _SERVICE_DIR / ".env")
         env_file_encoding = "utf-8"
 
 

@@ -3,8 +3,9 @@ Data provider abstraction layer.
 
 Built-in providers
 ------------------
-- akshare     — AKShare library (default)
-- eastmoney   — EastMoney direct HTTP API (no extra library needed)
+- akshare       — AKShare library (default)
+- eastmoney     — EastMoney direct HTTP API (no extra library needed)
+- alphavantage  — Alpha Vantage HTTP API (US equities/ETFs only, needs an API key)
 
 To add a new data provider:
 1. Create a new file in this directory, e.g. `tushare_provider.py`

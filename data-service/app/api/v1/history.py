@@ -87,6 +87,9 @@ async def get_history(
             last_date=data.get("last_date"),
             row_count=data["row_count"],
             records=data["records"],
+            # Provider-supplied caveats about what it could not honour.
+            range_truncated=data.get("range_truncated"),
+            adjust_ignored=data.get("adjust_ignored"),
         ),
         meta=Meta(duration_ms=duration_ms),
     )

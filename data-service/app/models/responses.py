@@ -56,6 +56,12 @@ class HistoryData(BaseModel):
     last_date: Optional[str] = None
     row_count: int
     records: List[StockRecord]
+    # Set when a provider could not fully honour the request but still returned
+    # usable data. Without these the caller sees a short series and cannot tell
+    # whether the symbol has no earlier history or the plan simply would not
+    # serve it.
+    range_truncated: Optional[str] = None
+    adjust_ignored: Optional[str] = None
 
 
 # List Data Models
@@ -97,22 +103,17 @@ class ListData(BaseModel):
 
 
 # Data Source Models
-class DataSourceParam(BaseModel):
-    """Parameter definition for a data source."""
-    name: str
-    type: str
-    required: bool
-    description: Optional[str] = None
-    default: Optional[Any] = None
-
-
 class DataSourceInfo(BaseModel):
     """Information about a data source."""
     id: str
     name: str
     category: str
     description: Optional[str] = None
-    parameters: List[DataSourceParam]
+    # Provider-supplied parameter names, e.g. ["symbol", "period", "start_date"].
+    # Every provider returns plain strings and the web client declares
+    # `parameters: string[]`; the richer object form this used to declare was
+    # never produced by anything, and made /api/v1/sources fail validation.
+    parameters: List[str]
     symbol_format: Optional[str] = None
     example_symbol: Optional[str] = None
 

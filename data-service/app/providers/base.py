@@ -22,7 +22,13 @@ class BaseDataProvider(ABC):
         {"success": False, "error": "...",  "error_code": "..."} on failure
 
     Valid error_code values: INVALID_DATA_SOURCE, INVALID_MARKET,
-    INVALID_TYPE, NO_DATA, FETCH_ERROR.
+    INVALID_TYPE, NO_DATA, FETCH_ERROR, UNSUPPORTED_SOURCE.
+
+    UNSUPPORTED_SOURCE means the request was well-formed and the source is a
+    real one, but this particular provider does not carry that market - a
+    different provider would answer it. Distinguishing it from
+    INVALID_DATA_SOURCE lets callers suggest switching provider instead of
+    reporting a bad request.
     """
 
     # ------------------------------------------------------------------
