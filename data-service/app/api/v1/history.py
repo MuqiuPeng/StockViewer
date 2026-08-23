@@ -1,6 +1,7 @@
 """
 Historical data API endpoints.
 """
+from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter, Query, HTTPException
 from typing import Optional
 import time
@@ -46,7 +47,8 @@ async def get_history(
     """
     start_time = time.time()
 
-    result = get_provider().get_history(
+    result = await run_in_threadpool(
+        get_provider().get_history,
         data_source=data_source,
         symbol=symbol,
         start_date=start_date,

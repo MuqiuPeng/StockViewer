@@ -19,28 +19,31 @@ from Alpha Vantage's free tier, which caps daily history at 100 bars.
 
 Free-tier limits
 ----------------
-The Starter plan allows 50 requests/hour and 1000/day, tracked here so a burst
-fails early with a clear message instead of being throttled upstream. The
-counters live in memory and reset on the wall clock, so a restart forgets
-them; they are a guard rail, not an accounting system. Tiingo's Starter terms
-also mark the data internal-use only, which the routing layer will need to
-respect once usage_context exists.
+The Starter plan allows 50 requests/hour and 1000/day. Budget, pacing and
+concurrency are enforced by the shared limiter in app.limits rather than by
+this adapter, and identical concurrent requests are collapsed by single-flight
+so a fan-out costs one call. Ranges are cached by app.cache.SeriesCache, which
+means a window already covered by an earlier fetch costs nothing and a window
+that merely extends one fetches only the delta.
+
+Tiingo's Starter terms mark the data internal-use only, which the routing
+layer will need to respect once usage_context exists.
 """
 from __future__ import annotations
 
 import logging
-import threading
 import time
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 import httpx
-from cachetools import TTLCache
 
+from ..cache import SeriesCache, SingleFlight
 from ..config import get_settings
+from ..limits import QuotaExhausted, get_limiter
 from .base import BaseDataProvider
 
 logger = logging.getLogger(__name__)
+
 
 _BASE_URL = "https://api.tiingo.com/tiingo/daily"
 _HISTORY_TTL = 3600
@@ -92,13 +95,16 @@ class TiingoProvider(BaseDataProvider):
         self._hourly_limit = settings.tiingo_hourly_limit
         self._daily_limit = settings.tiingo_daily_limit
 
-        self._cache: TTLCache = TTLCache(maxsize=512, ttl=_HISTORY_TTL)
-
-        self._lock = threading.Lock()
-        self._hour_count = 0
-        self._day_count = 0
-        self._hour_key = self._now_key("%Y-%m-%dT%H")
-        self._day_key = self._now_key("%Y-%m-%d")
+        self._cache = SeriesCache(ttl=_HISTORY_TTL)
+        self._flight = SingleFlight()
+        self._limiter = get_limiter(
+            "tiingo",
+            max_concurrency=4,
+            windows={
+                "hour": (self._hourly_limit, 3600),
+                "day": (self._daily_limit, 86400),
+            },
+        )
 
         if not self._api_key:
             logger.warning(
@@ -125,48 +131,17 @@ class TiingoProvider(BaseDataProvider):
                 "version": self.VERSION,
                 "message": "tiingo_api_key is not configured",
             }
-        hour_used, day_used = self.usage()
+        stats = self._cache.stats
         return {
             "status": "healthy",
             "version": self.VERSION,
             "message": (
-                f"{hour_used}/{self._hourly_limit} this hour, "
-                f"{day_used}/{self._daily_limit} today"
+                f"{self._limiter.describe_usage()}; "
+                f"cache served {stats['served_without_fetch']} window(s) with no "
+                f"call, {stats['partial_fetches']} fetched only a delta, "
+                f"single-flight saved {self._flight.saved_calls}"
             ),
         }
-
-    # ------------------------------------------------------------------
-    # Request budget
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _now_key(fmt: str) -> str:
-        return datetime.now(timezone.utc).strftime(fmt)
-
-    def usage(self) -> tuple[int, int]:
-        with self._lock:
-            self._roll_over_locked()
-            return self._hour_count, self._day_count
-
-    def _roll_over_locked(self) -> None:
-        hour_key = self._now_key("%Y-%m-%dT%H")
-        if hour_key != self._hour_key:
-            self._hour_key, self._hour_count = hour_key, 0
-        day_key = self._now_key("%Y-%m-%d")
-        if day_key != self._day_key:
-            self._day_key, self._day_count = day_key, 0
-
-    def _claim_request_slot(self) -> Optional[str]:
-        """Reserve a request. Returns None on success, or which limit blocked it."""
-        with self._lock:
-            self._roll_over_locked()
-            if self._hour_count >= self._hourly_limit:
-                return f"hourly limit ({self._hourly_limit}/hour)"
-            if self._day_count >= self._daily_limit:
-                return f"daily limit ({self._daily_limit}/day)"
-            self._hour_count += 1
-            self._day_count += 1
-            return None
 
     # ------------------------------------------------------------------
     # Symbol mapping
@@ -233,42 +208,37 @@ class TiingoProvider(BaseDataProvider):
         # 'qfq'/'hfq' both mean "adjusted" as far as this API goes; only the
         # absence of adjustment picks the raw series.
         adjusted = adjust not in (None, "", "none")
-        cache_key = (ticker, start_date, end_date)
 
-        rows = self._cache.get(cache_key)
-        if rows is None:
-            blocked_by = self._claim_request_slot()
-            if blocked_by:
+        key = self._cache.key("tiingo", data_source, ticker, adjusted)
+        on_hand, gap = self._cache.plan(key, start_date, end_date)
+
+        if gap is None:
+            records = on_hand
+        else:
+            # Collapse identical concurrent fetches of the same gap, so a page
+            # rendering several charts of one symbol costs a single call.
+            flight_key = f"{key}|{gap[0]}|{gap[1]}"
+            try:
+                records = self._flight.do(
+                    flight_key,
+                    lambda: self._fetch_and_merge(
+                        key, ticker, gap, adjusted, start_date, end_date
+                    ),
+                )
+            except QuotaExhausted as exc:
                 return {
                     "success": False,
                     "error": (
-                        f"Tiingo {blocked_by} reached. Cached results are still "
-                        f"served; the window resets on the clock."
+                        f"Tiingo {exc.window} limit reached ({exc.limit} requests); "
+                        f"resets in {exc.resets_in_seconds}s. Cached ranges are "
+                        f"still served."
                     ),
                     "error_code": "FETCH_ERROR",
                 }
-
-            params: Dict[str, str] = {"token": self._api_key}
-            if start_date:
-                params["startDate"] = self._iso_date(start_date)
-            if end_date:
-                params["endDate"] = self._iso_date(end_date)
-
-            try:
-                rows = self._get(f"{_BASE_URL}/{ticker}/prices", params)
             except Exception as exc:
                 logger.error("Tiingo fetch error for %s: %s", ticker, exc)
                 return {"success": False, "error": str(exc), "error_code": "FETCH_ERROR"}
 
-            if not rows:
-                return {
-                    "success": False,
-                    "error": f"No data returned for symbol: {ticker}",
-                    "error_code": "NO_DATA",
-                }
-            self._cache[cache_key] = rows
-
-        records = self._to_records(rows, adjusted)
         if not records:
             return {
                 "success": False,
@@ -287,6 +257,32 @@ class TiingoProvider(BaseDataProvider):
                 "records": records,
             },
         }
+
+    def _fetch_and_merge(
+        self,
+        key: str,
+        ticker: str,
+        gap: tuple[str, str],
+        adjusted: bool,
+        start_date: Optional[str],
+        end_date: Optional[str],
+    ) -> List[Dict[str, Any]]:
+        """Fetch only the missing span, merge it in, return the whole window."""
+        params: Dict[str, str] = {
+            "token": self._api_key,
+            "startDate": gap[0],
+            "endDate": gap[1],
+        }
+
+        lease = self._limiter.acquire()
+        with lease:
+            rows = self._get(f"{_BASE_URL}/{ticker}/prices", params)
+
+        bars = self._to_records(rows, adjusted)
+        # An empty result still records coverage: a range with no trading days
+        # is a real answer, and without storing it the gap would be re-fetched
+        # on every request forever.
+        return self._cache.store(key, gap, bars, start_date, end_date)
 
     # ------------------------------------------------------------------
     # HTTP + parsing
@@ -335,14 +331,6 @@ class TiingoProvider(BaseDataProvider):
         if isinstance(payload, dict):
             raise RuntimeError(str(payload.get("detail") or payload)[:200])
         return payload
-
-    @staticmethod
-    def _iso_date(compact: str) -> str:
-        """YYYYMMDD (what the app passes) → YYYY-MM-DD (what Tiingo wants)."""
-        digits = compact.replace("-", "")
-        if len(digits) == 8:
-            return f"{digits[:4]}-{digits[4:6]}-{digits[6:]}"
-        return compact
 
     @staticmethod
     def _to_records(rows: List[Dict[str, Any]], adjusted: bool) -> List[Dict[str, Any]]:
