@@ -1,5 +1,6 @@
 'use client';
 
+import CredentialManager from '@/components/admin/CredentialManager';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -101,7 +102,7 @@ interface LogStats {
   ERROR: number;
 }
 
-type Tab = 'tickets' | 'users' | 'datasets' | 'logs';
+type Tab = 'tickets' | 'users' | 'datasets' | 'logs' | 'credentials';
 
 export default function AdminPage() {
   const { data: session, status } = useSession();
@@ -639,6 +640,16 @@ export default function AdminPage() {
                   {logStats.ERROR}
                 </span>
               )}
+            </button>
+            <button
+              onClick={() => setActiveTab('credentials')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'credentials'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+              }`}
+            >
+              Credentials
             </button>
           </nav>
         </div>
@@ -1252,6 +1263,15 @@ export default function AdminPage() {
         )}
 
         {/* Logs Tab */}
+        {activeTab === 'credentials' && (
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+            <h2 className="text-lg font-semibold mb-4 dark:text-white">
+              Provider Credentials
+            </h2>
+            <CredentialManager />
+          </div>
+        )}
+
         {activeTab === 'logs' && (
           <>
             {/* Stats Summary */}
