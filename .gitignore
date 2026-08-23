@@ -1,87 +1,94 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+# What this repository is for
+#
+# The code that makes this application work, and nothing that any particular
+# installation of it has accumulated. A clone should be able to run, and should
+# arrive knowing no symbol anyone charted, no strategy anyone wrote and no
+# credential anyone holds.
+#
+# That split is why the data rules below are deny-by-default with narrow
+# exceptions for code, rather than a list of the data files that exist today.
+# The list of things worth keeping is short and stable; the list of things a
+# running instance produces is neither.
 
-# dependencies
+
+# ── Secrets ─────────────────────────────────────────────────────────────
+# Every real env file, keeping only the examples. CREDENTIAL_ENCRYPTION_KEY
+# lives in one of these, and with it every stored provider credential.
+.env*
+!.env*.example
+
+*.pem
+*.key
+!**/keys/*.example
+.secrets/
+secrets/
+
+
+# ── Data an installation accumulates ────────────────────────────────────
+# Strategies, indicators, datasets, backtest history and users all live in
+# Postgres, so the cluster directory is the single largest thing that must
+# never be committed. It is project-local and disposable by design.
+/.pgdata/
+
+# Database dumps, wherever someone puts them. Prisma's migrations are also
+# .sql and are the schema itself, so they are excepted — the schema is generic
+# functionality, the contents of a table are not.
+*.sql
+*.dump
+*.pgdump
+*.backup
+!prisma/migrations/**/*.sql
+/backups/
+/dumps/
+
+# The file-based storage mode this app supports as an alternative to Postgres.
+# The directories may not exist in a database-mode install, which is exactly
+# why the rules are here in advance rather than added the day one appears.
+/data/*
+!/data/python/
+/data/python/__pycache__/
+*.py[cod]
+
+# Anything an installation exports or a user uploads.
+/uploads/
+/exports/
+/data-service/exports/
+
+
+# ── Build output and dependencies ───────────────────────────────────────
 /node_modules
 /.pnp
 .pnp.js
+/.next/
+/out/
+/build
+/coverage
+*.tsbuildinfo
+next-env.d.ts
+/lib/generated/prisma
 
-# python virtual environment
 /venv
 /python-venv
 aktools-env/
 __pycache__/
-*.pyc
-*.pyo
 
-# testing
-/coverage
 
-# next.js
-/.next/
-/out/
-
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# editor/IDE
-.cursor/
-.claude/
-.vscode/
-.idea/
-
-# debug
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# local env files - ignore every real env file, keep only the examples
-.env*
-!.env*.example
-
-# vercel
-.vercel
-
-# typescript
-*.tsbuildinfo
-next-env.d.ts
-
-# data - ignore user-generated data but keep Python code and directory structure
-/data/csv/*
-!/data/csv/.gitkeep
-
-/data/indicators/*.json
-/data/strategies/*.json
-/data/groups/*.json
-/data/backtest-history/*.json
-
-/data/view-settings/*
-!/data/view-settings/.gitkeep
-
-/data/datasets/*
-!/data/datasets/.gitkeep
-
-# Keep Python code files
-!/data/python/
-/data/python/__pycache__/
-/data/python/*.pyc
-/data/python/*.pyo
-
-# logs
+# ── Runtime noise ───────────────────────────────────────────────────────
 /logs/
 *.log
 *.log.*
 aktools_log.log*
+/tmp/
+/scratch/
+.cache/
 
-# docker
-.docker/
-*.tar
-*.tar.gz
 
-/lib/generated/prisma
-
-# local postgres cluster (project-local, disposable)
-/.pgdata/
+# ── Editors and machines ────────────────────────────────────────────────
+.DS_Store
+.cursor/
+.claude/
+.vscode/
+.idea/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

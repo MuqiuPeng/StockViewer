@@ -40,7 +40,6 @@ export const API_CONFIG = {
    * AKTools API URL for fetching stock data
    * Default: http://127.0.0.1:8080
    */
-  AKTOOLS_URL: getEnv('NEXT_PUBLIC_AKTOOLS_API_URL', 'http://127.0.0.1:8080'),
 } as const;
 
 /**

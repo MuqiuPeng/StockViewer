@@ -355,19 +355,46 @@ NEXT_PUBLIC_STORAGE_MODE=database
 DATABASE_URL=postgresql://user:pass@localhost:5432/stockviewer
 
 # Authentication (database 模式必需)
-AUTH_SECRET=your-secret-key
-AUTH_GITHUB_ID=your-github-oauth-id
-AUTH_GITHUB_SECRET=your-github-oauth-secret
+AUTH_SECRET=
+
+# 服务间共享密钥，三者都必须生成 (openssl rand -hex 32)
+DATA_SERVICE_TOKEN=
+LOG_INGEST_SECRET=
+CRON_SECRET=
+
+# 加密数据库中存储的 provider API key (openssl rand -base64 32)
+CREDENTIAL_ENCRYPTION_KEY=
 ```
 
-See [Architecture](docs/ARCHITECTURE.md) for complete configuration options.
+完整清单见 [.env.local.example](.env.local.example)，其中每个密钥都附了生成命令。
+其余配置项见 [Architecture](docs/ARCHITECTURE.md)。
 
 ## Security
 
-- Python code validation blocks dangerous imports (`os`, `subprocess`, `eval`, `exec`)
-- Process isolation with configurable timeouts
-- Sandboxed execution environment
-- No file system access from user code
+用户编写的策略与指标是被真正执行的 Python，这是产品功能而非缺陷。因此这里
+描述的是「它执行时能碰到什么」，并区分哪些是边界、哪些只是防手滑。
+
+**边界（内核强制）**
+
+- macOS 用 `sandbox-exec`，Linux 用 `bubblewrap`；两者都在启动时探测一次，
+  确认「拒绝确实生效」后才启用，失败则降级并明确记录
+- 阻止读取 `.env`、`.pgdata`、`.git`、`~/.ssh`、`~/.aws` 等，并禁用网络
+- 子进程只获得白名单环境变量，不继承服务端环境
+
+**尽力而为（非边界）**
+
+- CPython 审计钩子作为全平台地板，拦截受保护路径的读取与枚举、子进程和网络。
+  它在被约束的进程内部，`ctypes` 可以绕过——而 `ctypes` 无法禁用，因为 numpy
+  导入时即调用它。这一层不应被当作沙箱
+- 保存指标时以正则检查 `os`、`subprocess`、`eval` 等字样。这能挡住误用，
+  挡不住刻意绕过
+
+**资源**
+
+- 并发执行数受信号量限制，队列超时返回 503
+- 每次执行有可配置的超时上限
+
+发布前可运行 `./scripts/check-repo-clean.sh` 确认仓库未携带任何密钥或数据。
 
 See [Architecture](docs/ARCHITECTURE.md) for security details.
 
