@@ -13,6 +13,7 @@ from typing import Any, Dict, List
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from app.gateway_config import GatewayConfig  # noqa: E402
 from app.limits.rate_limiter import QuotaExhausted  # noqa: E402
 from app.routing import router as router_mod  # noqa: E402
 from app.routing.router import ProviderRouter  # noqa: E402
@@ -47,9 +48,20 @@ class RouterTestCase(unittest.TestCase):
     """Patches the registry the router reads from."""
 
     def install(self, providers: Dict[str, FakeProvider]) -> None:
+        """Patch both the registry and the config the router filters against."""
         self._providers = providers
         router_mod.get_provider = lambda name: providers[name]      # type: ignore[assignment]
         router_mod.list_providers = lambda: {k: "Fake" for k in providers}  # type: ignore[assignment]
+
+        # chain_for() also drops providers the config does not declare as
+        # usable, so the fakes have to be declared there too.
+        config = GatewayConfig.model_validate({
+            "providers": {
+                name: {"enabled": True, "allowed_usage": ["internal_research"]}
+                for name in providers
+            }
+        })
+        router_mod.load_config = lambda *a, **k: config  # type: ignore[assignment]
         self.addCleanup(self._restore)
 
     def _restore(self) -> None:

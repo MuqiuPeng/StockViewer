@@ -1,10 +1,12 @@
 """
 Health check API endpoints.
 """
+from starlette.concurrency import run_in_threadpool
 from fastapi import APIRouter
 import time
 
 from ...config import get_settings
+from ...gateway_config import load_config
 from ...providers.registry import get_provider, list_providers
 from ...models.responses import ApiResponse, HealthData, DependencyStatus, Meta
 
@@ -13,22 +15,44 @@ router = APIRouter()
 _start_time = time.time()
 
 
+def _collect_provider_health() -> dict:
+    """Health of every registered provider, one entry each."""
+    out = {}
+    for name in list_providers():
+        try:
+            out[name] = get_provider(name).health_check()
+        except Exception as exc:
+            out[name] = {"status": "unhealthy", "version": None, "message": str(exc)}
+    return out
+
+
 @router.get("/health", response_model=ApiResponse[HealthData])
 async def health_check():
     """
     Check the health status of the service.
 
-    Returns service status, version, uptime, and the active provider's
-    dependency status.
+    Reports every registered provider rather than a single active one. Since
+    routing picks per data source, one provider being down does not mean the
+    service is: EastMoney can be refusing connections while Tiingo still
+    answers every A-share and US request. Overall status is degraded only when
+    something is actually unavailable, and unhealthy when nothing is left.
     """
     settings = get_settings()
     uptime = time.time() - _start_time
 
-    provider = get_provider()
-    health = provider.health_check()
+    # health_check() reaches the network for some providers, so keep it off
+    # the event loop.
+    reports = await run_in_threadpool(_collect_provider_health)
 
-    provider_status = health.get("status", "unhealthy")
-    overall = "healthy" if provider_status == "healthy" else "degraded"
+    healthy = [n for n, r in reports.items() if r.get("status") == "healthy"]
+    if not reports:
+        overall = "unhealthy"
+    elif len(healthy) == len(reports):
+        overall = "healthy"
+    elif healthy:
+        overall = "degraded"
+    else:
+        overall = "unhealthy"
 
     return ApiResponse(
         success=True,
@@ -37,11 +61,12 @@ async def health_check():
             version=settings.app_version,
             uptime_seconds=uptime,
             dependencies={
-                settings.data_provider: DependencyStatus(
-                    status=provider_status,
-                    version=health.get("version"),
-                    message=health.get("message"),
-                ),
+                name: DependencyStatus(
+                    status=r.get("status", "unhealthy"),
+                    version=r.get("version"),
+                    message=r.get("message"),
+                )
+                for name, r in reports.items()
             },
         ),
         meta=Meta(),

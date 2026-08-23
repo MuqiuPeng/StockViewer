@@ -18,11 +18,18 @@ How a request is resolved
    passed over rather than retried, and the next one is tried.
 4. Report which provider answered and, when it was not the first choice, why.
 
+Chains, licence posture and budgets come from config/providers.toml, so
+changing which provider leads a market is a config edit rather than a code
+change. A provider whose allowed_usage excludes the gateway's active
+usage_context is filtered out here — Tiingo's Starter data is internal-use
+only, so flipping the deployment to commercial_display must lose it rather
+than quietly keep serving it.
+
 What this does not do yet
 -------------------------
-No scoring, no circuit breaker, no usage_context filtering. Those belong with
-the resilience work; this is the routing half. The chain order encodes the
-preference for now, which for a handful of providers is honest and readable.
+No scoring and no circuit breaker; those belong with the resilience work. The
+chain order encodes the preference for now, which for a handful of providers
+is honest and readable.
 
 Fallback is only allowed between providers serving the same request. Nothing
 here degrades an adjusted series into a raw one, or a real-time quote into a
@@ -34,13 +41,15 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
+from ..gateway_config import load_config
 from ..limits import QuotaExhausted
 from ..providers.registry import get_provider, list_providers
 
 logger = logging.getLogger(__name__)
 
 
-# Ordered candidate chains. First entry is the preferred provider.
+# Fallback chains, used only when config/providers.toml is absent. The real
+# table lives there; these exist so a fresh checkout still starts.
 #
 # Tiingo leads for the two markets it carries: it returns history back to 2007
 # where Alpha Vantage's free tier stops at 100 bars, and it does not share an
@@ -110,14 +119,29 @@ class RouteResult:
 class ProviderRouter:
     """Resolves a request to a provider, trying a chain in order."""
 
-    def __init__(self, routes: Optional[Dict[str, List[str]]] = None) -> None:
+    def __init__(
+        self,
+        routes: Optional[Dict[str, List[str]]] = None,
+        default_chain: Optional[List[str]] = None,
+    ) -> None:
         self._routes = routes if routes is not None else DEFAULT_ROUTES
+        self._default_chain = (
+            default_chain if default_chain is not None else DEFAULT_CHAIN
+        )
 
     def chain_for(self, data_source: Optional[str]) -> List[str]:
-        """The configured chain, filtered to providers that are registered."""
+        """
+        The configured chain, filtered to providers that are registered,
+        enabled, and licensed for the active usage context.
+
+        The licence filter is a hard one: Tiingo's Starter data is
+        internal-use only, so a deployment that flips usage_context to
+        commercial_display must lose it rather than quietly keep serving it.
+        """
         registered = set(list_providers())
-        raw = self._routes.get(data_source or "", DEFAULT_CHAIN)
-        return [name for name in raw if name in registered]
+        usable = set(load_config().usable_providers())
+        raw = self._routes.get(data_source or "", self._default_chain)
+        return [n for n in raw if n in registered and n in usable]
 
     def candidates(self, data_source: Optional[str]) -> List[str]:
         """The chain, with providers that do not carry the source removed."""
@@ -198,7 +222,12 @@ _router: Optional[ProviderRouter] = None
 
 
 def get_router() -> ProviderRouter:
+    """The process-wide router, built from config/providers.toml."""
     global _router
     if _router is None:
-        _router = ProviderRouter()
+        config = load_config()
+        _router = ProviderRouter(
+            routes=config.routes() or None,
+            default_chain=config.default_chain() or None,
+        )
     return _router

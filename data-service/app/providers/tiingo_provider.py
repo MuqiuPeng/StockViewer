@@ -39,6 +39,7 @@ import httpx
 
 from ..cache import SeriesCache, SingleFlight
 from ..config import get_settings
+from ..gateway_config import load_config, resolve_api_key
 from ..limits import QuotaExhausted, get_limiter
 from .base import BaseDataProvider
 
@@ -46,7 +47,6 @@ logger = logging.getLogger(__name__)
 
 
 _BASE_URL = "https://api.tiingo.com/tiingo/daily"
-_HISTORY_TTL = 3600
 
 # Suffixes other providers use that Tiingo rejects.
 _STRIPPED_SUFFIXES = (".SHH", ".SHZ", ".SS", ".SZ", ".SH")
@@ -89,21 +89,23 @@ class TiingoProvider(BaseDataProvider):
     }
 
     def __init__(self) -> None:
-        settings = get_settings()
-        self._api_key = settings.tiingo_api_key
-        self._timeout = settings.tiingo_timeout
-        self._hourly_limit = settings.tiingo_hourly_limit
-        self._daily_limit = settings.tiingo_daily_limit
+        config = load_config()
+        provider_cfg = config.providers.get("tiingo")
+        limits = provider_cfg.limits if provider_cfg else None
 
-        self._cache = SeriesCache(ttl=_HISTORY_TTL)
+        self._api_key = resolve_api_key("tiingo")
+        self._timeout = get_settings().tiingo_timeout
+
+        self._cache = SeriesCache(
+            ttl=config.cache.ohlcv_daily_ttl_seconds,
+            max_series=config.cache.max_series,
+        )
         self._flight = SingleFlight()
         self._limiter = get_limiter(
             "tiingo",
-            max_concurrency=4,
-            windows={
-                "hour": (self._hourly_limit, 3600),
-                "day": (self._daily_limit, 86400),
-            },
+            max_concurrency=limits.concurrency if limits else 4,
+            min_interval=limits.min_interval_seconds if limits else 0.0,
+            windows=limits.windows() if limits else {},
         )
 
         if not self._api_key:

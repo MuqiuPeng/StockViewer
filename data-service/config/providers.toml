@@ -1,0 +1,169 @@
+# Provider registry and routing configuration.
+#
+# Everything here is data, not code: quotas, coverage, licence posture and
+# routing order all change on the provider's schedule, not ours, so they must
+# be editable without touching an adapter.
+#
+# Secrets are never stored here. `api_key_setting` names the field on Settings
+# (fed from .env) that carries the key, so this file stays safe to commit.
+#
+# ── On the `verified` flags ────────────────────────────────────────────────
+# `verified = true` means the number was observed from this codebase against
+# the live API. `verified = false` means it was taken from documentation and
+# nobody has confirmed it against a logged-in account. The distinction is the
+# point: an unverified limit that is really lower gets us blocked, which has
+# already happened once with EastMoney.
+#
+# Before this is relied on in anger, each entry needs checking against the
+# provider's own pricing page and the entitlements visible on the target
+# account, and `reviewed_at` set. See the reference URLs in each block.
+
+[gateway]
+# Callers reach providers only through this service; nothing else should hold
+# a provider key or call a provider host directly.
+deny_direct_provider_access = true
+default_deadline_ms = 5000
+
+# What this deployment is allowed to do with the data. Kept at the most
+# restrictive setting: this runs on a local network for a handful of
+# colleagues, and no provider here has been cleared for public display or
+# redistribution. Routing refuses any provider whose allowed_usage does not
+# include the active context.
+usage_context = "internal_research"
+
+
+# ───────────────────────────── EastMoney ──────────────────────────────────
+
+[providers.eastmoney]
+enabled = true
+allowed_usage = ["internal_research"]
+capabilities = ["ohlcv", "reference"]
+# The only provider covering all thirteen canonical sources.
+markets = ["CN", "HK", "US", "GLOBAL"]
+api_key_setting = ""          # public endpoints, no key
+notes = """
+Undocumented public JSON endpoints, no published quota and no terms of use we
+can point at. Treat the limits below as a self-imposed courtesy budget rather
+than a known ceiling: a debugging burst on 2026-08-23 got this machine
+refused for hours, which is the only hard evidence we have about its
+tolerance. AKShare was removed because it wraps these same endpoints — it was
+never a second source.
+"""
+
+[providers.eastmoney.limits]
+# Deliberately conservative. There is no official number to derive a safety
+# margin from, so these are picked to stay far below whatever tripped the
+# block rather than to maximise throughput.
+requests_per_minute = 30
+requests_per_hour = 600
+concurrency = 2
+min_interval_seconds = 0.5
+verified = false
+reviewed_at = ""
+source = "no official rate-limit documentation exists"
+
+[providers.eastmoney.circuit_breaker]
+window = 20
+failure_ratio = 0.5
+open_seconds = 60
+
+
+# ─────────────────────────────── Tiingo ───────────────────────────────────
+
+[providers.tiingo]
+enabled = true
+# Starter is marked internal-use only; this must not feed public output.
+allowed_usage = ["internal_research"]
+capabilities = ["ohlcv"]
+markets = ["US", "CN"]
+api_key_setting = "tiingo_api_key"
+notes = """
+Carries mainland A-shares under the bare ticker — verified against the live
+API: 600104 and 000002 resolve, suffixed forms do not. Depth is the reason it
+leads the chain for cn.stock and us.stock: 5038 daily bars back to 2007-01-04
+for 600104. It also shares no upstream with EastMoney, so one being blocked
+does not take the other down.
+"""
+
+[providers.tiingo.limits]
+requests_per_hour = 50
+requests_per_day = 1000
+concurrency = 4
+min_interval_seconds = 0.0
+# Taken from the design document, not confirmed against the account.
+verified = false
+reviewed_at = ""
+source = "https://www.tiingo.com/about/pricing"
+
+[providers.tiingo.circuit_breaker]
+window = 20
+failure_ratio = 0.5
+open_seconds = 60
+
+
+# ──────────────────────────── Alpha Vantage ───────────────────────────────
+
+[providers.alphavantage]
+enabled = true
+allowed_usage = ["internal_research"]
+capabilities = ["ohlcv"]
+markets = ["US", "CN"]
+api_key_setting = "alphavantage_api_key"
+notes = """
+Kept for low-frequency manual checks and as a last resort, not as an
+automatic fallback: the daily allowance is too small to carry traffic, and
+free-tier daily history is capped at 100 bars because outputsize=full is now
+premium — observed directly, not inferred. Adjusted prices are premium too.
+A-shares work via .SHH/.SHZ suffixes.
+"""
+
+[providers.alphavantage.limits]
+requests_per_day = 25
+concurrency = 2
+# Observed: the API answers a burst with "please spread out your free API
+# requests more sparingly (1 request per second)".
+min_interval_seconds = 1.2
+verified = false            # the 25/day figure itself is still undocumented here
+reviewed_at = ""
+source = "https://www.alphavantage.co/support/"
+
+[providers.alphavantage.circuit_breaker]
+window = 20
+failure_ratio = 0.5
+open_seconds = 60
+
+
+# ──────────────────────────────  Routing  ─────────────────────────────────
+#
+# Ordered candidate chains per canonical data source. First entry preferred.
+# A provider that does not carry a source is filtered out regardless of this
+# order, so listing one here is a preference, not an assertion of coverage.
+
+[routing]
+"cn.stock"      = ["tiingo", "eastmoney", "alphavantage"]
+"us.stock"      = ["tiingo", "eastmoney", "alphavantage"]
+"cn.stock.b"    = ["eastmoney"]
+"cn.stock.cdr"  = ["eastmoney"]
+"hk.stock"      = ["eastmoney"]
+"cn.index"      = ["eastmoney"]
+"hk.index"      = ["eastmoney"]
+"us.index"      = ["eastmoney"]
+"global.index"  = ["eastmoney"]
+"cn.etf"        = ["eastmoney"]
+"cn.lof"        = ["eastmoney"]
+"cn.futures"    = ["eastmoney"]
+"global.futures" = ["eastmoney"]
+
+# Applied to sources with no explicit chain, and to the listing endpoints.
+default = ["eastmoney", "tiingo", "alphavantage"]
+
+
+# ─────────────────────────────── Caching ──────────────────────────────────
+
+[cache]
+# Daily bars settle once per session, so an hour costs nothing in freshness.
+ohlcv_daily_ttl_seconds = 3600
+# A range ending today holds a bar that is still forming; stop trusting it
+# quickly so the close is picked up rather than cached for the full hour.
+today_coverage_ttl_seconds = 300
+max_series = 512
