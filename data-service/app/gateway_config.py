@@ -28,7 +28,8 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from .config import get_settings
 from .credentials import (
-    Budget, BudgetKind, Credential, CredentialPool, Window, register_pool,
+    Budget, BudgetKind, Credential, CredentialPool, Window,
+    load_credentials, register_pool,
 )
 
 logger = logging.getLogger(__name__)
@@ -243,7 +244,21 @@ def build_credential_pools(config: "GatewayConfig") -> None:
     """
     settings = get_settings()
 
+    # Stored credentials win over both the TOML and .env, because they are the
+    # ones that can be rotated without a restart. Anything the database has no
+    # row for keeps working from configuration, so this can be adopted a
+    # provider at a time.
+    stored = load_credentials(getattr(settings, "database_url", "") or "")
+
     for name, cfg in config.providers.items():
+        if name in stored:
+            pool = CredentialPool(name)
+            for credential in stored[name]:
+                pool.add(credential)
+            register_pool(pool)
+            _warn_about(pool, name)
+            continue
+
         declared = list(cfg.credentials)
 
         if not declared:
@@ -268,21 +283,23 @@ def build_credential_pools(config: "GatewayConfig") -> None:
                 credential.bind_secret(getattr(settings, credential.secret_ref.lower(), "") or "")
             pool.add(credential)
         register_pool(pool)
+        _warn_about(pool, name)
 
-        expiring = pool.expiring_within(30)
-        for cred in expiring:
-            logger.warning(
-                "Credential %s expires in %d day(s) — a lapsed key presents as "
-                "authentication failures, not as an expiry",
-                cred.id, cred.expires_in_days(),
-            )
 
-        unusable = [c for c in pool.credentials if not c.is_usable]
-        if unusable and len(unusable) == len(pool.credentials):
-            logger.warning(
-                "No usable credential for %s: %s",
-                name, {c.id: c.state().value for c in unusable},
-            )
+def _warn_about(pool: "CredentialPool", name: str) -> None:
+    for cred in pool.expiring_within(30):
+        logger.warning(
+            "Credential %s expires in %d day(s) — a lapsed key presents as "
+            "authentication failures, not as an expiry",
+            cred.id, cred.expires_in_days(),
+        )
+
+    unusable = [c for c in pool.credentials if not c.is_usable]
+    if unusable and len(unusable) == len(pool.credentials):
+        logger.warning(
+            "No usable credential for %s: %s",
+            name, {c.id: c.state().value for c in unusable},
+        )
 
 
 def resolve_api_key(name: str) -> str:

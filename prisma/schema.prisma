@@ -532,6 +532,49 @@ enum LogSource {
 // SYSTEM LOGS
 // ============================================================================
 
+/// Provider API credentials.
+///
+/// These live here rather than in .env so they can be rotated, expired and
+/// added without editing a file and restarting: a key is state, not
+/// configuration. Budgets and validity are what the gateway needs to decide
+/// which key to use, and none of it can be derived.
+///
+/// `secretCiphertext` is AES-256-GCM, base64(nonce || ciphertext || tag),
+/// keyed by CREDENTIAL_ENCRYPTION_KEY from the environment. The plaintext is
+/// never stored, so a database dump or an over-broad admin query does not
+/// yield working keys.
+model ProviderCredential {
+  id       String @id @default(cuid())
+  /// Registered provider name, e.g. "tiingo".
+  provider String
+  /// Distinguishes keys of the same provider, e.g. "primary", "backup".
+  label    String
+
+  secretCiphertext String @db.Text
+
+  enabled  Boolean @default(true)
+  /// Lower is preferred. Lets a paid key lead while free ones absorb overflow.
+  priority Int     @default(0)
+
+  /// Validity window. A lapsed key otherwise presents only as auth failures.
+  validFrom  DateTime?
+  validUntil DateTime?
+
+  /// Typed budgets: [{ kind, limit, window }]. kind is requests|credits|bytes|
+  /// symbols, window is minute|hour|day|month|lifetime. Counting requests
+  /// cannot see a bandwidth or distinct-symbol cap coming.
+  budgets Json @default("[]")
+
+  notes     String?  @db.Text
+  lastUsedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([provider, label])
+  @@index([provider, enabled])
+}
+
 model SystemLog {
   id        String    @id @default(cuid())
   level     LogLevel

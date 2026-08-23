@@ -48,6 +48,10 @@ class Settings(BaseSettings):
     tiingo_hourly_limit: int = 50
     tiingo_daily_limit: int = 1000
 
+    # Where stored credentials live. Shared with the web app, which owns the
+    # ProviderCredential table.
+    database_url: str = ""
+
     # Fiscal.ai
     fiscal_api_key: str = ""
 
