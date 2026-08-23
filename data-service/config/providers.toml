@@ -77,7 +77,7 @@ capabilities = ["ohlcv"]
 markets = ["CN", "HK", "US"]
 api_key_setting = ""          # public endpoints, no key
 notes = """
-Second independent source for the markets EastMoney was alone on. Unofficial
+Second independent source for eleven of the thirteen canonical sources. Unofficial
 in the same way — no published quota, no terms — but it fails separately,
 which is the whole point of having it: when EastMoney refused this machine,
 Tencent kept answering.
@@ -275,19 +275,21 @@ source = "https://twelvedata.com/pricing"
 "us.stock"      = ["twelvedata", "tiingo", "tencent", "eastmoney", "alphavantage"]
 # Australia had no path at all until EODHD; it is still the only one.
 "au.stock"      = ["eodhd"]
-"cn.stock.b"    = ["eastmoney"]
-"cn.stock.cdr"  = ["eastmoney"]
+"cn.stock.b"    = ["tencent", "eastmoney"]
+"cn.stock.cdr"  = ["tencent", "eastmoney"]
 # Hong Kong had one source until Tencent; an EastMoney block took the whole
 # market with it.
 # EODHD is the only Hong Kong source with a contract behind it; the other two
 # are undocumented public endpoints.
 "hk.stock"      = ["tencent", "eastmoney", "eodhd"]
 "cn.index"      = ["tencent", "eastmoney"]
-"hk.index"      = ["eastmoney"]
-"us.index"      = ["eastmoney"]
-"global.index"  = ["eastmoney"]
-"cn.etf"        = ["eastmoney"]
-"cn.lof"        = ["eastmoney"]
+"hk.index"      = ["tencent", "eastmoney"]
+"us.index"      = ["tencent", "eastmoney"]
+"global.index"  = ["tencent", "eastmoney"]
+"cn.etf"        = ["tencent", "eastmoney"]
+"cn.lof"        = ["tencent", "eastmoney"]
+# Futures remain single-sourced: Tencent's kline endpoint returns nothing for
+# contract codes, and no free alternative has been found.
 "cn.futures"    = ["eastmoney"]
 "global.futures" = ["eastmoney"]
 

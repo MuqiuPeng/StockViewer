@@ -8,8 +8,15 @@ request went with it. Tencent is unofficial in the same way EastMoney is — no
 published quota, no terms we can point at — but it fails separately, which is
 the property that matters for a fallback.
 
-Verified coverage: A-shares, Hong Kong, US equities and mainland indices, all
-with daily history and no key.
+Verified coverage: A-shares, B-shares, CDRs, ETFs, LOFs, Hong Kong equities
+and indices, US equities and indices, and global indices — eleven of the
+thirteen canonical sources, with daily history and no key. Only futures are
+missing; IF2612 was tried bare and with the nf_/sh_ prefixes and all came back
+empty.
+
+That matters because before this, ETFs, LOFs, B-shares, CDRs and every index
+except mainland ones had EastMoney as their only source, so an EastMoney block
+took all of them out at once — which happened.
 
 Depth is capped at roughly 3.2 years — see _MAX_BARS. Tiingo reaches back to
 2007 for the two markets it carries, so it still leads those chains; Tencent
@@ -52,11 +59,16 @@ _KLINE_URL = "https://web.ifzq.gtimg.cn/appstock/app/{endpoint}/get"
 # Each market has its own kline endpoint; the response shape is the same.
 _ENDPOINT_BY_SOURCE = {
     "cn.stock": "fqkline",
+    "cn.stock.b": "fqkline",
+    "cn.stock.cdr": "fqkline",
     "cn.index": "fqkline",
     "cn.etf": "fqkline",
     "cn.lof": "fqkline",
     "hk.stock": "hkfqkline",
+    "hk.index": "hkfqkline",
     "us.stock": "usfqkline",
+    "us.index": "usfqkline",
+    "global.index": "usfqkline",
 }
 
 _HEADERS = {
@@ -102,6 +114,55 @@ class TencentProvider(BaseDataProvider):
             "example": "AAPL",
             "params": ["symbol", "start_date", "end_date", "adjust"],
         },
+        "cn.stock.b": {
+            "name": "B股历史数据",
+            "category": "B股",
+            "symbol_format": "6位数字",
+            "example": "900901",
+            "params": ["symbol", "start_date", "end_date", "adjust"],
+        },
+        "cn.stock.cdr": {
+            "name": "CDR历史数据",
+            "category": "CDR",
+            "symbol_format": "6位数字",
+            "example": "689009",
+            "params": ["symbol", "start_date", "end_date", "adjust"],
+        },
+        "cn.etf": {
+            "name": "场内ETF历史数据",
+            "category": "ETF",
+            "symbol_format": "6位数字",
+            "example": "510300",
+            "params": ["symbol", "start_date", "end_date", "adjust"],
+        },
+        "cn.lof": {
+            "name": "LOF基金历史数据",
+            "category": "LOF",
+            "symbol_format": "6位数字",
+            "example": "161725",
+            "params": ["symbol", "start_date", "end_date", "adjust"],
+        },
+        "hk.index": {
+            "name": "港股指数历史数据",
+            "category": "指数",
+            "symbol_format": "指数代码",
+            "example": "HSI",
+            "params": ["symbol", "start_date", "end_date", "adjust"],
+        },
+        "us.index": {
+            "name": "美股指数历史数据",
+            "category": "指数",
+            "symbol_format": "指数代码",
+            "example": ".IXIC",
+            "params": ["symbol", "start_date", "end_date", "adjust"],
+        },
+        "global.index": {
+            "name": "全球指数历史数据",
+            "category": "指数",
+            "symbol_format": "指数代码",
+            "example": ".INX",
+            "params": ["symbol", "start_date", "end_date", "adjust"],
+        },
         "cn.index": {
             "name": "中国指数历史数据",
             "category": "指数",
@@ -111,14 +172,9 @@ class TencentProvider(BaseDataProvider):
         },
     }
 
+    # Futures are the only thing this endpoint genuinely does not serve —
+    # IF2612 was tried bare and with the nf_/sh_ prefixes, all empty.
     UNSUPPORTED: Dict[str, str] = {
-        "cn.stock.b": "B股",
-        "cn.stock.cdr": "CDR",
-        "hk.index": "港股指数",
-        "us.index": "美股指数",
-        "global.index": "全球指数",
-        "cn.etf": "场内ETF",
-        "cn.lof": "LOF基金",
         "cn.futures": "国内期货",
         "global.futures": "国际期货",
     }
@@ -184,6 +240,14 @@ class TencentProvider(BaseDataProvider):
 
         inst = instrument_for(data_source, symbol)
         local = inst.local_symbol
+
+        # Indices do not follow the equity prefixes. Hong Kong ones are hkHSI,
+        # while US and global ones carry a leading dot — us.IXIC, us.INX —
+        # which is how they are distinguished from tickers of the same name.
+        if data_source == "hk.index":
+            return f"hk{local.lstrip('.')}"
+        if data_source in ("us.index", "global.index"):
+            return f"us.{local.lstrip('.')}"
 
         if inst.mic == MIC_HONGKONG:
             # Hong Kong codes are five digits here, zero-padded.
