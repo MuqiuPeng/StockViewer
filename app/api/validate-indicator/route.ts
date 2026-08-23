@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { validatePythonCode } from '@/lib/indicator-validator';
 import { executePythonIndicator, ResourceManifest, ResourceInfo } from '@/lib/python-executor';
+import { isPythonBusy } from '@/lib/python-child';
 import { prisma } from '@/lib/prisma';
 import { detectDependencies } from '@/lib/detect-dependencies';
 import { getApiStorage } from '@/lib/api-auth';
@@ -237,7 +238,7 @@ export async function POST(request: Request) {
         error: 'Failed to validate indicator',
         message: error instanceof Error ? error.message : 'Unknown error',
       },
-      { status: 500 }
+      { status: isPythonBusy(error) ? 503 : 500 }
     );
   }
 }

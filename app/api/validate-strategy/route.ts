@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { spawn } from 'child_process';
+import { spawnPython, withPythonSlot, isPythonBusy } from '@/lib/python-child';
 import path from 'path';
 import { existsSync } from 'fs';
 import { PYTHON_CONFIG } from '@/lib/env';
@@ -110,7 +110,7 @@ export async function POST(request: Request) {
         valid: false,
         error: error instanceof Error ? error.message : 'Unknown validation error',
       },
-      { status: 500 }
+      { status: isPythonBusy(error) ? 503 : 500 }
     );
   }
 }
@@ -119,7 +119,7 @@ async function executeStrategyValidation(
   strategyCode: string,
   dependencyColumns: string[] = []
 ): Promise<{ valid: boolean; error?: string; details?: string; signalCount?: number }> {
-  return new Promise((resolve) => {
+  return withPythonSlot(() => new Promise<{ valid: boolean; error?: string; details?: string; signalCount?: number }>((resolve) => {
     // Get Python executable - check multiple venv names
     let pythonExecutable: string = 'python3';
 
@@ -356,9 +356,7 @@ except Exception as e:
     sys.exit(1)
 `;
 
-    const pythonProcess = spawn(pythonExecutable, ['-c', validationScript], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    const pythonProcess = spawnPython(pythonExecutable, ['-c', validationScript]);
 
     let stdout = '';
     let stderr = '';
@@ -417,5 +415,5 @@ except Exception as e:
         error: 'Validation timeout (10 seconds)',
       });
     }, 10000);
-  });
+  }));
 }

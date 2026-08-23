@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { spawnPython, withPythonSlot } from './python-child';
 import path from 'path';
 import { existsSync } from 'fs';
 import { PYTHON_CONFIG } from './env';
@@ -62,7 +62,7 @@ export interface PythonExecutionResult {
 export async function executePythonIndicator(
   input: PythonExecutionInput
 ): Promise<PythonExecutionResult> {
-  return new Promise((resolve, reject) => {
+  return withPythonSlot(() => new Promise<PythonExecutionResult>((resolve, reject) => {
     // Try both PROJECT_ROOT and process.cwd() for finding files
     const projectRoot = existsSync(path.join(PROJECT_ROOT, 'package.json')) ? PROJECT_ROOT : process.cwd();
     const pythonScript = path.join(projectRoot, 'data', 'python', 'executor.py');
@@ -107,9 +107,7 @@ export async function executePythonIndicator(
     }
 
     // Spawn Python process
-    const pythonProcess = spawn(pythonExecutable, [pythonScript], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    const pythonProcess = spawnPython(pythonExecutable, [pythonScript]);
 
     let stdout = '';
     let stderr = '';
@@ -163,5 +161,5 @@ export async function executePythonIndicator(
     pythonProcess.on('close', () => {
       clearTimeout(timeout);
     });
-  });
+  }));
 }

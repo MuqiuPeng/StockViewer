@@ -7,6 +7,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
 import { executeBacktest, BacktestInput, BacktestResult } from '@/lib/backtest-executor';
+import { isPythonBusy } from '@/lib/python-child';
 import { getStockPrices } from '@/lib/stock-storage';
 import { createBacktestHistoryEntry, BacktestHistoryEntry } from '@/lib/backtest-history-storage';
 import { logger } from '@/lib/logger';
@@ -605,7 +606,7 @@ export async function POST(request: Request) {
         error: 'Failed to run backtest',
         message: error instanceof Error ? error.message : 'Unknown error',
       },
-      { status: 500 }
+      { status: isPythonBusy(error) ? 503 : 500 }
     );
   }
 }

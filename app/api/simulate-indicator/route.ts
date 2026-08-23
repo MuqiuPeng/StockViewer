@@ -11,6 +11,7 @@ import { prisma } from '@/lib/prisma';
 import { getApiStorage } from '@/lib/api-auth';
 import { loadIndicator, IndicatorMeta } from '@/lib/indicator-compute';
 import { executePythonIndicator, ResourceManifest } from '@/lib/python-executor';
+import { isPythonBusy } from '@/lib/python-child';
 import { logger } from '@/lib/logger';
 import { LogSource } from '@prisma/client';
 
@@ -168,7 +169,7 @@ export async function POST(request: Request) {
     logger.error(LogSource.API, 'simulate_indicator', 'Simulation failed', { error });
     return NextResponse.json(
       { error: 'Simulation failed', message: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 },
+      { status: isPythonBusy(error) ? 503 : 500 },
     );
   }
 }

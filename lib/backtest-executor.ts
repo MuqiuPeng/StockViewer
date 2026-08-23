@@ -1,4 +1,4 @@
-import { spawn } from 'child_process';
+import { spawnPython, withPythonSlot } from './python-child';
 import path from 'path';
 import { existsSync } from 'fs';
 import { PYTHON_CONFIG } from './env';
@@ -92,7 +92,7 @@ export interface BacktestResult {
 export async function executeBacktest(
   input: BacktestInput
 ): Promise<BacktestResult> {
-  return new Promise((resolve, reject) => {
+  return withPythonSlot(() => new Promise<BacktestResult>((resolve, reject) => {
     const pythonScript = path.join(process.cwd(), 'data', 'python', 'backtest-executor.py');
 
     // Validate input
@@ -143,9 +143,7 @@ export async function executeBacktest(
     }
 
     // Spawn Python process
-    const pythonProcess = spawn(pythonExecutable, [pythonScript], {
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
+    const pythonProcess = spawnPython(pythonExecutable, [pythonScript]);
 
     let stdout = '';
     let stderr = '';
@@ -204,6 +202,6 @@ export async function executeBacktest(
     pythonProcess.on('close', () => {
       clearTimeout(timeout);
     });
-  });
+  }));
 }
 
