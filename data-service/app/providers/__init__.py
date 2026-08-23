@@ -4,6 +4,7 @@ Data provider abstraction layer.
 Built-in providers
 ------------------
 - eastmoney     — EastMoney direct HTTP API (default; no extra library needed)
+- tiingo        — Tiingo HTTP API (US equities + mainland A-shares, needs a key)
 - alphavantage  — Alpha Vantage HTTP API (US equities/ETFs only, needs an API key)
 
 To add a new data provider:

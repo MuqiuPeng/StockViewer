@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     # AKShare itself is gone, it was only ever a wrapper over the same host.
     akshare_timeout: int = 60  # seconds
 
+    # Tiingo settings. Starter plan: 50 requests/hour, 1000/day.
+    tiingo_api_key: str = ""
+    tiingo_timeout: int = 30  # seconds
+    tiingo_hourly_limit: int = 50
+    tiingo_daily_limit: int = 1000
+
     # Alpha Vantage settings
     alphavantage_api_key: str = ""
     alphavantage_timeout: int = 30  # seconds
