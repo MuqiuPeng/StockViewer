@@ -3,11 +3,11 @@ Stock Data Service - FastAPI Application Entry Point.
 
 A REST API service for fetching stock market data from various sources.
 """
-from fastapi import FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Depends, FastAPI, Request
 import logging
 import time
 
+from .auth import require_caller_token
 from .config import get_settings
 from .api.v1.router import router as api_router
 from .services.log_forwarder import start_log_flusher, stop_log_flusher, forward_log
@@ -43,18 +43,19 @@ A REST API for fetching stock market data. Supports multiple data sources and ma
 - **ETFs**: Exchange-traded funds (fund_etf_hist_em)
 - **Indices**: Market indices (index_zh_a_hist)
     """,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    # Only in debug. The schema is not confidential, but an unauthenticated
+    # description of every endpoint on a reachable port is a courtesy this
+    # service does not need to extend.
+    docs_url="/docs" if settings.debug else None,
+    redoc_url="/redoc" if settings.debug else None,
+    openapi_url="/openapi.json" if settings.debug else None,
 )
 
-# Add CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# No CORS middleware, deliberately. Only the Next.js server calls this, from
+# its own process — DATA_SERVICE_URL carries no NEXT_PUBLIC_ prefix, so it is
+# never bundled into the browser and no page has an origin to allow. The
+# wildcard that used to be here granted every origin on the network the right
+# to make credentialed requests, in exchange for nothing this service uses.
 
 # Request logging middleware
 @app.middleware("http")
@@ -84,7 +85,11 @@ async def log_requests(request: Request, call_next):
 
 
 # Include API router
-app.include_router(api_router, prefix="/api/v1")
+# The dependency sits on the router rather than on each endpoint, so a route
+# added later is protected by existing rather than by being remembered.
+app.include_router(
+    api_router, prefix="/api/v1", dependencies=[Depends(require_caller_token)]
+)
 
 
 @app.on_event("startup")

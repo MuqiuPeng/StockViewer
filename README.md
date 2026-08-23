@@ -122,7 +122,7 @@ python3 -m venv python-venv
 cp .env.local.example .env.local
 
 # 4. 启动数据服务
-cd data-service && ../python-venv/bin/python -m uvicorn app.main:app --port 8000 --reload
+cd data-service && ../python-venv/bin/python -m app
 
 # 5. 另开一个终端启动 web
 npm run dev
@@ -379,7 +379,7 @@ Error: Failed to fetch stock data
 ```
 **Solution**: 确保 data-service 正在运行
 ```bash
-cd data-service && ../python-venv/bin/python -m uvicorn app.main:app --port 8000
+cd data-service && ../python-venv/bin/python -m app
 curl http://localhost:8000/api/v1/health
 ```
 

@@ -57,6 +57,16 @@ class Settings(BaseSettings):
     # from os.environ so it loads from .env like everything else: relying on
     # the environment meant it worked under a supervisor that injects .env and
     # silently fell back to .env credentials anywhere else.
+    # Where to listen. Loopback by default because the only caller is the
+    # Next.js server on the same host; widening it is a decision that should
+    # be written down in configuration, not passed on a command line once.
+    bind_host: str = "127.0.0.1"
+    bind_port: int = 8000
+
+    # Shared secret every caller must present. Empty means the service
+    # refuses to serve rather than serves unprotected — see app/auth.py.
+    data_service_token: str = ""
+
     credential_encryption_key: str = ""
 
     # Where stored credentials live. Shared with the web app, which owns the

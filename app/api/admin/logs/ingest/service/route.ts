@@ -4,6 +4,7 @@
  * Authenticated via X-Log-Secret header
  */
 
+import { timingSafeEqual } from 'crypto';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { LogLevel, LogSource, Prisma } from '@prisma/client';

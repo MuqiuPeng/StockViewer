@@ -6,6 +6,7 @@
  * Scheduled to run at 6 PM Beijing time (10:00 UTC) when Chinese markets are closed.
  */
 
+import { timingSafeEqual } from 'crypto';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
@@ -17,6 +18,25 @@ export const maxDuration = 300; // 5 minutes max for cron jobs
 
 // Verify cron secret to prevent unauthorized access
 const CRON_SECRET = process.env.CRON_SECRET;
+
+/**
+ * Whether the caller presented the cron secret.
+ *
+ * Fails closed on an unset secret. The previous `CRON_SECRET && ...` shape
+ * skipped the check entirely when the variable was missing, so forgetting to
+ * configure it opened the endpoint rather than closing it — the opposite of
+ * what forgetting should do. Constant-time for the same reason as log ingest:
+ * this endpoint mutates datasets and the secret is worth guessing.
+ */
+function cronAuthorized(request: Request): boolean {
+  if (!CRON_SECRET) return false;
+  const presented = request.headers.get('authorization') ?? '';
+  const expected = `Bearer ${CRON_SECRET}`;
+  return (
+    Buffer.byteLength(presented) === Buffer.byteLength(expected) &&
+    timingSafeEqual(Buffer.from(presented), Buffer.from(expected))
+  );
+}
 
 // Helper: format date as YYYYMMDD for AKShare
 function formatDateForAKShare(date: Date): string {
@@ -208,9 +228,7 @@ export async function POST(request: Request) {
 
 // GET endpoint for manual triggering / status check
 export async function GET(request: Request) {
-  // Verify cron secret for GET as well
-  const authHeader = request.headers.get('authorization');
-  if (CRON_SECRET && authHeader !== `Bearer ${CRON_SECRET}`) {
+  if (!cronAuthorized(request)) {
     return NextResponse.json(
       { error: 'Unauthorized' },
       { status: 401 }

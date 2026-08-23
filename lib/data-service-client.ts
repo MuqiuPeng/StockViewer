@@ -7,6 +7,15 @@
 
 // Configuration
 const DATA_SERVICE_URL = process.env.DATA_SERVICE_URL || 'http://localhost:8000';
+
+/**
+ * Shared secret the data service requires of every caller.
+ *
+ * Server-side only, and it must stay that way: a NEXT_PUBLIC_ prefix would
+ * bundle it into the browser and hand the token to anyone who opened the page,
+ * which is the whole of the protection.
+ */
+const DATA_SERVICE_TOKEN = process.env.DATA_SERVICE_TOKEN || '';
 const DATA_SERVICE_TIMEOUT = parseInt(process.env.DATA_SERVICE_TIMEOUT_MS || '60000', 10);
 const DATA_SERVICE_RETRIES = parseInt(process.env.DATA_SERVICE_RETRIES || '2', 10);
 

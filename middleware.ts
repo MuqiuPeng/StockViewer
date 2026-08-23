@@ -20,6 +20,22 @@ export default auth((req) => {
     return NextResponse.next();
   }
 
+  // The data service posts its logs here. It is a server on the same host,
+  // not a person with a session, so the session check below would reject it
+  // forever — which is what it had been doing, and why no data-service log
+  // ever reached the admin view. The route authenticates the caller itself
+  // with the shared X-Log-Secret, so exempting it here removes a check that
+  // could never pass rather than one that was protecting anything.
+  // Same for the scheduled-update endpoint: a scheduler has no session
+  // either, and its own CRON_SECRET check could never be reached past this
+  // one. Both routes authenticate their caller themselves.
+  if (
+    pathname === '/api/admin/logs/ingest/service' ||
+    pathname.startsWith('/api/cron/')
+  ) {
+    return NextResponse.next();
+  }
+
   // Always allow static assets and Next.js internals
   if (
     pathname.startsWith('/_next') ||
