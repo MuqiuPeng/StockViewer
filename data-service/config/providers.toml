@@ -132,6 +132,38 @@ verified = false
 reviewed_at = ""
 source = "https://www.tiingo.com/about/pricing"
 
+# Declared per key rather than per provider, so a second Tiingo key would be a
+# second budget of 50/hour instead of sharing this one.
+[[providers.tiingo.credentials]]
+id = "primary"
+secret_ref = "tiingo_api_key"
+priority = 0
+notes = """
+Starter plan. The symbol and bandwidth budgets below were not tracked at all
+before credentials existed: counting requests cannot see either of them
+coming, and hitting one presents as an opaque refusal.
+"""
+
+[[providers.tiingo.credentials.budgets]]
+kind = "requests"
+limit = 50
+window = "hour"
+
+[[providers.tiingo.credentials.budgets]]
+kind = "requests"
+limit = 1000
+window = "day"
+
+[[providers.tiingo.credentials.budgets]]
+kind = "symbols"
+limit = 500
+window = "month"
+
+[[providers.tiingo.credentials.budgets]]
+kind = "bytes"
+limit = 1073741824          # 1 GB
+window = "month"
+
 [providers.tiingo.circuit_breaker]
 window = 20
 failure_ratio = 0.5

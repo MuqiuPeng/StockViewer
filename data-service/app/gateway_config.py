@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 import tomllib
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -26,6 +27,9 @@ from typing import Dict, List, Optional
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from .config import get_settings
+from .credentials import (
+    Budget, BudgetKind, Credential, CredentialPool, Window, register_pool,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +76,74 @@ class Limits(BaseModel):
         return out
 
 
+class BudgetConfig(BaseModel):
+    """One metered limit on one credential."""
+
+    kind: str = "requests"
+    limit: int
+    window: str = "day"
+
+    @field_validator("kind")
+    @classmethod
+    def _known_kind(cls, v: str) -> str:
+        if v not in {k.value for k in BudgetKind}:
+            raise ValueError(
+                f"unknown budget kind '{v}'; expected one of "
+                f"{sorted(k.value for k in BudgetKind)}"
+            )
+        return v
+
+    @field_validator("window")
+    @classmethod
+    def _known_window(cls, v: str) -> str:
+        if v not in {w.value for w in Window}:
+            raise ValueError(
+                f"unknown window '{v}'; expected one of "
+                f"{sorted(w.value for w in Window)}"
+            )
+        return v
+
+    def to_budget(self) -> Budget:
+        return Budget(kind=BudgetKind(self.kind), limit=self.limit, window=Window(self.window))
+
+
+class CredentialConfig(BaseModel):
+    """A single key, its budgets and how long it is good for."""
+
+    id: str
+    secret_ref: str = ""
+    enabled: bool = True
+    priority: int = 0
+    valid_from: Optional[str] = None
+    valid_until: Optional[str] = None
+    notes: str = ""
+    budgets: List[BudgetConfig] = Field(default_factory=list)
+
+    @field_validator("valid_from", "valid_until")
+    @classmethod
+    def _iso_date(cls, v: Optional[str]) -> Optional[str]:
+        if v in (None, ""):
+            return None
+        try:
+            date.fromisoformat(v)
+        except ValueError as exc:
+            raise ValueError(f"expected an ISO date (YYYY-MM-DD), got {v!r}") from exc
+        return v
+
+    def to_credential(self, provider: str) -> Credential:
+        return Credential(
+            id=f"{provider}/{self.id}",
+            provider=provider,
+            secret_ref=self.secret_ref,
+            budgets=[b.to_budget() for b in self.budgets],
+            valid_from=date.fromisoformat(self.valid_from) if self.valid_from else None,
+            valid_until=date.fromisoformat(self.valid_until) if self.valid_until else None,
+            enabled=self.enabled,
+            priority=self.priority,
+            notes=self.notes,
+        )
+
+
 class CircuitBreakerConfig(BaseModel):
     window: int = 20
     failure_ratio: float = 0.5
@@ -87,6 +159,10 @@ class ProviderConfig(BaseModel):
     notes: str = ""
     limits: Limits = Field(default_factory=Limits)
     circuit_breaker: CircuitBreakerConfig = Field(default_factory=CircuitBreakerConfig)
+    # Declared keys. A provider with none and an api_key_setting gets an
+    # implicit single credential built from that setting, so existing
+    # configuration keeps working.
+    credentials: List[CredentialConfig] = Field(default_factory=list)
 
     @field_validator("allowed_usage")
     @classmethod
@@ -157,6 +233,58 @@ class GatewayConfig(BaseModel):
         return [n for n, c in self.providers.items() if not c.limits.verified]
 
 
+def build_credential_pools(config: "GatewayConfig") -> None:
+    """
+    Turn declared credentials into pools with their secrets bound.
+
+    A provider that declares none but names an api_key_setting gets one
+    implicit credential carrying the provider-level budget, so configuration
+    written before credentials existed keeps working unchanged.
+    """
+    settings = get_settings()
+
+    for name, cfg in config.providers.items():
+        declared = list(cfg.credentials)
+
+        if not declared:
+            budgets = []
+            if cfg.limits.requests_per_minute:
+                budgets.append(BudgetConfig(kind="requests", limit=cfg.limits.requests_per_minute, window="minute"))
+            if cfg.limits.requests_per_hour:
+                budgets.append(BudgetConfig(kind="requests", limit=cfg.limits.requests_per_hour, window="hour"))
+            if cfg.limits.requests_per_day:
+                budgets.append(BudgetConfig(kind="requests", limit=cfg.limits.requests_per_day, window="day"))
+            declared = [CredentialConfig(
+                id="default",
+                secret_ref=cfg.api_key_setting,
+                budgets=budgets,
+                notes="Implicit credential derived from the provider-level limits.",
+            )]
+
+        pool = CredentialPool(name)
+        for cred_cfg in declared:
+            credential = cred_cfg.to_credential(name)
+            if credential.secret_ref:
+                credential.bind_secret(getattr(settings, credential.secret_ref.lower(), "") or "")
+            pool.add(credential)
+        register_pool(pool)
+
+        expiring = pool.expiring_within(30)
+        for cred in expiring:
+            logger.warning(
+                "Credential %s expires in %d day(s) — a lapsed key presents as "
+                "authentication failures, not as an expiry",
+                cred.id, cred.expires_in_days(),
+            )
+
+        unusable = [c for c in pool.credentials if not c.is_usable]
+        if unusable and len(unusable) == len(pool.credentials):
+            logger.warning(
+                "No usable credential for %s: %s",
+                name, {c.id: c.state().value for c in unusable},
+            )
+
+
 def resolve_api_key(name: str) -> str:
     """Read a provider's key from Settings, via the field its config names."""
     cfg = load_config().providers.get(name)
@@ -197,6 +325,8 @@ def load_config(path: Optional[str] = None) -> GatewayConfig:
             "documentation figures, and being wrong about them means being blocked",
             ", ".join(sorted(unverified)),
         )
+    build_credential_pools(config)
+
     logger.info(
         "Loaded provider config: %d provider(s), usage_context=%s",
         len(config.providers), config.gateway.usage_context,

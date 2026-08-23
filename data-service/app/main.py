@@ -90,6 +90,18 @@ app.include_router(api_router, prefix="/api/v1")
 @app.on_event("startup")
 async def startup_event():
     """Initialize service on startup."""
+    # Load and validate the gateway configuration here rather than lazily on
+    # the first request. A malformed file should stop the service at boot with
+    # a field path, not surface later as a fetch error; and the credential
+    # pools it builds must exist before anything asks about them.
+    from .gateway_config import load_config
+
+    config = load_config()
+    logger.info(
+        "Gateway config loaded: %d provider(s), usage_context=%s",
+        len(config.providers), config.gateway.usage_context,
+    )
+
     logger.info(f"Starting {settings.app_name} v{settings.app_version}")
     logger.info(f"Debug mode: {settings.debug}")
     await start_log_flusher()

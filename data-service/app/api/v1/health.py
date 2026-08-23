@@ -8,6 +8,7 @@ import time
 from ...config import get_settings
 from ...gateway_config import load_config
 from ...providers.registry import get_provider, list_providers
+from ...credentials import all_pools
 from ...resilience import all_breakers
 from ...models.responses import ApiResponse, HealthData, DependencyStatus, Meta
 
@@ -84,6 +85,27 @@ async def readiness_check():
 async def liveness_check():
     """Kubernetes liveness probe."""
     return {"status": "alive"}
+
+
+@router.get("/health/credentials")
+async def credential_states():
+    """
+    Per-key budget usage, validity and rotation state.
+
+    Separate from /health because these fail in ways a provider health check
+    cannot describe: a key three days from expiry is perfectly healthy until
+    the morning it is not, and a monthly symbol budget can be nearly spent
+    while every request today succeeded. Secrets are never included.
+    """
+    pools = all_pools()
+    return {
+        "credentials": {
+            name: pool.snapshot() for name, pool in sorted(pools.items())
+        },
+        "expiring_soon": [
+            c.id for pool in pools.values() for c in pool.expiring_within(30)
+        ],
+    }
 
 
 @router.get("/health/circuits")
