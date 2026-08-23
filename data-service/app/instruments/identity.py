@@ -33,6 +33,7 @@ MIC_SHENZHEN = "XSHE"
 MIC_BEIJING = "XBEI"
 MIC_HONGKONG = "XHKG"
 MIC_US = "XNAS"  # US equities are not split by listing venue here; see below.
+MIC_ASX = "XASX"
 
 # Canonical data sources that carry mainland A-share style six-digit codes.
 _CN_SIX_DIGIT_SOURCES = {"cn.stock", "cn.stock.b", "cn.stock.cdr", "cn.etf", "cn.lof"}
@@ -134,6 +135,8 @@ def resolve(data_source: str, symbol: str) -> Instrument:
         mic = MIC_HONGKONG
     elif data_source.startswith("us."):
         mic = MIC_US
+    elif data_source.startswith("au."):
+        mic = MIC_ASX
     elif data_source.endswith(".futures"):
         # Futures do not trade on the stock exchanges at all — they are on
         # CFFEX, SHFE, DCE and ZCE, and the contract code alone does not say

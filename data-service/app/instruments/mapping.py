@@ -24,10 +24,12 @@ import logging
 from typing import Callable, Dict, Optional, Tuple
 
 from .identity import (
+    MIC_ASX,
     MIC_BEIJING,
     MIC_HONGKONG,
     MIC_SHANGHAI,
     MIC_SHENZHEN,
+    MIC_US,
     Instrument,
     resolve,
 )
@@ -78,7 +80,21 @@ def _to_eastmoney(inst: Instrument) -> str:
 # Bare ticker for both markets it carries. Verified: suffixed forms return
 # "Ticker not found".
 
+_TIINGO_VENUES = {MIC_SHANGHAI, MIC_SHENZHEN, MIC_BEIJING, MIC_US}
+
+
 def _to_tiingo(inst: Instrument) -> str:
+    if inst.mic not in _TIINGO_VENUES:
+        # Refusing matters more here than elsewhere. A bare Australian ticker
+        # is not rejected by Tiingo — BHP resolves, but to the NYSE ADR, which
+        # is a different instrument in a different currency. Returning that as
+        # ASX data would be wrong rather than merely missing, and nothing
+        # downstream could tell.
+        raise UnmappableInstrument(
+            f"Tiingo does not carry {inst.canonical_id}. Note that a bare "
+            f"ticker may still resolve there to a US-listed ADR, which is not "
+            f"the same instrument."
+        )
     return inst.local_symbol
 
 
@@ -106,7 +122,34 @@ def _to_alphavantage(inst: Instrument) -> str:
     return f"{inst.local_symbol}{suffix}"
 
 
+# ── EODHD ─────────────────────────────────────────────────────────────────
+#
+# Every symbol carries an exchange suffix: BHP.AU, 0700.HK, AAPL.US. Verified
+# against the live API for all three.
+
+_EODHD_SUFFIX_BY_MIC = {
+    MIC_ASX: ".AU",
+    MIC_HONGKONG: ".HK",
+    MIC_US: ".US",
+}
+
+
+def _to_eodhd(inst: Instrument) -> str:
+    suffix = _EODHD_SUFFIX_BY_MIC.get(inst.mic)
+    if suffix is None:
+        raise UnmappableInstrument(
+            f"EODHD has no symbol form configured for {inst.canonical_id}; "
+            f"Australia, Hong Kong and US are wired up."
+        )
+    # Hong Kong codes are four digits there, not the five EastMoney uses.
+    local = inst.local_symbol
+    if inst.mic == MIC_HONGKONG:
+        local = local.lstrip("0").zfill(4)
+    return f"{local}{suffix}"
+
+
 _MAPPERS: Dict[str, Callable[[Instrument], str]] = {
+    "eodhd": _to_eodhd,
     "eastmoney": _to_eastmoney,
     "tiingo": _to_tiingo,
     "alphavantage": _to_alphavantage,

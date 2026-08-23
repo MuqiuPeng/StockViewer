@@ -202,6 +202,68 @@ failure_ratio = 0.5
 open_seconds = 60
 
 
+# ──────────────────────────────── EODHD ───────────────────────────────────
+
+[providers.eodhd]
+enabled = true
+allowed_usage = ["internal_research"]
+capabilities = ["ohlcv"]
+markets = ["AU", "HK", "US"]
+api_key_setting = "eodhd_api_key"
+notes = """
+The only source verified to carry Australia, which had no path at all: BHP.AU
+and CBA.AU both return real ASX prices. Also a third Hong Kong path, and the
+first one with a contract behind it — 0700.HK agrees with Tencent to the cent.
+
+Free tier is capped at one year of history, confirmed rather than assumed: a
+request from 2015 returns the same 253 bars as a request from 2025. That makes
+it a coverage source rather than a backtesting one.
+"""
+
+[providers.eodhd.limits]
+requests_per_day = 20
+concurrency = 2
+min_interval_seconds = 0.5
+# Confirmed from the provider's own /api/user endpoint, which reported
+# 5/20 used and subscriptionType "free".
+verified = true
+reviewed_at = "2026-08-23"
+source = "https://eodhd.com/api/user"
+
+
+# ───────────────────────────── Twelve Data ────────────────────────────────
+
+[providers.twelvedata]
+enabled = true
+allowed_usage = ["internal_research"]
+capabilities = ["ohlcv"]
+# US only on this plan. Australia and Hong Kong were both refused with
+# "available starting with the Pro or Venture plan", so listing them here
+# would be wrong.
+markets = ["US"]
+api_key_setting = "twelve_api_key"
+notes = """
+Deepest US history of anything configured: AAPL returns 5000 daily bars back
+to 2006, against Tiingo's reach and far beyond Alpha Vantage's 100. With
+800 credits a day it is the better US lead, and it shares no upstream with
+Tencent or EastMoney.
+
+Metered in credits rather than requests — endpoints and symbol counts cost
+differently — so the budget is declared in credits.
+"""
+
+[providers.twelvedata.limits]
+requests_per_minute = 8
+requests_per_day = 800
+concurrency = 2
+min_interval_seconds = 0.0
+# Documentation figures; the plan's market restriction was verified directly
+# but the credit numbers were not.
+verified = false
+reviewed_at = ""
+source = "https://twelvedata.com/pricing"
+
+
 # ──────────────────────────────  Routing  ─────────────────────────────────
 #
 # Ordered candidate chains per canonical data source. First entry preferred.
@@ -210,12 +272,16 @@ open_seconds = 60
 
 [routing]
 "cn.stock"      = ["tiingo", "tencent", "eastmoney", "alphavantage"]
-"us.stock"      = ["tiingo", "tencent", "eastmoney", "alphavantage"]
+"us.stock"      = ["twelvedata", "tiingo", "tencent", "eastmoney", "alphavantage"]
+# Australia had no path at all until EODHD; it is still the only one.
+"au.stock"      = ["eodhd"]
 "cn.stock.b"    = ["eastmoney"]
 "cn.stock.cdr"  = ["eastmoney"]
 # Hong Kong had one source until Tencent; an EastMoney block took the whole
 # market with it.
-"hk.stock"      = ["tencent", "eastmoney"]
+# EODHD is the only Hong Kong source with a contract behind it; the other two
+# are undocumented public endpoints.
+"hk.stock"      = ["tencent", "eastmoney", "eodhd"]
 "cn.index"      = ["tencent", "eastmoney"]
 "hk.index"      = ["eastmoney"]
 "us.index"      = ["eastmoney"]

@@ -89,6 +89,17 @@ export const DATA_SOURCES: DataSourceConfig[] = [
     listingApi: '/api/stock-list?market=us',
   },
 
+  {
+    id: 'au.stock',
+    name: '澳股',
+    category: '澳股',
+    description: '澳大利亚证券交易所日线历史数据',
+    defaultParams: { period: 'daily', adjust: 'qfq' },
+    requiredParams: ['symbol', 'start_date', 'end_date'],
+    symbolFormat: '股票代码 (如: BHP)',
+    exampleSymbol: 'BHP',
+  },
+
   // ── Chinese indices ──────────────────────────────────────────────────
   {
     id: 'cn.index',
