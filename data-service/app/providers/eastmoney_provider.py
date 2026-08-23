@@ -59,7 +59,7 @@ _KLINE_FIELDS1 = "f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13"
 # klt mapping
 _PERIOD_KLT: Dict[str, int] = {"daily": 101, "weekly": 102, "monthly": 103}
 
-# fqt mapping  (default to forward-adjust so behaviour matches AKShare default)
+# fqt mapping  (default to forward-adjust, the convention every caller expects)
 _ADJUST_FQT: Dict[str | None, int] = {
     None: 1, "": 1,
     "qfq": 1,    # 前复权
@@ -86,12 +86,10 @@ def _http_get(
     drops the connection; a short backoff + retry resolves transient failures.
 
     Proxy support: httpx honours the standard HTTPS_PROXY / HTTP_PROXY /
-    ALL_PROXY environment variables (trust_env=True by default).  When running
-    inside Docker on macOS, EastMoney is only reachable via IPv6 on the host.
-    Set HTTPS_PROXY=http://host.docker.internal:<port> in docker-compose and
-    run an HTTP proxy on the host (e.g. any system proxy or clash/v2ray).
+    ALL_PROXY environment variables (trust_env=True by default), which is the
+    escape hatch when this host cannot reach EastMoney directly.
     """
-    timeout = settings.akshare_timeout
+    timeout = settings.upstream_timeout
     last_exc: Exception = RuntimeError("No attempts made")
     for attempt in range(1, retries + 1):
         try:

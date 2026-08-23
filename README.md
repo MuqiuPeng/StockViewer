@@ -104,27 +104,35 @@ StockViewer is a powerful Next.js application that enables you to:
 
 ### 本地开发
 
-本地全部以原生进程运行，不需要 Docker。
+全部以原生进程运行：Next.js、Python 数据服务和一个项目本地的 PostgreSQL。
 
 ```bash
-# 1. 安装依赖
+# 1. 依赖
 git clone <repository-url>
 cd StockViewer
 npm install
-npm run setup
 
-# 2. 设置 Python 环境（data-service 与指标/回测执行器共用）
+# 2. Python 环境（data-service 与指标/回测执行器共用）
 python3 -m venv python-venv
 ./python-venv/bin/pip install -r data-service/requirements.txt
 ./python-venv/bin/pip install -r data/python/requirements.txt
 
-# 3. 配置环境变量（DATABASE_URL 指向托管数据库）
+# 3. 项目本地的 PostgreSQL 16
+initdb -D .pgdata --encoding=UTF8 --locale=C
+pg_ctl -D .pgdata -l .pgdata/server.log start
+createdb stockviewer
+
+# 4. 环境变量：复制模板，按其中注释逐个生成密钥
 cp .env.local.example .env.local
 
-# 4. 启动数据服务
+# 5. 建表并创建管理员
+npx prisma migrate deploy
+npx tsx scripts/create-admin.ts <email> <password>
+
+# 6. 启动数据服务
 cd data-service && ../python-venv/bin/python -m app
 
-# 5. 另开一个终端启动 web
+# 7. 另开一个终端启动 web
 npm run dev
 # 访问 http://localhost:3000
 ```
@@ -214,28 +222,31 @@ Comprehensive documentation is organized by topic:
 - **Editor**: Monaco Editor (VS Code engine)
 - **Theming**: Dark/Light mode with system preference detection
 - **Backend**: Next.js API Routes, Node.js
-- **Data Service**: Python FastAPI + AKShare (独立服务)
+- **Data Service**: Python FastAPI，多 provider 路由（独立服务）
 - **Data Processing**: Python 3.8+, pandas, numpy, MyTT library
 - **Database**: PostgreSQL 16 (用户、团队、数据集管理)
-- **Deployment**: Vercel (web) + 容器化 data-service + 托管 PostgreSQL
+- **Deployment**: 单机运行，局域网访问
 
 ## Architecture
 
 ```
 ┌──────────────┐     ┌──────────────┐     ┌──────────────┐
 │     web      │────▶│ data-service │     │  PostgreSQL  │
-│   (Next.js)  │     │   (FastAPI)  │     │   (托管)      │
+│   (Next.js)  │     │   (FastAPI)  │     │  (项目本地)   │
 │    :3000     │     │    :8000     │     │              │
 └──────┬───────┘     └──────────────┘     └──────────────┘
        │                                          ▲
        └──────────────────────────────────────────┘
 ```
 
-| 服务 | 端口 | 用途 | 本地 | 线上 |
-|------|------|------|------|------|
-| **web** | 3000 | Next.js 主应用 | `npm run dev` | Vercel |
-| **data-service** | 8000 | Python FastAPI 数据服务 (AKShare) | uvicorn 原生 | 容器镜像 |
-| **db** | 5432 | PostgreSQL 数据库 | 托管 | 托管 |
+| 服务 | 端口 | 用途 | 启动 |
+|------|------|------|------|
+| **web** | 3000 | Next.js 主应用，局域网可访问 | `npm run dev` |
+| **data-service** | 8000 | Python 数据服务，仅回环 | `python -m app` |
+| **db** | 5432 | PostgreSQL，数据存于 `.pgdata/` | `pg_ctl start` |
+
+data-service 只监听回环，由 web 服务端调用并携带 `DATA_SERVICE_TOKEN`；
+浏览器不直接访问它。
 
 ## Project Structure
 
@@ -336,7 +347,7 @@ date,open,high,low,close,volume
 
 ## Configuration
 
-Configure via `.env.local` (本地开发) 或 `.env.docker` (Docker 部署):
+配置写在 `.env.local`（也可用 `.env`，两个文件 web 与 data-service 都会读取）：
 
 ```bash
 # Data Service (股票数据服务)
@@ -459,5 +470,4 @@ MIT License - See LICENSE file for details
 - [Next.js](https://nextjs.org/)
 - [Monaco Editor](https://microsoft.github.io/monaco-editor/)
 - [FastAPI](https://fastapi.tiangolo.com/)
-- [AKShare](https://github.com/akfamily/akshare) - Chinese stock data API
 - [pandas](https://pandas.pydata.org/)

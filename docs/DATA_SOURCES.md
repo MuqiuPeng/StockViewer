@@ -4,7 +4,8 @@ This document describes all available historical data sources that can be import
 
 ## Overview
 
-StockViewer now supports **30+ data sources** from AKShare, covering:
+StockViewer supports **30+ data sources**, each served by a chain of
+providers rather than a single upstream, covering:
 - A-Share stocks (daily and minute data)
 - B-Share stocks
 - CDR (Chinese Depositary Receipts)
@@ -184,7 +185,7 @@ Before importing historical data, use these APIs to get available symbols/codes:
 
 ### 1. GET /api/stock-list - A-Share Stock List
 
-**AKTools Functions Used:** `stock_info_a_code_name`, `stock_info_sh_delist`, `stock_info_sz_delist`
+**Upstream endpoints:** `stock_info_a_code_name`, `stock_info_sh_delist`, `stock_info_sz_delist`
 
 **Query Parameters:**
 - `source`: 'active' | 'delisted_sh' | 'delisted_sz' | 'all' (default: 'active')
@@ -209,7 +210,7 @@ curl "http://localhost:3000/api/stock-list?source=all"
 
 ### 2. GET /api/index-list - Index List
 
-**AKTools Functions Used:** `stock_zh_index_spot_em`, `stock_hk_index_spot_em`, `index_us_stock_sina`, `index_global_spot_em`
+**Upstream endpoints:** `stock_zh_index_spot_em`, `stock_hk_index_spot_em`, `index_us_stock_sina`, `index_global_spot_em`
 
 **Query Parameters:**
 - `source`: 'zh' | 'hk' | 'us' | 'global' (default: 'zh')
@@ -235,7 +236,7 @@ curl "http://localhost:3000/api/index-list?source=hk"
 
 ### 3. GET /api/fund-list - Fund/ETF List
 
-**AKTools Functions Used:** `fund_etf_spot_em`, `fund_lof_spot_em`
+**Upstream endpoints:** `fund_etf_spot_em`, `fund_lof_spot_em`
 
 **Query Parameters:**
 - `type`: 'etf' | 'lof' | 'all' (default: 'etf')
@@ -261,7 +262,7 @@ curl "http://localhost:3000/api/fund-list?type=all"
 
 ### 4. GET /api/futures-list - Futures Contract List
 
-**AKTools Functions Used:** `futures_zh_spot`
+**Upstream endpoints:** `futures_zh_spot`
 
 **Response:**
 ```json
@@ -287,7 +288,7 @@ curl "http://localhost:3000/api/futures-list"
 
 ### 5. GET /api/hk-stock-list - Hong Kong Stock List
 
-**AKTools Functions Used:** `stock_hk_spot_em`
+**Upstream endpoints:** `stock_hk_spot_em`
 
 **Response:**
 ```json
@@ -308,7 +309,7 @@ curl "http://localhost:3000/api/hk-stock-list"
 
 ### 6. GET /api/us-stock-list - US Stock List
 
-**AKTools Functions Used:** `stock_us_spot_em`
+**Upstream endpoints:** `stock_us_spot_em`
 
 **Response:**
 ```json
@@ -331,11 +332,11 @@ curl "http://localhost:3000/api/us-stock-list"
 
 All data sources are configured in `lib/data-sources.ts`. Each data source includes:
 
-- **id**: Unique identifier (matches AKShare function name)
+- **id**: Canonical identifier, e.g. `cn.stock`, `us.index`
 - **name**: Display name in Chinese
 - **category**: Group category
 - **description**: What data it provides
-- **apiEndpoint**: AKShare API endpoint name
+- **apiEndpoint**: Data-service route serving this source
 - **defaultParams**: Default parameters
 - **requiredParams**: Parameters that must be provided
 - **symbolFormat**: Description of symbol format
@@ -368,41 +369,46 @@ To add a new data source:
 
 ## How It Works
 
-All data is fetched through the **AKTools API** running locally at `http://127.0.0.1:8080`.
+Requests go to the Python data service, which decides where to get the data
+rather than being told. Each canonical data source has a routing chain of
+providers, tried in order, declared in `data-service/config/providers.toml`.
 
-### AKTools API Pattern
-
-Any AKShare function can be called via:
 ```
-GET http://127.0.0.1:8080/api/public/{function_name}?{param1}={value1}&{param2}={value2}
-```
-
-**Examples:**
-```bash
-# Get A-share stock list
-curl "http://127.0.0.1:8080/api/public/stock_info_a_code_name"
-
-# Get historical data for stock 000001
-curl "http://127.0.0.1:8080/api/public/stock_zh_a_hist?symbol=000001&start_date=20230101&end_date=20231231&adjust=qfq"
-
-# Get Chinese index list
-curl "http://127.0.0.1:8080/api/public/stock_zh_index_spot_em"
-
-# Get ETF list
-curl "http://127.0.0.1:8080/api/public/fund_etf_spot_em"
+web ──▶ data-service ──▶ provider chain for this data source
+                          eastmoney → tencent → tiingo → ...
 ```
 
-StockViewer wraps these calls in convenient API endpoints that handle:
-- Column name mapping (Chinese → English)
-- Data transformation and validation
-- Automatic indicator application
-- Dataset registration
+A provider is skipped without being called when it does not cover the market,
+when its licence does not permit this usage context, or when its circuit
+breaker is open. If a call fails in a way that another provider could serve —
+unsupported, fetch error, no data — the chain moves on. An error caused by the
+caller stops it, because retrying a bad symbol on five providers only wastes
+five quotas.
+
+That is why most markets have several paths: A-shares have four, US equities
+six. When one provider rate-limits or blocks the host, the request still
+succeeds.
+
+Around the chain sit the parts that keep quotas intact:
+
+- **Rate limiting** per provider — token bucket, window counters and a
+  concurrency semaphore, configured from the same file.
+- **Credential budgets** — each stored key carries its own quota in requests,
+  credits, bytes or symbols, per minute through per lifetime; the pool picks
+  the usable key with the most headroom.
+- **Range-aware caching** — coverage is tracked separately from the bars, so a
+  span that genuinely contains no trading days is not re-fetched forever.
+- **Single-flight** — identical concurrent requests collapse into one upstream
+  call.
+
+Credentials are not configured in files. They live encrypted in the database
+and are managed from the admin page.
 
 ## Technical Details
 
 ### Column Mapping
 
-Data from AKShare APIs typically uses Chinese column names. The system automatically maps them to English:
+Upstream responses typically use Chinese column names. The providers map them to English:
 
 | Chinese | English |
 |---------|---------|
@@ -428,8 +434,10 @@ When a new dataset is imported, all saved indicators are automatically applied t
 
 ## Limitations
 
-1. **API Availability**: Some data sources require the AKTools API to be running locally
-2. **Rate Limiting**: AKShare may rate-limit requests for certain data sources
+1. **Service availability**: all data sources require the data service to be running
+2. **Rate limiting**: providers rate-limit, and some block a host that has been
+   too eager; this is why sources are configured with several providers and why
+   the limiter sits in front of each
 3. **Data Quality**: Different data sources may have different data quality and completeness
 4. **Symbol Formats**: Each data source has its own symbol format requirements
 
@@ -438,7 +446,8 @@ When a new dataset is imported, all saved indicators are automatically applied t
 ### "No data available" Error
 - Check that the symbol format is correct for the selected data source
 - Verify the symbol exists (use the stock list API)
-- Ensure AKTools API is running at http://127.0.0.1:8080
+- Ensure the data service is running on http://127.0.0.1:8000 and that
+  `DATA_SERVICE_TOKEN` matches on both sides
 
 ### "Invalid data source" Error
 - The data source ID doesn't exist in the configuration
@@ -447,10 +456,10 @@ When a new dataset is imported, all saved indicators are automatically applied t
 ### Missing Data
 - Some data sources may not have complete historical data
 - Try a different data source for the same asset type
-- Check the AKShare documentation for data availability
+- Check `/api/v1/health` for which providers are currently healthy
 
 ## References
 
-- [AKShare Documentation](https://akshare.akfamily.xyz/)
-- [AKShare GitHub](https://github.com/akfamily/akshare)
-- [Stock Data Documentation](https://akshare.akfamily.xyz/data/stock/stock.html)
+- [`data-service/config/providers.toml`](../data-service/config/providers.toml) —
+  provider registry, limits and routing chains
+- [Architecture](ARCHITECTURE.md) — how the service fits together

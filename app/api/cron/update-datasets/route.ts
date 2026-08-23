@@ -2,7 +2,8 @@
  * Scheduled Dataset Update API
  * POST /api/cron/update-datasets
  *
- * This endpoint is called by Vercel Cron to update all datasets daily.
+ * Called by a scheduler on the host to update all datasets daily.
+ * Authenticated with CRON_SECRET; see the guard below.
  * Scheduled to run at 6 PM Beijing time (10:00 UTC) when Chinese markets are closed.
  */
 
@@ -38,8 +39,8 @@ function cronAuthorized(request: Request): boolean {
   );
 }
 
-// Helper: format date as YYYYMMDD for AKShare
-function formatDateForAKShare(date: Date): string {
+// Helper: format date as the compact YYYYMMDD the data service expects
+function formatDateCompact(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
@@ -70,7 +71,7 @@ async function updateStock(stock: {
     let startDate: string | undefined;
     if (stock.lastDate) {
       const nextDay = addDays(stock.lastDate, 1);
-      startDate = formatDateForAKShare(nextDay);
+      startDate = formatDateCompact(nextDay);
     }
 
     // Fetch new data from Data Service

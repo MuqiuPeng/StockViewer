@@ -4,7 +4,7 @@
 
 | Branch | Purpose |
 |---|---|
-| `main` | Active development for the online-server (multi-user, Postgres, OAuth, Docker) build. All feature/fix branches target `main`. |
+| `main` | Active development: multi-user, Postgres, local accounts, run on one host and reached over the LAN. All feature/fix branches target `main`. |
 | `local` | Frozen single-user CSV-based build. Tagged `v0.1.0-local`. Bug-fix-only — keep changes minimal. |
 | `feature/<short-slug>` | New features. Open a PR against `main`. |
 | `fix/<short-slug>` | Bug fixes. Open a PR against `main`. |
@@ -62,9 +62,8 @@ Schema is managed by Prisma migrations under `prisma/migrations/`.
 - Run `npx prisma migrate dev --name <short_description>` against a local
   Postgres to generate a migration directory.
 - Commit the generated `migration.sql` along with the schema change.
-- Never run `prisma db push` against production — production is reconciled by
-  running `npx prisma migrate deploy` against the hosted database. See
-  `docker/README.md`.
+- Never run `prisma db push` against a database holding real data — reconcile
+  it by running `npx prisma migrate deploy`.
 
 For a database that pre-dates the `prisma/migrations/` directory, run once
 before the first `migrate deploy`:

@@ -98,7 +98,7 @@ Datasets are organized by their source API:
    - Adjust type (default: `qfq` for forward-adjusted)
 
 4. **Click Add**
-   - Fetches data from aktools API
+   - Fetches data from the data service
    - Saves to CSV file
    - Auto-applies all existing indicators
    - Shows progress messages
@@ -459,7 +459,7 @@ date,open,high,low,close,volume,turnover,amplitude,change_pct,change_amount,turn
 Error: Failed to fetch stock data
 ```
 **Solutions:**
-1. Ensure aktools API is running (`python -m aktools`)
+1. Ensure the data service is running (`cd data-service && ../python-venv/bin/python -m app`)
 2. Check API URL in `.env.local`
 3. Verify stock symbol is valid (6-digit code)
 4. Test API endpoint manually:

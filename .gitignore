@@ -69,7 +69,6 @@ next-env.d.ts
 
 /venv
 /python-venv
-aktools-env/
 __pycache__/
 
 
@@ -77,7 +76,6 @@ __pycache__/
 /logs/
 *.log
 *.log.*
-aktools_log.log*
 /tmp/
 /scratch/
 .cache/

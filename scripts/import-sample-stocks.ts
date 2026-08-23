@@ -1,5 +1,5 @@
 /**
- * Import sample stock data from AKShare
+ * Import sample stock data through the data service
  *
  * This script imports a set of sample stocks into the database for testing.
  * Run with: npx tsx scripts/import-sample-stocks.ts
@@ -43,7 +43,7 @@ const SAMPLE_STOCKS = [
 
 
 /**
- * Fetch stock data from AKShare
+ * Fetch stock data through the data service
  */
 async function fetchStockData(
   symbol: string,
@@ -105,7 +105,7 @@ async function importStock(
     return { success: true, rowCount: existingStock.rowCount };
   }
 
-  // Fetch data from AKShare
+  // Fetch data through the data service
   const result = await fetchStockData(symbol, dataSource);
 
   if (!result.success || !result.data) {

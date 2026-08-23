@@ -127,7 +127,7 @@ async function executeStrategyValidation(
       pythonExecutable = PYTHON_CONFIG.EXECUTABLE;
     } else {
       // Check multiple common venv names
-      const venvNames = ['python-venv', 'venv', '.venv', 'aktools-env'];
+      const venvNames = ['python-venv', 'venv', '.venv'];
       let foundVenv = false;
 
       for (const venvName of venvNames) {

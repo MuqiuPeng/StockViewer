@@ -457,7 +457,7 @@ function getPythonExecutable(): string {
 User Input (symbol)
   → AddStockModal component
   → POST /api/add-dataset
-    → Fetch from aktools API
+    → Fetch from the data service
     → Save to CSV (/data/csv/{symbol}_{source}.csv)
     → Load all indicators (indicator-storage.ts)
     → For each indicator (in dependency order):
@@ -708,10 +708,14 @@ result = namespace['calculate'](df, params)
 
 **Available Variables:**
 
-**API Configuration:**
+**Data service:**
 ```bash
-NEXT_PUBLIC_AKTOOLS_API_URL=http://127.0.0.1:8080
+DATA_SERVICE_URL=http://localhost:8000
+DATA_SERVICE_TOKEN=          # required; the service refuses to serve without it
 ```
+
+Deliberately not `NEXT_PUBLIC_`: the token travels with these requests and a
+public prefix would bundle it into the browser.
 
 **Python Execution:**
 ```bash
@@ -737,8 +741,9 @@ LOG_DIR=./logs
 
 **lib/env.ts:**
 ```typescript
-export const API_CONFIG = {
-  AKTOOLS_URL: process.env.NEXT_PUBLIC_AKTOOLS_API_URL || 'http://127.0.0.1:8080',
+export const DATA_SERVICE_CONFIG = {
+  URL: process.env.DATA_SERVICE_URL || 'http://localhost:8000',
+  TOKEN: process.env.DATA_SERVICE_TOKEN || '',
 }
 
 export const PYTHON_CONFIG = {
@@ -825,14 +830,13 @@ pip install pandas numpy
 ```
 
 3. **Create data directories**
-```bash
-mkdir -p data/csv data/indicators data/strategies data/groups data/python
-```
+Strategies, indicators, datasets and backtest history are all stored in
+Postgres; no data directories need creating.
 
 4. **Start development**
 ```bash
-# Terminal 1: AKTools API
-python -m aktools
+# Terminal 1: data service
+cd data-service && ../python-venv/bin/python -m app
 
 # Terminal 2: Next.js dev server
 npm run dev
@@ -895,103 +899,37 @@ git push origin feature/new-feature
 
 ## Deployment
 
-### Production Build
+One machine, three native processes. There is no container image, no hosted
+tier and no serverless target — user Python is executed as a subprocess and
+confined by the host kernel, neither of which survives a serverless runtime.
+
+```
+web (Next.js)      :3000    all interfaces — this is what the LAN reaches
+data-service       :8000    loopback only — called by web with a shared token
+postgres           :5432    cluster in .pgdata/, project-local
+```
+
+**Build**
 
 ```bash
 npm run build
 npm start
 ```
 
-### Environment Setup
+**Configuration** lives in `.env.local`; see
+[.env.local.example](../.env.local.example) for the full list, each secret with
+the command that generates it. Both services read `.env` and `.env.local` from
+the repository root, and neither re-reads them while running — restart both
+after a change.
 
-1. **Production `.env.local`:**
-```bash
-NEXT_PUBLIC_AKTOOLS_API_URL=http://production-api:8080
-PYTHON_EXECUTABLE=/usr/bin/python3
-PYTHON_TIMEOUT_MS=600000
-```
+**Exposure.** Widening `BIND_HOST` past loopback puts every stored provider
+credential behind one shared token, so the data service refuses to bind
+elsewhere unless `DATA_SERVICE_TOKEN` is set. The web app is the only thing
+meant to be reachable.
 
-2. **Python Dependencies:**
-```bash
-pip install pandas numpy
-# Copy MyTT.py to data/python/
-```
-
-3. **Data Directories:**
-```bash
-mkdir -p data/{csv,indicators,strategies,groups,python}
-chmod 755 data
-```
-
-### Deployment Options
-
-**1. Docker (Recommended):**
-
-```dockerfile
-FROM node:18-alpine
-
-# Install Python
-RUN apk add --no-cache python3 py3-pip
-
-# Install Python deps
-RUN pip3 install pandas numpy
-
-# Copy app
-WORKDIR /app
-COPY . .
-
-# Install Node deps
-RUN npm install
-RUN npm run build
-
-# Expose port
-EXPOSE 3000
-
-# Start app
-CMD ["npm", "start"]
-```
-
-**2. VPS:**
-- Install Node.js 18+
-- Install Python 3.8+
-- Install dependencies
-- Run with PM2:
-  ```bash
-  pm2 start npm --name "stockviewer" -- start
-  ```
-
-**3. Serverless:**
-- Not recommended (Python subprocess doesn't work well)
-- Consider separating Python execution to Lambda/Cloud Functions
-
-### Monitoring
-
-**Logging:**
-```typescript
-// lib/logger.ts
-export function log(level: string, message: string, data?: any) {
-  if (DEBUG) {
-    console.log(`[${level}] ${message}`, data)
-  }
-  // Future: Write to file, send to logging service
-}
-```
-
-**Health Check:**
-```typescript
-// app/api/health/route.ts
-export async function GET() {
-  return NextResponse.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime()
-  })
-}
-```
-
-**Error Tracking:**
-- Console errors in development
-- Future: Sentry, LogRocket, etc.
+**Before publishing the repository**, run `./scripts/check-repo-clean.sh`. It
+checks the tracked file set rather than the working tree, because ignore rules
+do not apply to files already tracked.
 
 ## Next Steps
 

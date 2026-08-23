@@ -9,7 +9,6 @@ import DataPanel from './DataPanel';
 import StrategyManager from './StrategyManager';
 import RunBacktestModal from './RunBacktestModal';
 import BacktestPanel from './BacktestPanel';
-import { API_CONFIG } from '@/lib/env';
 
 interface DatasetInfo {
   name: string;

@@ -7,7 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- Vercel, Docker, Cloudflare Tunnel and AKShare/AKTools, and every file,
+  setting and instruction belonging to them: `vercel.json`, the `docker/`
+  directory, `.env.docker.example`, `docs/AKTOOLS_API_REFERENCE.md`, the
+  broken `npm run setup` script, and the dead `NEXT_PUBLIC_AKTOOLS_API_URL`.
+  Earlier entries below still name them because they record what happened at
+  the time; nothing in the working tree instructs anyone to use them.
+- `akshare` and `aktools` from the virtualenv. Nothing had imported either
+  since the EastMoney provider replaced them — AKShare was a wrapper over the
+  same endpoints, never a second source.
+
 ### Changed
+- Deployment is now a single host reached over the LAN: Next.js on all
+  interfaces, the data service on loopback behind a shared token, and a
+  project-local PostgreSQL cluster in `.pgdata/`.
+- Rewrote `SETUP.md` against that deployment. The previous version described
+  installing AKTools and creating `data/csv`-style directories, neither of
+  which exists, so following it could not produce a working install.
+- Corrected the README security section, which claimed user Python had no
+  filesystem access — untrue until the confinement work landed — and presented
+  a regex scan for the word `os` as a control. It now separates kernel
+  boundaries from guards against mistakes.
 - Reorganised Git branches: `main` is now the active development line for the
   online-server build; the previous local-only build is preserved on the
   `local` branch.

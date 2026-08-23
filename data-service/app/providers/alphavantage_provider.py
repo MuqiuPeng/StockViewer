@@ -275,7 +275,7 @@ class AlphaVantageProvider(BaseDataProvider):
                 "error": (
                     f"Alpha Vantage does not carry {self.UNSUPPORTED[data_source]} "
                     f"({data_source}). It serves US equities/ETFs and mainland "
-                    f"A-shares (.SHH/.SHZ) only; use the akshare or eastmoney "
+                    f"A-shares (.SHH/.SHZ) only; use the eastmoney or tencent "
                     f"provider for this market."
                 ),
                 "error_code": "UNSUPPORTED_SOURCE",
@@ -445,7 +445,7 @@ class AlphaVantageProvider(BaseDataProvider):
                 "error": (
                     f"Alpha Vantage's listing endpoint covers US securities only, "
                     f"so '{market}' is not available. A-share history works, but "
-                    f"the symbol list has to come from akshare or eastmoney."
+                    f"the symbol list has to come from eastmoney or tencent."
                 ),
                 "error_code": "INVALID_MARKET",
             }
@@ -485,7 +485,7 @@ class AlphaVantageProvider(BaseDataProvider):
             "success": False,
             "error": (
                 "Alpha Vantage's free tier has no index listing endpoint, and its "
-                "time series do not accept index symbols. Use the akshare or "
+                "time series do not accept index symbols. Use the eastmoney or "
                 "eastmoney provider for indices."
             ),
             "error_code": "UNSUPPORTED_SOURCE",
@@ -535,7 +535,7 @@ class AlphaVantageProvider(BaseDataProvider):
         return {
             "success": False,
             "error": (
-                "Alpha Vantage does not carry futures. Use the akshare or "
+                "Alpha Vantage does not carry futures. Use the eastmoney or "
                 "eastmoney provider."
             ),
             "error_code": "UNSUPPORTED_SOURCE",

@@ -7,7 +7,6 @@ import AddDatasetModal from './AddDatasetModal';
 import IndicatorManager from './IndicatorManager';
 import DataPanel from './DataPanel';
 import SaveViewSettingModal from './SaveViewSettingModal';
-import { API_CONFIG } from '@/lib/env';
 import { getDataSourceConfig } from '@/lib/data-sources';
 import { Period, PERIODS, getPeriodLabel, getPeriodFullName } from '@/lib/period-aggregation';
 import Link from 'next/link';

@@ -12,7 +12,7 @@ class BaseDataProvider(ABC):
     """
     Abstract interface every data provider must implement.
 
-    A provider encapsulates a third-party data library (AKShare, Tushare,
+    A provider encapsulates one upstream data source (EastMoney, Tiingo,
     Yahoo Finance, etc.) and exposes a uniform API to the rest of the service.
 
     Return convention
@@ -38,7 +38,7 @@ class BaseDataProvider(ABC):
     @property
     @abstractmethod
     def provider_name(self) -> str:
-        """Human-readable provider name, e.g. 'AKShare'."""
+        """Human-readable provider name, e.g. 'EastMoney'."""
 
     @property
     @abstractmethod

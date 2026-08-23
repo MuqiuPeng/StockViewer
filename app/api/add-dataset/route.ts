@@ -38,8 +38,8 @@ const SUPPORTED_DATA_SOURCES = [
   'global.futures',
 ];
 
-// Helper: format date as YYYYMMDD for AKShare
-function formatDateForAKShare(date: Date): string {
+// Helper: format date as the compact YYYYMMDD the data service expects
+function formatDateCompact(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
@@ -142,7 +142,7 @@ export async function POST(request: Request) {
     if (isIncremental && stock && stock.lastDate) {
       // Incremental: fetch from the day after last stored date
       const nextDay = addDays(stock.lastDate, 1);
-      fetchStartDate = formatDateForAKShare(nextDay);
+      fetchStartDate = formatDateCompact(nextDay);
     }
 
     // Fetch stock data from Data Service

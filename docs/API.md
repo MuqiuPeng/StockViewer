@@ -159,7 +159,7 @@ Content-Type: application/json
 - `500 Internal Server Error`: Failed to fetch or save data
 
 **Process:**
-1. Fetch data from aktools API
+1. Fetch data from the data service
 2. Save to CSV file
 3. Apply all existing indicators
 4. Return success with metadata

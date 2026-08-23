@@ -33,16 +33,6 @@ function getEnvBoolean(key: string, defaultValue: boolean): boolean {
 }
 
 /**
- * API Configuration
- */
-export const API_CONFIG = {
-  /**
-   * AKTools API URL for fetching stock data
-   * Default: http://127.0.0.1:8080
-   */
-} as const;
-
-/**
  * Python Execution Configuration
  */
 export const PYTHON_CONFIG = {
@@ -156,7 +146,6 @@ export const DEBUG_CONFIG = {
  * All configuration grouped
  */
 export const ENV = {
-  API: API_CONFIG,
   PYTHON: PYTHON_CONFIG,
   DATA: DATA_CONFIG,
   CACHE: CACHE_CONFIG,

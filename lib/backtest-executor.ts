@@ -120,7 +120,7 @@ export async function executeBacktest(
       pythonExecutable = PYTHON_CONFIG.EXECUTABLE;
     } else {
       // Look for local venv in project directory (check multiple common names)
-      const venvNames = ['python-venv', 'venv', '.venv', 'aktools-env'];
+      const venvNames = ['python-venv', 'venv', '.venv'];
       let foundVenv = false;
 
       for (const venvName of venvNames) {

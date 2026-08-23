@@ -4,8 +4,6 @@ uvicorn[standard]>=0.27.1
 pydantic>=2.6.1
 pydantic-settings>=2.1.0
 
-# AKShare for stock data
-
 # Data processing
 pandas>=2.2.0
 numpy>=1.26.4

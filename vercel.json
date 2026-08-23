@@ -1,8 +1,0 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/update-datasets",
-      "schedule": "0 10 * * *"
-    }
-  ]
-}

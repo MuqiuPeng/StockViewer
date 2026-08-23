@@ -587,16 +587,18 @@ export default function DocsPage() {
             <section id="datasets-sources" className="mb-16">
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-4">Data Sources</h2>
               <p className="text-gray-600 dark:text-gray-400 mb-6">
-                Import data from various providers or upload your own CSV files.
+                  Each market is served by a chain of providers tried in order, so a request still succeeds when one is rate-limited or unreachable.
               </p>
 
               <Table
-                headers={['Source', 'Markets', 'Timeframes']}
+                  headers={['Market', 'Providers', 'Timeframes']}
                 rows={[
-                  ['AKShare', 'A-shares, Indices, ETFs', 'Daily, Minute'],
-                  ['Yahoo Finance', 'US Stocks, Global Indices', 'Daily'],
-                  ['Tushare', 'A-shares, Futures', 'Daily, Minute'],
-                  ['CSV Upload', 'Any', 'Any'],
+                    ['US stocks', 'Twelve Data, Alpaca, Tiingo, Tencent, EastMoney, Alpha Vantage', 'Daily'],
+                    ['A-shares', 'Tiingo, Tencent, EastMoney, Alpha Vantage', 'Daily'],
+                    ['Hong Kong', 'Tencent, EastMoney, EODHD', 'Daily'],
+                    ['Australia', 'EODHD', 'Daily'],
+                    ['Indices, ETFs, funds', 'Tencent, EastMoney', 'Daily'],
+                    ['CSV upload', 'Any', 'Any'],
                 ]}
               />
             </section>

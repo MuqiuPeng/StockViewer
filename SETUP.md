@@ -1,193 +1,141 @@
 # StockViewer Setup Guide
 
-This guide will help you set up StockViewer from scratch.
+Everything runs as a native process on one machine: the Next.js app, a Python
+data service, and a PostgreSQL cluster kept inside the repository directory.
+There is no container runtime and no hosted dependency.
 
 ## Prerequisites
 
-Before you begin, ensure you have the following installed:
-- **Node.js** 18 or higher ([Download](https://nodejs.org/))
-- **Python** 3.8 or higher ([Download](https://www.python.org/downloads/))
-- **Git** ([Download](https://git-scm.com/downloads))
+- Node.js 18+
+- Python 3.11+
+- PostgreSQL 16 (`brew install postgresql@16`, or your platform's package)
 
-## Quick Start
-
-### 1. Clone the Repository
+## 1. Dependencies
 
 ```bash
 git clone <repository-url>
 cd StockViewer
-```
-
-### 2. Install Node.js Dependencies
-
-```bash
 npm install
 ```
 
-### 3. Run Setup Script
+## 2. Python environment
 
-This will create all necessary data directories and initialize JSON files:
-
-```bash
-npm run setup
-```
-
-### 4. Set up Python Virtual Environment
-
-Create a virtual environment for the application:
+One virtualenv serves both the data service and the executors that run user
+indicators and backtests.
 
 ```bash
-# Create virtual environment
-python -m venv venv
-
-# Activate it
-# On macOS/Linux:
-source venv/bin/activate
-# On Windows:
-venv\Scripts\activate
-
-# Install Python dependencies
-pip install pandas numpy
+python3 -m venv python-venv
+./python-venv/bin/pip install -r data-service/requirements.txt
+./python-venv/bin/pip install -r data/python/requirements.txt
 ```
 
-### 5. Install and Run AKTools API
+## 3. Database
 
-AKTools provides Chinese stock market data. Set it up in a separate environment:
+The cluster lives in `.pgdata/` inside the repository. It is gitignored and
+disposable — deleting it loses the data, not the installation.
 
 ```bash
-# Create separate environment for aktools
-python -m venv aktools-env
-
-# Activate it
-# On macOS/Linux:
-source aktools-env/bin/activate
-# On Windows:
-aktools-env\Scripts\activate
-
-# Install aktools
-pip install aktools
-
-# Start the API server (keep this running in a separate terminal)
-python -m aktools
+initdb -D .pgdata --encoding=UTF8 --locale=C
+pg_ctl -D .pgdata -l .pgdata/server.log start
+createdb stockviewer
 ```
 
-The AKTools API will run at `http://127.0.0.1:8080`
+`--locale=C` is not decoration: initdb fails with a "multithreaded during
+startup" error on macOS when the locale is unset.
 
-### 6. Start the Development Server
+## 4. Configuration
 
-In a new terminal (with the main venv activated):
+```bash
+cp .env.local.example .env.local
+```
+
+Then open it and generate each secret — the command for each is in the file.
+Nothing has a working default, deliberately: a shipped default secret is not a
+default, it is a published one.
+
+Three of them are shared between the two services and both must agree:
+`DATA_SERVICE_TOKEN`, `LOG_INGEST_SECRET`, `CRON_SECRET`. The data service
+refuses to serve at all without the first.
+
+Back up `CREDENTIAL_ENCRYPTION_KEY` somewhere other than this machine. It
+encrypts the provider API keys stored in the database, and losing it means
+fetching each key from its provider's dashboard and entering it again.
+
+## 5. Schema and first account
+
+```bash
+npx prisma migrate deploy
+npx tsx scripts/create-admin.ts <email> <password>
+```
+
+Registration is open, but a new account cannot sign in until an administrator
+approves it, so the first account has to be made here.
+
+## 6. Run
+
+Two processes, two terminals.
+
+```bash
+cd data-service && ../python-venv/bin/python -m app
+```
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open http://localhost:3000.
 
-## What Gets Created
+The web app listens on all interfaces so others on the network can reach it.
+The data service listens on loopback only and is called by the web server with
+`DATA_SERVICE_TOKEN`; the browser never talks to it directly. Change
+`BIND_HOST` only if you mean to, and read what it says in the example file
+first.
 
-The setup script creates the following directory structure:
+## Provider API keys
 
-```
-/data
-  /csv              # Stock CSV data files (auto-generated)
-  /indicators       # Indicator definitions (JSON)
-  /strategies       # Trading strategies (JSON)
-  /groups           # Stock groups (JSON)
-  /backtest-history # Backtest history (JSON)
-  /datasets         # Dataset metadata
-  /python           # Python execution scripts (committed to git)
-    MyTT.py         # Technical analysis library
-    executor.py     # Indicator calculator
-    backtest-executor.py  # Backtesting engine
-    requirements.txt      # Python dependencies
-```
+Keys are not configured in a file. Sign in as an administrator and add them
+under the admin page, where each is stored encrypted alongside its quota,
+validity window and priority. See [docs/DATA_SOURCES.md](docs/DATA_SOURCES.md)
+for which providers cover which markets.
+
+The application works without any of them — the free sources need no key — but
+each key added is another path that can serve a request when one provider is
+rate-limited or down.
 
 ## Troubleshooting
 
-### Python Not Found
+**`initdb` fails with a multithreading error.** Locale is unset. Use
+`--locale=C` as above, or export `LC_ALL=C` first.
 
-**Error**: `Python 3 required`
+**The data service exits complaining about `DATA_SERVICE_TOKEN`.** That is
+deliberate — it refuses to run unprotected rather than run unprotected
+silently. Generate the token into `.env.local` and restart both services.
 
-**Solution**: Make sure Python 3.8+ is installed and in your PATH. Run `python --version` to check.
+**Requests to the data service return 401.** The web app and the data service
+are reading different values. Both read `.env` and `.env.local` from the
+repository root; check the token is in one file and not in both with different
+values, and restart both after any change — neither re-reads it while running.
 
-### AKTools API Not Running
+**`Port already in use`.**
 
-**Error**: `Failed to fetch stock data`
-
-**Solution**:
-1. Make sure aktools is installed: `pip install aktools`
-2. Start the API server: `python -m aktools`
-3. Verify it's running at http://127.0.0.1:8080
-
-### Port Already in Use
-
-**Error**: `Port 3000 is already in use`
-
-**Solution**:
 ```bash
-# Find and kill the process using port 3000
-# On macOS/Linux:
 lsof -ti:3000 | xargs kill -9
-
-# On Windows:
-netstat -ano | findstr :3000
-taskkill /PID <PID> /F
 ```
 
-### Module Not Found Errors
-
-**Error**: `Cannot find module 'xyz'`
-
-**Solution**: Re-install dependencies:
-```bash
-rm -rf node_modules package-lock.json
-npm install
-```
-
-### Python Import Errors
-
-**Error**: `ModuleNotFoundError: No module named 'pandas'`
-
-**Solution**: Make sure you're in the virtual environment and reinstall:
-```bash
-source venv/bin/activate  # or venv\Scripts\activate on Windows
-pip install pandas numpy
-```
-
-## Environment Variables
-
-Create a `.env.local` file in the root directory to customize settings:
+**Python import errors inside indicators.** Confirm the virtualenv has the
+executor requirements:
 
 ```bash
-# AKTools API URL (default: http://127.0.0.1:8080)
-NEXT_PUBLIC_AKTOOLS_API_URL=http://127.0.0.1:8080
-
-# Python executable path (default: python3)
-PYTHON_EXECUTABLE=python3
-
-# Python execution timeout in milliseconds (default: 300000 = 5 minutes)
-PYTHON_TIMEOUT_MS=300000
+./python-venv/bin/pip install -r data/python/requirements.txt
 ```
 
-## Next Steps
+**User Python cannot read a file it expects to.** It is confined on purpose.
+See the Security section of the [README](README.md) for what is blocked and
+which layer is doing the blocking.
 
-Once everything is running:
+## Next steps
 
-1. **Add Stock Data**: Navigate to the Datasets page and add Chinese A-share stocks
-2. **Create Indicators**: Go to the Viewer page to create custom technical indicators
-3. **Create Strategies**: Design trading strategies using your indicators
-4. **Run Backtests**: Test your strategies on historical data
-5. **Review History**: Access past backtest results from the history sidebar
-
-## Getting Help
-
-- Check the main [README.md](README.md) for feature documentation
-- Review the [docs/](docs/) folder for detailed guides
-- Report issues on the GitHub repository
-
-## Development Tips
-
-- **Hot Reload**: The Next.js dev server supports hot reload - changes appear immediately
-- **Python Changes**: Restart the backtest after modifying Python files
-- **Clear Cache**: Delete `.next/` folder if you encounter build issues
-- **Data Reset**: Delete JSON files in `data/` subdirectories to reset application data
+- [README](README.md) — usage and architecture
+- [docs/INDICATORS.md](docs/INDICATORS.md) — writing indicators
+- [docs/BACKTESTING.md](docs/BACKTESTING.md) — strategies and backtests
+- [CONTRIBUTING.md](CONTRIBUTING.md) — branches and migrations
