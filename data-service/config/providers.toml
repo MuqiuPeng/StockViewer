@@ -304,6 +304,43 @@ reviewed_at = ""
 source = "https://twelvedata.com/pricing"
 
 
+# ─────────────────────────────── Fiscal.ai ────────────────────────────────
+#
+# Deliberately disabled, with the credential kept. Tested 2026-08-23;
+# recorded so nobody repeats the evaluation.
+#
+# Its price series carries only {date, price} — no open, high, low or volume.
+# Feeding that into a provider whose contract is OHLCV would mean either a
+# chart that cannot draw candles, or filling all four fields with the close,
+# which is fabricating data that backtests would then trade on with nothing
+# to indicate it was wrong.
+#
+# The depth is genuinely remarkable — 9228 daily closes for MSFT back to
+# 1990-01-02 — but only for US names, where six paths already exist and Twelve
+# Data already reaches 2006. A-shares, Hong Kong and Australia all return
+# "company not found".
+#
+# It is a fundamentals product: financial statements, ratios, KPIs, insider
+# and institutional ownership. Worth revisiting the day this app consumes any
+# of those; today all thirteen canonical sources are OHLCV.
+
+[providers.fiscal]
+enabled = false
+allowed_usage = ["internal_research"]
+capabilities = ["fundamentals"]
+markets = ["US"]
+api_key_setting = ""          # credential is stored, provider is off
+notes = """
+Close-only price series; no OHLC or volume. Not wired up for that reason.
+See the comment above for the full evaluation.
+"""
+
+[providers.fiscal.limits]
+verified = false
+reviewed_at = "2026-08-23"
+source = "https://docs.fiscal.ai/docs/api-reference"
+
+
 # ──────────────────────────────  Routing  ─────────────────────────────────
 #
 # Ordered candidate chains per canonical data source. First entry preferred.
