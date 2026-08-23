@@ -303,7 +303,22 @@ def _warn_about(pool: "CredentialPool", name: str) -> None:
 
 
 def resolve_api_key(name: str) -> str:
-    """Read a provider's key from Settings, via the field its config names."""
+    """
+    A provider's key: from the credential pool if it has one, else Settings.
+
+    Providers hold this at construction for the common single-key case. Where
+    rotation across several keys matters, acquire a lease from the pool per
+    call instead — this returns the currently preferred one, which is right
+    until there is more than one.
+    """
+    from .credentials import get_pool
+
+    pool = get_pool(name)
+    usable = pool.usable()
+    if usable:
+        usable.sort(key=lambda c: (c.priority, -c.headroom()))
+        return usable[0].secret
+
     cfg = load_config().providers.get(name)
     if cfg is None or not cfg.api_key_setting:
         return ""

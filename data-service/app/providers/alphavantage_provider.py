@@ -45,6 +45,7 @@ import httpx
 from cachetools import TTLCache
 
 from ..config import get_settings
+from ..gateway_config import resolve_api_key
 from ..instruments import UnmappableInstrument, provider_symbol
 from .base import BaseDataProvider
 
@@ -109,7 +110,7 @@ class AlphaVantageProvider(BaseDataProvider):
 
     def __init__(self) -> None:
         settings = get_settings()
-        self._api_key = settings.alphavantage_api_key
+        self._api_key = resolve_api_key("alphavantage")
         self._timeout = settings.alphavantage_timeout
         self._daily_limit = settings.alphavantage_daily_limit
 

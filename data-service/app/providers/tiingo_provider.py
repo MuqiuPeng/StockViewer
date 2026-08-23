@@ -39,6 +39,7 @@ import httpx
 
 from ..cache import SeriesCache, SingleFlight
 from ..config import get_settings
+from ..credentials import BudgetKind, NoCredentialAvailable, get_pool
 from ..gateway_config import load_config, resolve_api_key
 from ..instruments import provider_symbol
 from ..limits import QuotaExhausted, get_limiter
@@ -264,9 +265,27 @@ class TiingoProvider(BaseDataProvider):
             "endDate": gap[1],
         }
 
+        # Charge the credential as well as the provider limiter: the limiter
+        # paces calls, the credential tracks what this key has actually spent,
+        # including the symbol and bandwidth budgets a request count cannot see.
+        pool = get_pool("tiingo")
+        credential = None
+        if pool.usable():
+            try:
+                credential = pool.acquire(
+                    {BudgetKind.REQUESTS: 1}, subject=ticker
+                )
+            except NoCredentialAvailable as exc:
+                raise QuotaExhausted("credential", 0, 0) from exc
+
         lease = self._limiter.acquire()
         with lease:
             rows = self._get(f"{_BASE_URL}/{ticker}/prices", params)
+
+        if credential is not None:
+            # Bandwidth is metered by the provider, so record what came back.
+            approx_bytes = sum(len(str(r)) for r in rows) if rows else 0
+            credential.credential.charge({BudgetKind.BYTES: approx_bytes})
 
         bars = self._to_records(rows, adjusted)
         # An empty result still records coverage: a range with no trading days
