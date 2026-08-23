@@ -198,6 +198,30 @@ class BaseDataProvider(ABC):
         """
 
     # ------------------------------------------------------------------
+    # Capability query (optional override)
+    # ------------------------------------------------------------------
+
+    def supports(self, data_source: str) -> bool:
+        """
+        Whether this provider can serve the given canonical data source.
+
+        The default asks get_data_sources(), which every provider already
+        implements. Routing uses this as a hard filter, so that a provider is
+        never asked for a market it does not carry — the request would fail
+        with UNSUPPORTED_SOURCE and, on a metered API, might still be billed.
+        """
+        try:
+            result = self.get_data_sources()
+        except Exception:
+            return False
+        if not result.get("success"):
+            return False
+        return any(
+            src.get("id") == data_source
+            for src in result.get("data", {}).get("sources", [])
+        )
+
+    # ------------------------------------------------------------------
     # Health check (optional override)
     # ------------------------------------------------------------------
 

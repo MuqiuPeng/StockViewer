@@ -6,7 +6,7 @@ from fastapi import APIRouter, Query, HTTPException
 from typing import Optional
 import time
 
-from ...providers.registry import get_provider
+from ...routing import get_router
 from ...models.responses import ApiResponse, HistoryData, ErrorDetail, Meta
 from ...services.log_forwarder import forward_log
 
@@ -47,15 +47,19 @@ async def get_history(
     """
     start_time = time.time()
 
-    result = await run_in_threadpool(
-        get_provider().get_history,
+    routed = await run_in_threadpool(
+        get_router().execute,
+        lambda provider: provider.get_history(
+            data_source=data_source,
+            symbol=symbol,
+            start_date=start_date,
+            end_date=end_date,
+            adjust=adjust,
+            period=period,
+        ),
         data_source=data_source,
-        symbol=symbol,
-        start_date=start_date,
-        end_date=end_date,
-        adjust=adjust,
-        period=period,
     )
+    result = routed.result
 
     duration_ms = int((time.time() - start_time) * 1000)
 
@@ -73,7 +77,7 @@ async def get_history(
                 code=error_code,
                 message=result.get("error", "Unknown error"),
             ),
-            meta=Meta(duration_ms=duration_ms),
+            meta=Meta(duration_ms=duration_ms, **routed.provenance()),
         )
 
     data = result["data"]
@@ -93,5 +97,5 @@ async def get_history(
             range_truncated=data.get("range_truncated"),
             adjust_ignored=data.get("adjust_ignored"),
         ),
-        meta=Meta(duration_ms=duration_ms),
+        meta=Meta(duration_ms=duration_ms, **routed.provenance()),
     )

@@ -15,6 +15,15 @@ class Meta(BaseModel):
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     duration_ms: Optional[int] = None
 
+    # Provenance. Which provider actually answered matters once routing can
+    # pick between them: history depth, adjustment convention and delay differ
+    # per source, so a caller comparing two series needs to know they came from
+    # the same place.
+    provider: Optional[str] = None
+    fallback_used: bool = False
+    fallback_reason: Optional[str] = None
+    attempted: Optional[List[str]] = None
+
 
 class ErrorDetail(BaseModel):
     """Error details for API responses."""
