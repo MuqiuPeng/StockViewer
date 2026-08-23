@@ -42,6 +42,10 @@ from ..config import get_settings
 from ..gateway_config import load_config, resolve_api_key
 from ..instruments import provider_symbol
 from ..limits import QuotaExhausted, get_limiter
+from ..resilience import (
+    RetryDecision, backoff_delay, classify_status, is_auth_failure,
+    parse_retry_after, should_retry,
+)
 from .base import BaseDataProvider
 
 logger = logging.getLogger(__name__)
@@ -278,12 +282,17 @@ class TiingoProvider(BaseDataProvider):
         """
         GET and return the JSON array.
 
-        Tiingo signals refusal with a JSON object carrying `detail` rather than
-        the expected array, so an object response is turned into an exception
-        that keeps its message.
+        Retries are classified rather than blanket: a 429 waits for as long as
+        the provider's Retry-After says, transient 5xx use full-jitter
+        backoff, and a 4xx is returned immediately because it will fail the
+        same way next time. Tiingo also signals refusal with a JSON object
+        carrying `detail` instead of the expected array, which is turned into
+        an exception that keeps its message.
         """
+        max_attempts = 3
         last_exc: Optional[Exception] = None
-        for attempt in range(1, 4):
+
+        for attempt in range(1, max_attempts + 1):
             try:
                 with httpx.Client(
                     timeout=self._timeout,
@@ -292,31 +301,57 @@ class TiingoProvider(BaseDataProvider):
                     headers={"Content-Type": "application/json"},
                 ) as client:
                     r = client.get(url, params=params)
-                r.raise_for_status()
-                break
             except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadError) as exc:
                 last_exc = exc
-                if attempt < 3:
+                if attempt < max_attempts:
+                    delay = backoff_delay(attempt)
                     logger.warning(
-                        "Tiingo connection error (attempt %d/3): %s — retrying",
-                        attempt, exc,
+                        "Tiingo connection error (attempt %d/%d): %s — retrying in %.1fs",
+                        attempt, max_attempts, exc, delay,
                     )
-                    time.sleep(0.5 * attempt)
-            except httpx.HTTPStatusError as exc:
-                detail = ""
-                try:
-                    body = exc.response.json()
-                    detail = body.get("detail") or body.get("message") or ""
-                except Exception:
-                    detail = exc.response.text[:200]
-                raise RuntimeError(detail or str(exc)) from exc
-        else:
-            raise last_exc  # type: ignore[misc]
+                    time.sleep(delay)
+                    continue
+                raise
 
-        payload = r.json()
-        if isinstance(payload, dict):
-            raise RuntimeError(str(payload.get("detail") or payload)[:200])
-        return payload
+            if r.status_code < 400:
+                payload = r.json()
+                if isinstance(payload, dict):
+                    raise RuntimeError(str(payload.get("detail") or payload)[:200])
+                return payload
+
+            decision = classify_status(r.status_code)
+            detail = self._error_detail(r)
+
+            if not should_retry(decision, attempt, max_attempts):
+                raise RuntimeError(f"HTTP {r.status_code}: {detail}")
+
+            if decision is RetryDecision.RETRY_AFTER:
+                # Honour the provider's own number; guessing here is how a
+                # throttle turns into a block.
+                delay = parse_retry_after(r.headers.get("Retry-After"))
+                if delay is None:
+                    delay = backoff_delay(attempt, base=2.0, cap=60.0)
+                logger.warning(
+                    "Tiingo rate-limited (attempt %d/%d); waiting %.1fs",
+                    attempt, max_attempts, delay,
+                )
+            else:
+                delay = backoff_delay(attempt)
+                logger.warning(
+                    "Tiingo HTTP %d (attempt %d/%d) — retrying in %.1fs",
+                    r.status_code, attempt, max_attempts, delay,
+                )
+            time.sleep(delay)
+
+        raise last_exc or RuntimeError("Tiingo request failed")
+
+    @staticmethod
+    def _error_detail(response: httpx.Response) -> str:
+        try:
+            body = response.json()
+            return str(body.get("detail") or body.get("message") or body)[:200]
+        except Exception:
+            return response.text[:200]
 
     @staticmethod
     def _to_records(rows: List[Dict[str, Any]], adjusted: bool) -> List[Dict[str, Any]]:

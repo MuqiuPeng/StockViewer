@@ -25,11 +25,15 @@ usage_context is filtered out here — Tiingo's Starter data is internal-use
 only, so flipping the deployment to commercial_display must lose it rather
 than quietly keep serving it.
 
+A provider whose circuit is open is skipped without being called. That is
+where most of the wall-clock saving is: a provider refusing connections costs
+a full socket timeout per request otherwise, and routing has to wait it out
+before moving on.
+
 What this does not do yet
 -------------------------
-No scoring and no circuit breaker; those belong with the resilience work. The
-chain order encodes the preference for now, which for a handful of providers
-is honest and readable.
+No scoring. The chain order encodes the preference, which for a handful of
+providers is honest and readable.
 
 Fallback is only allowed between providers serving the same request. Nothing
 here degrades an adjusted series into a raw one, or a real-time quote into a
@@ -44,6 +48,7 @@ from typing import Any, Callable, Dict, List, Optional
 from ..gateway_config import load_config
 from ..limits import QuotaExhausted
 from ..providers.registry import get_provider, list_providers
+from ..resilience import BreakerConfig, CircuitOpen, get_breaker
 
 logger = logging.getLogger(__name__)
 
@@ -157,11 +162,24 @@ class ProviderRouter:
                 logger.warning("Skipping provider %s: %s", name, exc)
         return out
 
+    @staticmethod
+    def _breaker_for(provider: str, capability: str):
+        cfg = load_config().providers.get(provider)
+        breaker_cfg = None
+        if cfg is not None:
+            breaker_cfg = BreakerConfig(
+                window=cfg.circuit_breaker.window,
+                failure_ratio=cfg.circuit_breaker.failure_ratio,
+                open_seconds=cfg.circuit_breaker.open_seconds,
+            )
+        return get_breaker(provider, capability, breaker_cfg)
+
     def execute(
         self,
         call: Callable[[Any], Dict[str, Any]],
         *,
         data_source: Optional[str] = None,
+        capability: str = "ohlcv",
     ) -> RouteResult:
         """
         Run `call` against each candidate until one succeeds.
@@ -189,24 +207,43 @@ class ProviderRouter:
 
         last: Dict[str, Any] = {}
         for name in names:
+            breaker = self._breaker_for(name, capability)
+            if not breaker.allow():
+                attempts.append(
+                    Attempt(name, False, f"circuit open, retry in {breaker.retry_in()}s")
+                )
+                continue
+
             try:
                 provider = get_provider(name)
                 result = call(provider)
+            except CircuitOpen as exc:
+                attempts.append(Attempt(name, False, str(exc)))
+                continue
             except QuotaExhausted as exc:
+                # Being out of budget is not the provider failing, so this
+                # deliberately does not touch the breaker.
                 attempts.append(Attempt(name, False, f"quota: {exc}"))
                 logger.info("Routing past %s for %s: %s", name, data_source, exc)
                 continue
             except Exception as exc:
+                breaker.record_failure()
                 attempts.append(Attempt(name, False, f"error: {exc}"))
                 logger.warning("Provider %s raised for %s: %s", name, data_source, exc)
                 last = {"success": False, "error": str(exc), "error_code": "FETCH_ERROR"}
                 continue
 
             if result.get("success"):
+                breaker.record_success()
                 attempts.append(Attempt(name, True))
                 return RouteResult(result=result, provider=name, attempts=attempts)
 
             code = result.get("error_code", "")
+            # Only upstream trouble counts against the provider. A market it
+            # does not carry, or a symbol that does not exist, says nothing
+            # about its health and must not trip the breaker.
+            if code == "FETCH_ERROR":
+                breaker.record_failure()
             attempts.append(Attempt(name, False, f"{code}: {result.get('error')}"))
             last = result
 

@@ -8,6 +8,7 @@ import time
 from ...config import get_settings
 from ...gateway_config import load_config
 from ...providers.registry import get_provider, list_providers
+from ...resilience import all_breakers
 from ...models.responses import ApiResponse, HealthData, DependencyStatus, Meta
 
 router = APIRouter()
@@ -83,6 +84,18 @@ async def readiness_check():
 async def liveness_check():
     """Kubernetes liveness probe."""
     return {"status": "alive"}
+
+
+@router.get("/health/circuits")
+async def circuit_states():
+    """
+    Current breaker state per provider and capability.
+
+    Worth its own endpoint: an open circuit explains why a provider is being
+    skipped without anything appearing to fail, which is otherwise a confusing
+    thing to debug from the outside.
+    """
+    return {"circuits": all_breakers()}
 
 
 @router.get("/health/providers")
