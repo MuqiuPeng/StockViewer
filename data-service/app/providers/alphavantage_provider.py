@@ -45,6 +45,7 @@ import httpx
 from cachetools import TTLCache
 
 from ..config import get_settings
+from ..instruments import UnmappableInstrument, provider_symbol
 from .base import BaseDataProvider
 
 logger = logging.getLogger(__name__)
@@ -255,33 +256,6 @@ class AlphaVantageProvider(BaseDataProvider):
         return payload
 
     # ------------------------------------------------------------------
-    # Symbol mapping
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _api_symbol(data_source: str, symbol: str) -> str:
-        """
-        Translate an app-level symbol into the one Alpha Vantage expects.
-
-        US symbols pass through. A-shares take an exchange suffix: .SHH for
-        Shanghai, .SHZ for Shenzhen. The split follows the same rule the
-        EastMoney provider uses — 6xxxxx and 900xxx are Shanghai, everything
-        else (000/002/300 and the Beijing 4/8/92 ranges) is Shenzhen.
-        """
-        symbol = symbol.strip().upper()
-
-        if data_source != "cn.stock":
-            return symbol
-
-        # Already carries an exchange suffix — trust the caller.
-        if "." in symbol:
-            return symbol
-
-        if symbol.startswith("6") or symbol.startswith("900"):
-            return f"{symbol}.SHH"
-        return f"{symbol}.SHZ"
-
-    # ------------------------------------------------------------------
     # Historical OHLCV
     # ------------------------------------------------------------------
 
@@ -322,7 +296,11 @@ class AlphaVantageProvider(BaseDataProvider):
             }
 
         symbol = symbol.strip().upper()
-        api_symbol = self._api_symbol(data_source, symbol)
+        try:
+            api_symbol = provider_symbol("alphavantage", data_source, symbol)
+        except UnmappableInstrument as exc:
+            return {"success": False, "error": str(exc),
+                    "error_code": "UNSUPPORTED_SOURCE"}
         function, series_key = self._PERIOD_TO_FUNCTION[period]
         cache_key = (function, api_symbol)
 

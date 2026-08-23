@@ -26,6 +26,7 @@ import httpx
 from cachetools import TTLCache
 
 from ..config import get_settings
+from ..instruments import provider_symbol
 from .base import BaseDataProvider
 
 logger = logging.getLogger(__name__)
@@ -292,7 +293,7 @@ class EastMoneyProvider(BaseDataProvider):
             logger.debug("Cache hit: %s", cache_key)
             return _cache[cache_key]
 
-        secid = self._secid(data_source, symbol)
+        secid = provider_symbol("eastmoney", data_source, symbol)
         klt = _PERIOD_KLT.get(period, 101)
         fqt = _ADJUST_FQT.get(adjust, 1)
 
@@ -394,54 +395,6 @@ class EastMoneyProvider(BaseDataProvider):
     # ------------------------------------------------------------------
     # secid resolution
     # ------------------------------------------------------------------
-
-    def _secid(self, data_source: str, symbol: str) -> str:
-        """
-        Derive the EastMoney `secid` (market.code) from canonical data_source + symbol.
-
-        Market codes used by EastMoney:
-          0   SZSE (深交所)  — A-shares 0xxxxx / 3xxxxx; SZSE indices 399xxx
-          1   SSE  (上交所)  — A-shares 6xxxxx; SSE indices 000xxx; ETF 5xxxxx
-          116 HKEX (港交所)
-          105 NASDAQ / 106 NYSE / 107 AMEX  (US stocks — best-effort)
-        """
-        if data_source in ("cn.stock", "cn.stock.b", "cn.stock.cdr"):
-            # SSE: 6xxxxx / 9xxxxx (科创板);  SZSE: everything else
-            mkt = "1" if symbol.startswith(("6", "9")) else "0"
-            return f"{mkt}.{symbol}"
-
-        if data_source == "hk.stock":
-            return f"116.{symbol}"
-
-        if data_source == "us.stock":
-            # EastMoney treats US stocks under market 105 (NASDAQ-listed names)
-            # as a best-effort fallback; not all US tickers are available.
-            return f"105.{symbol}"
-
-        if data_source in ("cn.index",):
-            # SZSE indices start with 3 (e.g. 399001); SSE indices start with 0/1
-            mkt = "0" if symbol.startswith("3") else "1"
-            return f"{mkt}.{symbol}"
-
-        if data_source == "hk.index":
-            return f"116.{symbol}"
-
-        if data_source == "us.index":
-            return f"105.{symbol}"
-
-        if data_source == "global.index":
-            return f"1.{symbol}"
-
-        if data_source in ("cn.etf", "cn.lof"):
-            # SSE ETFs/LOFs start with 5; SZSE start with 1
-            mkt = "1" if symbol.startswith("5") else "0"
-            return f"{mkt}.{symbol}"
-
-        if data_source in ("cn.futures", "global.futures"):
-            return f"113.{symbol}"
-
-        # fallback — let EastMoney decide
-        return f"1.{symbol}"
 
     # ------------------------------------------------------------------
     # Listing endpoints

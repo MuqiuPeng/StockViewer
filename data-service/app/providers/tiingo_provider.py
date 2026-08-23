@@ -9,8 +9,8 @@ Symbols
 -------
 Tiingo takes the bare ticker for both markets — ``AAPL`` and ``600104``, with
 no exchange suffix. Verified against the live API: suffixed forms such as
-``600104.SHH``, ``600519.SS`` and ``000002.SZ`` all return "Ticker not found",
-so any suffix arriving from elsewhere in the app is stripped.
+``600104.SHH``, ``600519.SS`` and ``000002.SZ`` all return "Ticker not found".
+The conversion lives in app.instruments, shared with the other adapters.
 
 Coverage and depth were checked rather than assumed: 600104 returns 5038
 daily bars back to 2007-01-04 (metadata: SAIC Motor Corporation Ltd, exchange
@@ -40,6 +40,7 @@ import httpx
 from ..cache import SeriesCache, SingleFlight
 from ..config import get_settings
 from ..gateway_config import load_config, resolve_api_key
+from ..instruments import provider_symbol
 from ..limits import QuotaExhausted, get_limiter
 from .base import BaseDataProvider
 
@@ -47,10 +48,6 @@ logger = logging.getLogger(__name__)
 
 
 _BASE_URL = "https://api.tiingo.com/tiingo/daily"
-
-# Suffixes other providers use that Tiingo rejects.
-_STRIPPED_SUFFIXES = (".SHH", ".SHZ", ".SS", ".SZ", ".SH")
-
 
 class TiingoProvider(BaseDataProvider):
     """Data provider backed by the Tiingo HTTP API."""
@@ -146,19 +143,6 @@ class TiingoProvider(BaseDataProvider):
         }
 
     # ------------------------------------------------------------------
-    # Symbol mapping
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _api_symbol(symbol: str) -> str:
-        """Tiingo wants the bare ticker; drop any exchange suffix."""
-        symbol = symbol.strip().upper()
-        for suffix in _STRIPPED_SUFFIXES:
-            if symbol.endswith(suffix):
-                return symbol[: -len(suffix)]
-        return symbol
-
-    # ------------------------------------------------------------------
     # Historical OHLCV
     # ------------------------------------------------------------------
 
@@ -206,7 +190,7 @@ class TiingoProvider(BaseDataProvider):
                 "error_code": "FETCH_ERROR",
             }
 
-        ticker = self._api_symbol(symbol)
+        ticker = provider_symbol("tiingo", data_source, symbol)
         # 'qfq'/'hfq' both mean "adjusted" as far as this API goes; only the
         # absence of adjustment picks the raw series.
         adjusted = adjust not in (None, "", "none")
