@@ -17,6 +17,18 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+# httpx logs every request at INFO with the full URL, query string included.
+# Five of the seven providers authenticate by query parameter — Tiingo's
+# ?token=, EODHD's ?api_token=, Alpha Vantage's and Twelve Data's ?apikey=,
+# Fiscal's ?apiKey= — so leaving this on writes a live API key into the log on
+# every single call. Logs are the one place a secret is most likely to be
+# copied, pasted into an issue, or shipped to a log service, which is a poor
+# reward for storing them encrypted at rest.
+#
+# The line it emits is redundant anyway: the request is already logged by the
+# middleware below, without the secret.
+logging.getLogger("httpx").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
