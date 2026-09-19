@@ -4,13 +4,23 @@ import { dataService, StockItem } from '@/lib/data-service-client';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+const MARKETS = ['a_share', 'hk', 'us'] as const;
+type Market = (typeof MARKETS)[number];
+
 /**
  * GET /api/stock-list
  *
- * Fetches the complete list of A-share stocks with their codes and names.
+ * Lists the stocks of one market.
  *
  * Query parameters:
+ *   - market: 'a_share' (default) | 'hk' | 'us'
  *   - source: 'active' (default) | 'all' (includes delisted)
+ *
+ * The market is validated rather than cast through. The bug this replaces
+ * was the parameter being ignored altogether, so picking Hong Kong or US
+ * quietly returned A-shares — wrong data presented as the right answer,
+ * which nothing downstream could detect. Defaulting on an unrecognised
+ * value would bring that back for any spelling we did not expect.
  */
 export async function GET(request: Request) {
   try {
@@ -18,8 +28,20 @@ export async function GET(request: Request) {
     const source = searchParams.get('source') || 'active';
     const includeDelisted = source === 'all';
 
+    const requested = (searchParams.get('market') || 'a_share') as Market;
+    if (!MARKETS.includes(requested)) {
+      return NextResponse.json(
+        {
+          error: 'Invalid market',
+          message: `market must be one of: ${MARKETS.join(', ')}`,
+          stocks: [],
+        },
+        { status: 400 }
+      );
+    }
+
     // Fetch from Data Service
-    const response = await dataService.getStockList('a_share', includeDelisted);
+    const response = await dataService.getStockList(requested, includeDelisted);
 
     if (!response.success || !response.data) {
       return NextResponse.json(
