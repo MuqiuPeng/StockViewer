@@ -111,11 +111,11 @@ async function updateStock(stock: {
             low: new Prisma.Decimal(r.low || 0),
             close: new Prisma.Decimal(r.close || 0),
             volume: BigInt(Math.round(r.volume || 0)),
-            turnover: r.turnover !== undefined ? new Prisma.Decimal(r.turnover) : null,
-            amplitude: r.amplitude !== undefined ? new Prisma.Decimal(r.amplitude) : null,
-            changePct: r.change_pct !== undefined ? new Prisma.Decimal(r.change_pct) : null,
-            changeAmount: r.change_amount !== undefined ? new Prisma.Decimal(r.change_amount) : null,
-            turnoverRate: r.turnover_rate !== undefined ? new Prisma.Decimal(r.turnover_rate) : null,
+            turnover: r.turnover != null ? new Prisma.Decimal(r.turnover) : null,
+            amplitude: r.amplitude != null ? new Prisma.Decimal(r.amplitude) : null,
+            changePct: r.change_pct != null ? new Prisma.Decimal(r.change_pct) : null,
+            changeAmount: r.change_amount != null ? new Prisma.Decimal(r.change_amount) : null,
+            turnoverRate: r.turnover_rate != null ? new Prisma.Decimal(r.turnover_rate) : null,
           },
         });
         newRecords++;

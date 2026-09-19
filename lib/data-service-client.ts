@@ -157,6 +157,13 @@ export class DataServiceClient {
         const response = await fetch(url, {
           ...options,
           signal: controller.signal,
+          headers: {
+            ...(options.headers ?? {}),
+            // Set after the caller's headers so it cannot be dropped by one.
+            ...(DATA_SERVICE_TOKEN
+              ? { Authorization: `Bearer ${DATA_SERVICE_TOKEN}` }
+              : {}),
+          },
         });
 
         clearTimeout(timeoutId);

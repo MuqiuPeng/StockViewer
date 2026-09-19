@@ -8,7 +8,11 @@
 import { config } from 'dotenv';
 import { resolve } from 'path';
 
-// Load environment variables from .env.local
+// Both files, in the order Next.js and the data service read them: secrets
+// are split across the two, and loading only one silently leaves a caller
+// without its token — which fails as a 401 from the data service rather than
+// as a missing-configuration error.
+config({ path: resolve(process.cwd(), '.env') });
 config({ path: resolve(process.cwd(), '.env.local') });
 
 import { PrismaClient, Prisma } from '@prisma/client';
@@ -155,11 +159,11 @@ async function importStock(
         low: new Prisma.Decimal(r.low || 0),
         close: new Prisma.Decimal(r.close || 0),
         volume: BigInt(Math.round(r.volume || 0)),
-        turnover: r.turnover !== undefined ? new Prisma.Decimal(r.turnover) : null,
-        amplitude: r.amplitude !== undefined ? new Prisma.Decimal(r.amplitude) : null,
-        changePct: r.change_pct !== undefined ? new Prisma.Decimal(r.change_pct) : null,
-        changeAmount: r.change_amount !== undefined ? new Prisma.Decimal(r.change_amount) : null,
-        turnoverRate: r.turnover_rate !== undefined ? new Prisma.Decimal(r.turnover_rate) : null,
+        turnover: r.turnover != null ? new Prisma.Decimal(r.turnover) : null,
+        amplitude: r.amplitude != null ? new Prisma.Decimal(r.amplitude) : null,
+        changePct: r.change_pct != null ? new Prisma.Decimal(r.change_pct) : null,
+        changeAmount: r.change_amount != null ? new Prisma.Decimal(r.change_amount) : null,
+        turnoverRate: r.turnover_rate != null ? new Prisma.Decimal(r.turnover_rate) : null,
       })),
       skipDuplicates: true,
     });
