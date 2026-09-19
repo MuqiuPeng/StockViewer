@@ -15,7 +15,15 @@ const DATA_SERVICE_URL = process.env.DATA_SERVICE_URL || 'http://localhost:8000'
  * bundle it into the browser and hand the token to anyone who opened the page,
  * which is the whole of the protection.
  */
-const DATA_SERVICE_TOKEN = process.env.DATA_SERVICE_TOKEN || '';
+function dataServiceToken(): string {
+  // Read per call, not once at module load. A module-level constant is fixed
+  // the moment this file is first imported, and in any caller that loads .env
+  // in its own body — every script here does — the ES module import is
+  // hoisted above that, so the constant captures an empty string and every
+  // request goes out unauthenticated. It then fails as a 401 from the data
+  // service, which reads like a wrong token rather than an unread one.
+  return process.env.DATA_SERVICE_TOKEN || '';
+}
 const DATA_SERVICE_TIMEOUT = parseInt(process.env.DATA_SERVICE_TIMEOUT_MS || '60000', 10);
 const DATA_SERVICE_RETRIES = parseInt(process.env.DATA_SERVICE_RETRIES || '2', 10);
 
@@ -160,8 +168,8 @@ export class DataServiceClient {
           headers: {
             ...(options.headers ?? {}),
             // Set after the caller's headers so it cannot be dropped by one.
-            ...(DATA_SERVICE_TOKEN
-              ? { Authorization: `Bearer ${DATA_SERVICE_TOKEN}` }
+            ...(dataServiceToken()
+              ? { Authorization: `Bearer ${dataServiceToken()}` }
               : {}),
           },
         });
@@ -332,6 +340,11 @@ export async function fetchStockDataFromService(
   lastDate?: string;
   stockName?: string;
   error?: string;
+    // Passed through so a caller can tell "this range holds no bars" — normal
+    // for an incremental update that has caught up — from a real failure.
+    // Without it both arrive as a message string and every up-to-date dataset
+    // reports as failed.
+    errorCode?: string;
 }> {
   const response = await dataService.getHistory({
     dataSource,
@@ -345,6 +358,7 @@ export async function fetchStockDataFromService(
     return {
       success: false,
       error: response.error?.message || 'Failed to fetch data',
+      errorCode: response.error?.code,
     };
   }
 

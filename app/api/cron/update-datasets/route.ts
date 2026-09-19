@@ -78,6 +78,17 @@ async function updateStock(stock: {
     const result = await fetchStockDataFromService(stock.symbol, stock.dataSource, startDate);
 
     if (!result.success) {
+      // A range with no bars is what a caught-up dataset looks like, not a
+      // failure: the window asked for starts after the last stored day.
+      // Reporting it as failed made every healthy dataset look broken the
+      // moment the daily update caught up with the market.
+      if (result.errorCode === 'NO_DATA') {
+        await prisma.stock.update({
+          where: { id: stock.id },
+          data: { lastUpdate: new Date() },
+        });
+        return { success: true, newRecords: 0 };
+      }
       return { success: false, newRecords: 0, error: result.error };
     }
 
