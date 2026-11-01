@@ -18,10 +18,11 @@ That matters because before this, ETFs, LOFs, B-shares, CDRs and every index
 except mainland ones had EastMoney as their only source, so an EastMoney block
 took all of them out at once — which happened.
 
-Depth is capped at roughly 3.2 years — see _MAX_BARS. Tiingo reaches back to
-2007 for the two markets it carries, so it still leads those chains; Tencent
-is the deeper option only for Hong Kong and indices, where the alternative is
-EastMoney alone.
+Depth runs to the instrument's first trading day — see _PAGE_BARS for how,
+and why it was once believed to stop at 3.2 years. Tiingo reaches back to 2007
+for the two markets it carries, so it still leads those chains on freshness;
+Tencent is the deeper option for Hong Kong and indices, where the alternative
+is EastMoney alone.
 
 Field order
 -----------
@@ -41,6 +42,7 @@ import json
 import logging
 import re
 import time
+from datetime import date
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -79,12 +81,81 @@ _HEADERS = {
     "Referer": "https://gu.qq.com/",
 }
 
-# How many bars to ask for. Probed rather than assumed, because the failure is
-# silent: 800 returns 800, but 1000 through 2000 quietly cap at 640, and 2500
-# and above return a malformed response with no data at all. 800 is the
-# largest value that returns what it was asked for — roughly 3.2 years of
-# daily bars, which is the real depth limit of this provider.
-_MAX_BARS = 800
+# Paging, and the two beliefs it replaces.
+#
+# This provider was read as capped at 800 bars — roughly 3.2 years — on two
+# findings recorded here: that counts above 800 silently truncate to 640, and
+# that filling the date slots returns an empty series. Both were re-probed
+# against the live endpoint and neither holds as stated.
+#
+# The date slots work. A request for 2008-01-01..2008-12-31 returns that year;
+# sh000001 goes back to 1990-12-19, its inception, and sh510300 to 2012-05-28,
+# its listing day. The earlier probe most likely paired the dates with a count
+# of 0, which does return nothing — reproduced — and attributed the emptiness
+# to the dates.
+#
+# The count ceiling is real but is not 800 and is not monotonic. For sh000001,
+# 1000 returns 1000 and 2000 returns 2000, while 2500 returns a malformed
+# response. For sh510300 over one four-year window, 700 returns 700 while 1200
+# returns 640 — asking for more yields less. Rather than model that, every
+# request stays well inside the range that behaves: a window of _PAGE_YEARS
+# holds about 490 trading days, and _PAGE_BARS is comfortably above it.
+#
+# Paging runs backward from the end of the wanted range, each page starting
+# where the previous one's earliest bar left off. That is what makes a silent
+# truncation harmless: a short page simply means the next one picks up sooner,
+# and no span is skipped. A page that comes back empty means there is nothing
+# before it — verified against instruments queried before their listing date —
+# and ends the walk.
+_PAGE_BARS = 800
+_PAGE_YEARS = 2
+
+# What this costs. A cold full-history fetch is now one request per two years
+# — 18 for an index back to 1990, 8 for an ETF listed in 2012 — against a
+# budget of 30 a minute and 600 an hour. So a full history takes about nine
+# seconds at the configured minimum interval, and importing several
+# instruments at once can exhaust the minute window, which surfaces as the
+# QuotaExhausted path already handled in get_history. A bounded request is
+# unaffected: asking for one year takes two pages. The cache makes either one
+# a per-instrument, per-TTL cost rather than a per-request one.
+#
+# A stop, not an expectation. Walking from today to the floor below takes 18
+# pages; the empty-page check normally ends it long before. If this is ever
+# reached something upstream has changed shape, and it is logged.
+_MAX_PAGES = 40
+
+# No instrument this provider serves predates this, and the cache hands down a
+# floor of 0001-01-01 when the caller named no start date. Clamping keeps the
+# walk finite and the date arithmetic in range.
+_EARLIEST = "1900-01-01"
+
+
+def _parse(d: str) -> date:
+    """Parse YYYY-MM-DD, tolerating the YYYYMMDD the API also accepts."""
+    text = d.strip()
+    if len(text) == 8 and text.isdigit():
+        return date(int(text[:4]), int(text[4:6]), int(text[6:]))
+    return date.fromisoformat(text[:10])
+
+
+def _shift_years(d: str, years: int) -> str:
+    """``d`` moved by whole years, clamped to _EARLIEST.
+
+    Feb 29 lands on Feb 28 in a non-leap year rather than raising; the result
+    is a window edge, so a day either way costs nothing.
+    """
+    parsed = _parse(d)
+    target_year = parsed.year + years
+    if target_year < _parse(_EARLIEST).year:
+        return _EARLIEST
+    try:
+        return parsed.replace(year=target_year).isoformat()
+    except ValueError:
+        return parsed.replace(year=target_year, day=28).isoformat()
+
+
+def _prev_day(d: str) -> str:
+    return date.fromordinal(_parse(d).toordinal() - 1).isoformat()
 
 
 class TencentProvider(BaseDataProvider):
@@ -368,35 +439,78 @@ class TencentProvider(BaseDataProvider):
         end_date: Optional[str],
     ) -> List[Dict[str, Any]]:
         endpoint = _ENDPOINT_BY_SOURCE.get(data_source, "fqkline")
-        # Always ask for the adjusted series. An empty adjustment slot is not a
-        # usable "raw" mode here: A-shares fall back to a `day` key, Hong Kong
-        # returns no data node at all, and US returns a node with no series.
-        # Serving adjusted data and saying so beats serving nothing.
-        fq = "qfq"
-        # The date slots must be left empty. Filling them makes Tencent return
-        # an empty series rather than the requested window — verified: the same
-        # call with dates yields no qfqday key at all, without them it yields
-        # the full run. So the count is the only usable selector, and the
-        # window is applied locally by the cache.
-        params = {
-            "_var": "kline",
-            "param": f"{tsym},day,,,{_MAX_BARS},{fq}",
-        }
+        bars = self._fetch_paged(endpoint, tsym, floor=gap[0], ceiling=gap[1])
 
-        with self._limiter.acquire():
-            payload = self._get(_KLINE_URL.format(endpoint=endpoint), params)
-
-        rows = self._extract_rows(payload, tsym)
-        bars = self._to_records(rows)
-
-        # Record coverage over what actually arrived rather than what was
-        # asked for. Tencent returns its own run of bars, and claiming the
-        # requested span as covered would hide the part it never sent.
+        # Coverage is the union of what was asked for and what arrived, which
+        # is wider than what arrived on purpose. A request reaching past an
+        # instrument's first trading day legitimately returns nothing for that
+        # stretch, and recording only the bars would leave the empty years
+        # permanently uncovered — re-walked on every call, to learn the same
+        # nothing. The cache TTL is what reopens the question later.
         if bars:
             covered = (min(bars[0]["date"], gap[0]), max(bars[-1]["date"], gap[1]))
         else:
             covered = gap
         return self._cache.store(key, covered, bars, start_date, end_date)
+
+    def _fetch_paged(
+        self, endpoint: str, tsym: str, floor: str, ceiling: str
+    ) -> List[Dict[str, Any]]:
+        """Walk backward from ``ceiling`` to ``floor``, a window at a time.
+
+        Backward rather than forward because the count selects from the *end*
+        of a window: asking for 2015-01-01..2026-10-31 with a count of 300
+        returns the most recent 300 bars, not the first. Anchoring each page to
+        a date that has already been reached is what makes the walk exact.
+        """
+        floor = max(floor, _EARLIEST)
+        by_date: Dict[str, Dict[str, Any]] = {}
+        cursor = ceiling
+        pages = 0
+
+        while pages < _MAX_PAGES:
+            window_start = max(floor, _shift_years(cursor, -_PAGE_YEARS))
+            # Always ask for the adjusted series. An empty adjustment slot is
+            # not a usable "raw" mode here: A-shares fall back to a `day` key,
+            # Hong Kong returns no data node at all, and US returns a node with
+            # no series. Serving adjusted data and saying so beats serving
+            # nothing.
+            params = {
+                "_var": "kline",
+                "param": f"{tsym},day,{window_start},{cursor},{_PAGE_BARS},qfq",
+            }
+            with self._limiter.acquire():
+                payload = self._get(_KLINE_URL.format(endpoint=endpoint), params)
+
+            page = self._to_records(self._extract_rows(payload, tsym))
+            pages += 1
+            if not page:
+                # Nothing before this point. Either the instrument had not
+                # listed yet, or the provider's own run ends here.
+                break
+
+            for bar in page:
+                by_date[bar["date"]] = bar
+
+            earliest = min(bar["date"] for bar in page)
+            if earliest <= floor:
+                break
+            # Resume at the day before the oldest bar actually received. If
+            # this page was truncated, the next one simply starts sooner.
+            cursor = _prev_day(earliest)
+            if cursor < floor:
+                break
+        else:
+            logger.warning(
+                "Tencent paging for %s stopped at the %d-page limit (floor %s, "
+                "reached %s); history may be incomplete.",
+                tsym,
+                _MAX_PAGES,
+                floor,
+                min(by_date) if by_date else "nothing",
+            )
+
+        return [by_date[d] for d in sorted(by_date)]
 
     # ------------------------------------------------------------------
     # HTTP + parsing
