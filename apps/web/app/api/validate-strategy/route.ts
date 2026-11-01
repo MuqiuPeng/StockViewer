@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server';
-import { spawnPython, withPythonSlot, isPythonBusy } from '@/lib/python-child';
-import path from 'path';
-import { existsSync } from 'fs';
+import {
+  isPythonBusy,
+  resolvePythonExecutable,
+  spawnPython,
+  withPythonSlot,
+} from '@/lib/python-child';
 import { PYTHON_CONFIG } from '@/lib/env';
 import { prisma } from '@stockviewer/db';
 import { detectDependencies } from '@/lib/detect-dependencies';
@@ -120,33 +123,7 @@ async function executeStrategyValidation(
   dependencyColumns: string[] = []
 ): Promise<{ valid: boolean; error?: string; details?: string; signalCount?: number }> {
   return withPythonSlot(() => new Promise<{ valid: boolean; error?: string; details?: string; signalCount?: number }>((resolve) => {
-    // Get Python executable - check multiple venv names
-    let pythonExecutable: string = 'python3';
-
-    if (PYTHON_CONFIG.EXECUTABLE !== 'python3') {
-      pythonExecutable = PYTHON_CONFIG.EXECUTABLE;
-    } else {
-      // Check multiple common venv names
-      const venvNames = ['python-venv', 'venv', '.venv'];
-      let foundVenv = false;
-
-      for (const venvName of venvNames) {
-        const venvPath = path.join(process.cwd(), venvName);
-        const venvPython = process.platform === 'win32'
-          ? path.join(venvPath, 'Scripts', 'python.exe')
-          : path.join(venvPath, 'bin', 'python');
-
-        if (existsSync(venvPython)) {
-          pythonExecutable = venvPython;
-          foundVenv = true;
-          break;
-        }
-      }
-
-      if (!foundVenv) {
-        pythonExecutable = 'python3';
-      }
-    }
+    const pythonExecutable = resolvePythonExecutable(PYTHON_CONFIG.EXECUTABLE);
 
     // Create sample data for validation (10 days of fake data)
     const sampleData: Record<string, any>[] = [];

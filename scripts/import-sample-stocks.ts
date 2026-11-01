@@ -16,8 +16,8 @@ config({ path: resolve(process.cwd(), '.env') });
 config({ path: resolve(process.cwd(), '.env.local') });
 
 import { PrismaClient, Prisma } from '@prisma/client';
-import { dataService } from '../lib/data-service-client';
-import { resolveDataSourceId } from '../lib/data-sources';
+import { dataService } from '../apps/web/lib/data-service-client';
+import { resolveDataSourceId } from '../apps/web/lib/data-sources';
 import path from 'path';
 
 const prisma = new PrismaClient({

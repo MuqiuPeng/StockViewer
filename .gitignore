@@ -56,10 +56,10 @@ secrets/
 
 
 # ── Build output and dependencies ───────────────────────────────────────
-/node_modules
+node_modules/
 /.pnp
 .pnp.js
-/.next/
+**/.next/
 /out/
 /build
 /coverage
