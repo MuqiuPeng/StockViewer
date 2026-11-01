@@ -1,4 +1,4 @@
-import { Indicator } from './indicator-storage';
+import type { Indicator } from '@stockviewer/shared';
 
 /**
  * Replace column name references in Python code

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import StrategyEditorModal from './StrategyEditorModal';
-import { Strategy } from '@/lib/strategy-storage';
+import type { Strategy } from '@stockviewer/shared';
 
 interface StrategyManagerProps {
   isOpen: boolean;

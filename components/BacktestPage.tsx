@@ -6,8 +6,7 @@ import RunBacktestModal from './RunBacktestModal';
 import BacktestResults from './BacktestResults';
 import BacktestHistorySidebar from './BacktestHistorySidebar';
 import BacktestHistoryDetailModal from './BacktestHistoryDetailModal';
-import { BacktestHistoryEntry } from '@/lib/backtest-history-storage';
-import { Strategy } from '@/lib/strategy-storage';
+import type { BacktestHistoryEntry, Strategy } from '@stockviewer/shared';
 import { logAction, logError } from '@/lib/client-logger';
 
 interface DatasetInfo {

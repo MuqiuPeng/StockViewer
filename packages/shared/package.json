@@ -1,0 +1,8 @@
+{
+  "name": "@stockviewer/shared",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Types that cross the client/server boundary",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts"
+}

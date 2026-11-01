@@ -4,55 +4,8 @@
  */
 
 import type { JsonStorageProvider, StorageProvider } from './storage/types';
-import { BacktestResult } from './backtest-executor';
-import { PortfolioConstraints } from './types/portfolio';
+import type { BacktestHistoryEntry } from '@stockviewer/shared';
 
-export interface BacktestHistoryEntry {
-  // Identity
-  id: string;
-  createdAt: string;
-
-  // Backtest configuration
-  strategyId: string;
-  strategyName: string;
-  strategyType: 'signal' | 'portfolio';
-
-  // Target information
-  target: {
-    type: 'single' | 'portfolio' | 'group';
-    stockId?: string;           // Reference to Stock table
-    symbols?: string[];
-    groupId?: string;
-    groupName?: string;
-  };
-
-  // Backtest parameters
-  parameters: {
-    initialCash: number;
-    commission: number;
-    startDate?: string;
-    endDate?: string;
-    strategyParameters?: Record<string, any>;
-    constraints?: PortfolioConstraints;
-  };
-
-  // Results (full backtest result)
-  result: BacktestResult;
-
-  // Metadata
-  starred: boolean;
-  notes?: string;
-  tags?: string[];
-
-  // Summary metrics (denormalized for quick filtering/sorting)
-  summary: {
-    totalReturn: number;
-    totalReturnPct: number;
-    sharpeRatio: number;
-    tradeCount: number;
-    duration: number;
-  };
-}
 
 /**
  * Get the backtest history store instance

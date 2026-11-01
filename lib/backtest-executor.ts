@@ -1,92 +1,9 @@
 import { resolvePythonExecutable, spawnPython, withPythonSlot } from './python-child';
 import { PYTHON_CONFIG } from './env';
 import { executorScript } from './paths';
-import { PortfolioConstraints } from './types/portfolio';
+import type { BacktestInput, BacktestResult } from '@stockviewer/shared';
 
-export interface BacktestInput {
-  strategyCode: string;
-  data?: Record<string, any>[];                // Single-stock data
-  dataMap?: Record<string, Record<string, any>[]>;  // Portfolio data (symbol -> data)
-  strategyType: 'signal' | 'portfolio';        // Strategy type
-  initialCash?: number;
-  commission?: number;
-  parameters?: Record<string, any>;
-  constraints?: PortfolioConstraints;          // NEW: Portfolio constraints
-  externalDatasets?: Record<string, { groupId: string; datasetName: string }>;  // External datasets configuration
-}
 
-export interface BacktestResult {
-  success: boolean;
-  metrics?: {
-    totalReturn: number;
-    totalReturnPct: number;
-    finalValue: number;
-    initialValue: number;
-    maxDrawdown: number;
-    maxDrawdownPct: number;
-    sharpeRatio: number;
-    sortinoRatio: number;
-    calmarRatio: number;
-    winRate: number;
-    avgWin: number;
-    avgLoss: number;
-    profitFactor: number;
-    tradeCount: number;
-    wonTrades?: number;
-    lostTrades?: number;
-    longestWinStreak?: number;
-    longestLossStreak?: number;
-    avgSlippagePct?: number;
-    totalSlippageCost?: number;
-    sameDayTrades?: number;
-    nextOpenTrades?: number;
-  };
-  equityCurve?: Array<{ date: string; value: number; cash?: number; shares?: number; stock_value?: number }>;
-  tradeMarkers?: Array<{
-    signal_date?: string;
-    execution_date?: string;
-    date: string;
-    symbol?: string;                 // NEW: Required for portfolio trades
-    type: 'buy' | 'sell';
-    amount?: number;
-    price?: number;
-    signal_price?: number;
-    size?: number;
-    value?: number;
-    commission?: number;
-    execution_mode?: 'close' | 'next_open';
-  }>;
-  // Portfolio-specific fields
-  positionSnapshots?: Array<{
-    date: string;
-    positions: Record<string, { shares: number; value: number; percentOfPortfolio: number }>;
-    cash: number;
-    totalValue: number;
-  }>;
-  perSymbolMetrics?: Array<{
-    symbol: string;
-    totalReturn: number;
-    totalReturnPct: number;
-    sharpeRatio: number;
-    maxDrawdownPct: number;
-    tradeCount: number;
-    contributionToPortfolio: number;
-    winRate: number;
-  }>;
-  perSymbolEquityCurves?: Record<string, Array<{ date: string; value: number; shares: number }>>;
-  symbols?: string[];
-  constraints?: PortfolioConstraints;
-  error?: string;
-  type?: string;
-  details?: {
-    message?: string;
-    type?: string;
-    code_line?: string;
-    hints?: string[];
-    traceback?: string;
-    warnings?: string[];
-  };
-}
 
 export async function executeBacktest(
   input: BacktestInput

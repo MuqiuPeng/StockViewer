@@ -25,11 +25,13 @@ import type {
 } from './types';
 
 // Import entity types from their respective modules
-import type { Indicator } from '../indicator-storage';
-import type { Strategy } from '../strategy-storage';
-import type { BacktestHistoryEntry } from '../backtest-history-storage';
-import type { StockGroup } from '../group-storage';
-import type { ViewSetting } from '../view-settings-storage';
+import type {
+  BacktestHistoryEntry,
+  Indicator,
+  StockGroup,
+  Strategy,
+  ViewSetting,
+} from '@stockviewer/shared';
 
 // Cache for per-user database storage providers
 const userStorageProviders: Map<string, StorageProvider> = new Map();

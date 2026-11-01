@@ -2,6 +2,11 @@
   "name": "stockviewer",
   "version": "1.0.0",
   "private": true,
+  "workspaces": [
+    "apps/web",
+    "packages/db",
+    "packages/shared"
+  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",

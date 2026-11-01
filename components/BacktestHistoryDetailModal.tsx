@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { BacktestHistoryEntry } from '@/lib/backtest-history-storage';
+import type { BacktestHistoryEntry } from '@stockviewer/shared';
 
 interface BacktestHistoryDetailModalProps {
   entry: BacktestHistoryEntry | null;
