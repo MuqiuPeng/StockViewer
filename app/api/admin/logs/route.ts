@@ -5,7 +5,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@stockviewer/db';
 import { auth } from '@/lib/auth';
 import { isAdmin } from '@/lib/admin';
 import { LogLevel, LogSource, Prisma } from '@prisma/client';

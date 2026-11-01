@@ -46,8 +46,7 @@ export async function GET() {
       return authResult.response;
     }
 
-    // Import prisma here to avoid circular dependencies
-    const { prisma } = await import('@/lib/prisma');
+    const { prisma } = await import('@stockviewer/db');
 
     // Get statistics about outdated cache entries
     const outdatedCount = await prisma.$queryRaw<[{ count: bigint }]>`

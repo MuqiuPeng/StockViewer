@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { isAdmin } from '@/lib/admin';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@stockviewer/db';
 import { UserStatus } from '@prisma/client';
 
 export const dynamic = 'force-dynamic';

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { isAdmin, isSuperAdmin } from '@/lib/admin';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@stockviewer/db';
 import { UserStatus, LogSource } from '@prisma/client';
 import { logger } from '@/lib/logger';
 

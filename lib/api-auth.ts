@@ -7,8 +7,7 @@
 
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { getAuthenticatedStorage } from '@/lib/storage';
-import type { StorageProvider } from '@/lib/storage';
+import { getAuthenticatedStorage, type StorageProvider } from '@stockviewer/db';
 
 /**
  * Result of authentication check

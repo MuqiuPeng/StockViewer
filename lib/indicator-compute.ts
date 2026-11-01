@@ -6,7 +6,7 @@
  * Uses versioning for cache invalidation.
  */
 
-import { prisma } from './prisma';
+import { prisma } from '@stockviewer/db';
 import { Prisma } from '@prisma/client';
 import { executePythonIndicator, PythonExecutionResult, ResourceManifest, ResourceInfo } from './python-executor';
 

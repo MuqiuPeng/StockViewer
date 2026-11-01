@@ -4,13 +4,11 @@
  */
 
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { createBacktestHistoryEntry, getStockPrices, prisma } from '@stockviewer/db';
 import { getApiStorage } from '@/lib/api-auth';
 import { executeBacktest } from '@/lib/backtest-executor';
 import type { BacktestInput, BacktestResult } from '@stockviewer/shared';
 import { isPythonBusy } from '@/lib/python-child';
-import { getStockPrices } from '@/lib/stock-storage';
-import { createBacktestHistoryEntry } from '@/lib/backtest-history-storage';
 import type { BacktestHistoryEntry } from '@stockviewer/shared';
 import { logger } from '@/lib/logger';
 import { LogSource } from '@prisma/client';

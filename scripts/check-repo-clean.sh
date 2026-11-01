@@ -28,7 +28,7 @@ while IFS= read -r f; do
     data/datasets/*|data/backtest-history/*|data/view-settings/*)
                           report "installation data: $f" ;;
     *.dump|*.pgdump|*.backup) report "database dump: $f" ;;
-    *.sql) [[ "$f" == prisma/migrations/* ]] || report "stray SQL: $f" ;;
+    *.sql) [[ "$f" == *prisma/migrations/* ]] || report "stray SQL: $f" ;;
     *.pem|*.key)          report "key material: $f" ;;
   esac
 done < <(git ls-files)

@@ -37,7 +37,7 @@ secrets/
 *.dump
 *.pgdump
 *.backup
-!prisma/migrations/**/*.sql
+!**/prisma/migrations/**/*.sql
 /backups/
 /dumps/
 
@@ -65,7 +65,6 @@ secrets/
 /coverage
 *.tsbuildinfo
 next-env.d.ts
-/lib/generated/prisma
 
 /venv
 /python-venv

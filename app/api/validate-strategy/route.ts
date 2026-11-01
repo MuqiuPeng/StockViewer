@@ -3,7 +3,7 @@ import { spawnPython, withPythonSlot, isPythonBusy } from '@/lib/python-child';
 import path from 'path';
 import { existsSync } from 'fs';
 import { PYTHON_CONFIG } from '@/lib/env';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@stockviewer/db';
 import { detectDependencies } from '@/lib/detect-dependencies';
 
 // Dangerous imports that should be blocked

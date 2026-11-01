@@ -4,7 +4,7 @@ const nextConfig = {
   // Workspace packages ship TypeScript source rather than a build, so Next
   // compiles them with the app. That keeps HMR working across a package
   // boundary and saves a build step there is nothing to cache.
-  transpilePackages: ['@stockviewer/shared'],
+  transpilePackages: ['@stockviewer/shared', '@stockviewer/db'],
   webpack: (config, { isServer }) => {
     // Fix for lightweight-charts and other libraries
     if (!isServer) {

@@ -5,7 +5,7 @@
  * with user authentication for multi-user production deployment.
  *
  * Usage:
- *   import { getAuthenticatedStorage } from '@/lib/storage';
+ *   import { getAuthenticatedStorage } from '@stockviewer/db';
  *
  *   // Get user-scoped storage
  *   const storage = getAuthenticatedStorage(userId);

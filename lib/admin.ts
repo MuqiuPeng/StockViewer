@@ -7,7 +7,7 @@
  * account (see scripts/create-admin.ts).
  */
 
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@stockviewer/db';
 
 /**
  * Check if a user is an admin.

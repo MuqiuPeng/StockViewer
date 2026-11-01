@@ -9,7 +9,7 @@
 
 import { timingSafeEqual } from 'crypto';
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@stockviewer/db';
 import { Prisma } from '@prisma/client';
 import { fetchStockDataFromService } from '@/lib/data-service-client';
 

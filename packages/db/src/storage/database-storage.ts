@@ -4,7 +4,7 @@
  * Stock price data is shared across all users via the Stock/StockPrice tables
  */
 
-import { prisma } from '../prisma';
+import { prisma } from '../client';
 import type {
   StorageProvider,
   StorageMode,

@@ -4,7 +4,7 @@
  * Fire-and-forget: callers don't need to await, failures fall back to console.error.
  */
 
-import { prisma } from './prisma';
+import { prisma } from '@stockviewer/db';
 import { LogLevel, LogSource, Prisma } from '@prisma/client';
 
 interface LogOptions {

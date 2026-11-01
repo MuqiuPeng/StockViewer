@@ -5,7 +5,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@stockviewer/db';
 import { requireAuth } from '@/lib/api-auth';
 
 export const runtime = 'nodejs';

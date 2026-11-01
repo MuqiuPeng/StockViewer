@@ -5,7 +5,7 @@
  */
 
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@stockviewer/db';
 import { getApiStorage } from '@/lib/api-auth';
 import { validatePythonCode } from '@/lib/indicator-validator';
 import { detectDependencies } from '@/lib/detect-dependencies';

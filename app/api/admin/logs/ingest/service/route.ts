@@ -6,7 +6,7 @@
 
 import { timingSafeEqual } from 'crypto';
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@stockviewer/db';
 import { LogLevel, LogSource, Prisma } from '@prisma/client';
 
 export const runtime = 'nodejs';

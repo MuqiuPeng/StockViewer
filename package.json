@@ -11,7 +11,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "db:generate": "prisma generate --config packages/db/prisma.config.ts",
+    "db:migrate": "prisma migrate dev --config packages/db/prisma.config.ts",
+    "db:migrate:deploy": "prisma migrate deploy --config packages/db/prisma.config.ts",
+    "db:status": "prisma migrate status --config packages/db/prisma.config.ts"
   },
   "dependencies": {
     "@monaco-editor/react": "^4.7.0",

@@ -6,7 +6,7 @@
  * Stock data is shared across all users (not user-scoped).
  */
 
-import { prisma } from './prisma';
+import { prisma } from './client';
 import { Prisma } from '@prisma/client';
 
 /**

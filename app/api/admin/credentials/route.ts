@@ -10,7 +10,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { isAdmin } from '@/lib/admin';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@stockviewer/db';
 import { logger } from '@/lib/logger';
 import { LogSource, Prisma } from '@prisma/client';
 import {

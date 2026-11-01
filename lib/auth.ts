@@ -13,7 +13,7 @@
 import NextAuth from 'next-auth';
 import Credentials from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
-import { prisma } from './prisma';
+import { prisma } from '@stockviewer/db';
 import { UserStatus } from '@prisma/client';
 
 declare module 'next-auth' {

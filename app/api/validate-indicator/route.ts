@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { validatePythonCode } from '@/lib/indicator-validator';
 import { executePythonIndicator, ResourceManifest, ResourceInfo } from '@/lib/python-executor';
 import { isPythonBusy } from '@/lib/python-child';
-import { prisma } from '@/lib/prisma';
+import { prisma } from '@stockviewer/db';
 import { detectDependencies } from '@/lib/detect-dependencies';
 import { getApiStorage } from '@/lib/api-auth';
 
