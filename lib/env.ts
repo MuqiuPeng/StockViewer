@@ -50,42 +50,6 @@ export const PYTHON_CONFIG = {
 } as const;
 
 /**
- * Data Storage Configuration
- */
-export const DATA_CONFIG = {
-  /**
-   * CSV data directory path - where user stores their stock CSV files
-   * This is a LOCAL path on the user's machine, not server storage
-   * Default: {project_root}/data/csv
-   */
-  CSV_DATA_PATH: getEnv('CSV_DATA_PATH', ''),
-
-  /**
-   * Maximum CSV file size in MB
-   * Default: 50
-   */
-  MAX_CSV_SIZE_MB: getEnvNumber('MAX_CSV_SIZE_MB', 50),
-
-  /**
-   * Indicators storage file
-   * Default: {project_root}/data/indicators/indicators.json
-   */
-  INDICATORS_FILE: getEnv('INDICATORS_FILE', ''),
-} as const;
-
-/**
- * Get the resolved CSV data path
- * Returns the configured path or defaults to {cwd}/data/csv
- */
-export function getCsvDataPath(): string {
-  if (DATA_CONFIG.CSV_DATA_PATH) {
-    return DATA_CONFIG.CSV_DATA_PATH;
-  }
-  // Default to project's data/csv folder
-  return require('path').join(process.cwd(), 'data', 'csv');
-}
-
-/**
  * Performance & Caching Configuration
  */
 export const CACHE_CONFIG = {
@@ -147,7 +111,6 @@ export const DEBUG_CONFIG = {
  */
 export const ENV = {
   PYTHON: PYTHON_CONFIG,
-  DATA: DATA_CONFIG,
   CACHE: CACHE_CONFIG,
   SECURITY: SECURITY_CONFIG,
   DEBUG: DEBUG_CONFIG,

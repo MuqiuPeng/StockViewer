@@ -15,6 +15,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+import { repoRoot, sandboxDir } from './paths';
+
 /* ── What must stay unreachable ──────────────────────────────────────────
  *
  * One list, three enforcers: the in-process guard reads it from the
@@ -33,12 +35,16 @@ import path from 'path';
  * needs neither a connection nor a password.
  */
 function deniedPaths(): string[] {
-  const root = process.cwd();
+  // repoRoot(), not process.cwd(): cwd is apps/web under `npm run dev -w
+  // apps/web`, and a list rooted there denies nothing that exists while the
+  // real .env stays readable. repoRoot() throws rather than guessing, which
+  // is what keeps that from being silent.
+  const root = repoRoot();
   const home = os.homedir();
   return [
     path.join(root, '.env'),
     path.join(root, '.env.local'),
-    path.join(root, 'data-service', '.env'),
+    path.join(root, 'apps', 'data-service', '.env'),
     path.join(root, '.pgdata'),
     path.join(root, '.git'),
     path.join(home, '.ssh'),
@@ -50,7 +56,7 @@ function deniedPaths(): string[] {
 }
 
 /** Directory holding the sitecustomize that installs the in-process guard. */
-const GUARD_DIR = path.join(process.cwd(), 'data', 'python', 'sandbox');
+const GUARD_DIR = sandboxDir();
 
 /**
  * Environment for a Python child.
@@ -140,8 +146,8 @@ function darwinConfinement(): Confinement | null {
     '(deny file-read*',
     // .env matches as a prefix so .env.production and friends are covered
     // without having to predict their names.
-    `  (regex #"^${sbRegex(path.join(process.cwd(), '.env'))}")`,
-    `  (regex #"^${sbRegex(path.join(process.cwd(), 'data-service', '.env'))}")`,
+    `  (regex #"^${sbRegex(path.join(repoRoot(), '.env'))}")`,
+    `  (regex #"^${sbRegex(path.join(repoRoot(), 'apps', 'data-service', '.env'))}")`,
     ...denied.map((p) => `  (subpath "${p}")`),
     '  )',
     '(deny network*)',
@@ -217,7 +223,20 @@ const confinement: Confinement | null = (() => {
     return null;
   }
 
-  const target = path.join(process.cwd(), '.env');
+  // Probe a denied path that is really there. Reading an absent file and
+  // reading a denied one are indistinguishable from the outside, so a probe
+  // aimed at nothing passes whatever the sandbox does — which is how a wrong
+  // root would have reported a working sandbox while protecting none of the
+  // real files. Directories are excluded because a permitted read of one
+  // raises EISDIR, which would read as the target being absent.
+  const deniedFiles = deniedPaths().filter((p) => {
+    try {
+      return fs.statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  });
+  const target = deniedFiles[0] ?? path.join(repoRoot(), '.env');
   const script =
     `try{require('fs').readFileSync(${JSON.stringify(target)});console.log('READABLE')}` +
     `catch(e){console.log(e.code==='EPERM'||e.code==='EACCES'?'DENIED':'ABSENT')}`;
@@ -225,14 +244,19 @@ const confinement: Confinement | null = (() => {
   const probe = spawnSync(cmd, argv, { encoding: 'utf8', timeout: 15_000 });
   const verdict = (probe.stdout || '').trim();
 
-  if (probe.status === 0 && (verdict === 'DENIED' || verdict === 'ABSENT')) {
+  // ABSENT is a pass only when there was nothing to deny in the first place —
+  // a fresh clone with no .env and no cluster. Once a denied file exists, the
+  // only acceptable answer is that the denial bit.
+  const acceptable = deniedFiles.length > 0 ? ['DENIED'] : ['DENIED', 'ABSENT'];
+  if (probe.status === 0 && acceptable.includes(verdict)) {
     return candidate;
   }
 
   console.warn(
-    '[python-child] %s did not confine as expected (%s); user Python will run ' +
-      'under the in-process guard alone.',
+    '[python-child] %s did not confine as expected (probing %s gave %s); ' +
+      'user Python will run under the in-process guard alone.',
     candidate.kind,
+    target,
     verdict || probe.stderr?.trim() || `exit ${probe.status}`
   );
   return null;
@@ -321,6 +345,38 @@ export async function withPythonSlot<T>(fn: () => Promise<T>): Promise<T> {
   } finally {
     release();
   }
+}
+
+/**
+ * Which interpreter runs the executors.
+ *
+ * Both callers that spawn one had their own copy of this, each resolving the
+ * virtualenv against `process.cwd()`. Two copies of a cwd-relative lookup is
+ * two chances to find a different interpreter than the one the executors'
+ * dependencies are installed into, and under a workspace cwd neither copy
+ * found anything — they fell through to the system `python3`, which has no
+ * pandas. One copy, rooted at the repository.
+ */
+export function resolvePythonExecutable(configured: string): string {
+  if (configured !== 'python3') return configured;
+
+  const root = repoRoot();
+  for (const venvName of ['python-venv', 'venv', '.venv']) {
+    const candidate =
+      process.platform === 'win32'
+        ? path.join(root, venvName, 'Scripts', 'python.exe')
+        : path.join(root, venvName, 'bin', 'python');
+    // Not resolved through its symlink: that breaks the venv, which is how
+    // the interpreter finds its own site-packages.
+    if (fs.existsSync(candidate)) return candidate;
+  }
+
+  console.warn(
+    '[python-child] no virtualenv found under %s; falling back to system ' +
+      'python3, which is unlikely to have pandas.',
+    root
+  );
+  return 'python3';
 }
 
 /** Spawn a Python child under the shared environment and confinement policy. */

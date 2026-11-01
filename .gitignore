@@ -41,18 +41,18 @@ secrets/
 /backups/
 /dumps/
 
-# The file-based storage mode this app supports as an alternative to Postgres.
-# The directories may not exist in a database-mode install, which is exactly
-# why the rules are here in advance rather than added the day one appears.
-/data/*
-!/data/python/
-/data/python/__pycache__/
+# Deny-by-default for a data directory, kept although nothing writes one
+# today: the Python executors used to live at data/python and moved to
+# packages/executors, so the exception that used to carve them out is gone.
+# The rule stays because the cost of keeping it is a line and the cost of
+# needing it and not having it is a committed dataset.
+/data/
 *.py[cod]
 
 # Anything an installation exports or a user uploads.
 /uploads/
 /exports/
-/data-service/exports/
+/apps/data-service/exports/
 
 
 # ── Build output and dependencies ───────────────────────────────────────

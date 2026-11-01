@@ -7,15 +7,29 @@ from pydantic_settings import BaseSettings
 from functools import lru_cache
 
 # The service runs with its own directory as the working directory, so a bare
-# ".env" only ever finds data-service/.env. What it needs is spread across
+# ".env" only ever finds apps/data-service/.env. What it needs is spread across
 # three files: the repository root .env holds shared settings, .env.local holds
-# DATABASE_URL because the web app owns it, and data-service/.env is for
+# DATABASE_URL because the web app owns it, and apps/data-service/.env is for
 # service-only overrides. All three are declared rather than relying on a
 # supervisor to inject them — the service was reaching the database only
 # because the launcher happened to export DATABASE_URL, and would have fallen
 # back silently under any other way of starting it.
+#
+# The root is two levels up, not one: this service lives at apps/data-service.
+# Getting that wrong does not raise anything — pydantic-settings skips an
+# env_file that is not there — so the service would start with no provider
+# credentials and no DATABASE_URL and fail later, somewhere unrelated. The
+# assertion below is cheap insurance against exactly that.
 _SERVICE_DIR = Path(__file__).resolve().parent.parent
-_REPO_ROOT = _SERVICE_DIR.parent
+_REPO_ROOT = _SERVICE_DIR.parent.parent
+
+if not (_REPO_ROOT / "package-lock.json").exists():  # pragma: no cover
+    raise RuntimeError(
+        f"expected the repository root at {_REPO_ROOT}, but it carries no "
+        "package-lock.json. This service reads .env and .env.local from "
+        "there, and a wrong root means it starts with neither rather than "
+        "refusing to start."
+    )
 
 
 class Settings(BaseSettings):

@@ -1,10 +1,7 @@
-import { spawnPython, withPythonSlot } from './python-child';
-import path from 'path';
+import { resolvePythonExecutable, spawnPython, withPythonSlot } from './python-child';
 import { existsSync } from 'fs';
 import { PYTHON_CONFIG } from './env';
-
-// Get project root directory - use the location of this file to find it
-const PROJECT_ROOT = path.resolve(__dirname, '..');
+import { executorScript } from './paths';
 
 /**
  * Resource info for import manifest
@@ -63,48 +60,20 @@ export async function executePythonIndicator(
   input: PythonExecutionInput
 ): Promise<PythonExecutionResult> {
   return withPythonSlot(() => new Promise<PythonExecutionResult>((resolve, reject) => {
-    // Try both PROJECT_ROOT and process.cwd() for finding files
-    const projectRoot = existsSync(path.join(PROJECT_ROOT, 'package.json')) ? PROJECT_ROOT : process.cwd();
-    const pythonScript = path.join(projectRoot, 'data', 'python', 'executor.py');
+    const pythonScript = executorScript('executor.py');
 
     // Check if executor.py exists
     if (!existsSync(pythonScript)) {
-      reject(new Error(`Python script not found: ${pythonScript}. Project root: ${projectRoot}`));
+      reject(
+        new Error(
+          `Python script not found: ${pythonScript}. Set SV_EXECUTORS_DIR if ` +
+            'the executors live elsewhere.'
+        )
+      );
       return;
     }
 
-    // Get Python executable - prioritize env config, then local venv
-    let pythonExecutable: string = 'python3';
-
-    // Check for configured Python path first
-    if (PYTHON_CONFIG.EXECUTABLE !== 'python3') {
-      // Custom Python executable specified in env
-      pythonExecutable = PYTHON_CONFIG.EXECUTABLE;
-    } else {
-      // Look for local venv in project directory (check multiple common names)
-      const venvNames = ['python-venv', 'venv', '.venv'];
-      let foundVenv = false;
-
-      for (const venvName of venvNames) {
-        const venvPath = path.join(projectRoot, venvName);
-        const venvPython = process.platform === 'win32'
-          ? path.join(venvPath, 'Scripts', 'python.exe')
-          : path.join(venvPath, 'bin', 'python');
-
-        if (existsSync(venvPython)) {
-          // Use the venv python directly (don't resolve symlink - it breaks venv!)
-          pythonExecutable = venvPython;
-          foundVenv = true;
-          break;
-        }
-      }
-
-      if (!foundVenv) {
-        // Fall back to python3
-        pythonExecutable = 'python3';
-        console.warn('[Python Executor] venv not found in', projectRoot, '- using system python3');
-      }
-    }
+    const pythonExecutable = resolvePythonExecutable(PYTHON_CONFIG.EXECUTABLE);
 
     // Spawn Python process
     const pythonProcess = spawnPython(pythonExecutable, [pythonScript]);

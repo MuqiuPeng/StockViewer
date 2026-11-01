@@ -1,7 +1,6 @@
-import { spawnPython, withPythonSlot } from './python-child';
-import path from 'path';
-import { existsSync } from 'fs';
+import { resolvePythonExecutable, spawnPython, withPythonSlot } from './python-child';
 import { PYTHON_CONFIG } from './env';
+import { executorScript } from './paths';
 import { PortfolioConstraints } from './types/portfolio';
 
 export interface BacktestInput {
@@ -93,7 +92,7 @@ export async function executeBacktest(
   input: BacktestInput
 ): Promise<BacktestResult> {
   return withPythonSlot(() => new Promise<BacktestResult>((resolve, reject) => {
-    const pythonScript = path.join(process.cwd(), 'data', 'python', 'backtest-executor.py');
+    const pythonScript = executorScript('backtest_executor.py');
 
     // Validate input
     if (!input.strategyType) {
@@ -111,36 +110,7 @@ export async function executeBacktest(
       return;
     }
 
-    // Get Python executable - prioritize env config, then local venv
-    let pythonExecutable: string = 'python3';
-
-    // Check for configured Python path first
-    if (PYTHON_CONFIG.EXECUTABLE !== 'python3') {
-      // Custom Python executable specified in env
-      pythonExecutable = PYTHON_CONFIG.EXECUTABLE;
-    } else {
-      // Look for local venv in project directory (check multiple common names)
-      const venvNames = ['python-venv', 'venv', '.venv'];
-      let foundVenv = false;
-
-      for (const venvName of venvNames) {
-        const venvPath = path.join(process.cwd(), venvName);
-        const venvPython = process.platform === 'win32'
-          ? path.join(venvPath, 'Scripts', 'python.exe')
-          : path.join(venvPath, 'bin', 'python');
-
-        if (existsSync(venvPython)) {
-          pythonExecutable = venvPython;
-          foundVenv = true;
-          break;
-        }
-      }
-
-      if (!foundVenv) {
-        // Fall back to python3
-        pythonExecutable = 'python3';
-      }
-    }
+    const pythonExecutable = resolvePythonExecutable(PYTHON_CONFIG.EXECUTABLE);
 
     // Spawn Python process
     const pythonProcess = spawnPython(pythonExecutable, [pythonScript]);
