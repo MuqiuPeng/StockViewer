@@ -25,8 +25,9 @@ indicators and backtests.
 
 ```bash
 python3 -m venv python-venv
-./python-venv/bin/pip install -r data-service/requirements.txt
-./python-venv/bin/pip install -r data/python/requirements.txt
+./python-venv/bin/pip install -r apps/data-service/requirements.txt
+./python-venv/bin/pip install -r packages/executors/requirements.txt
+./python-venv/bin/pip install -e packages/ccm
 ```
 
 ## 3. Database
@@ -64,7 +65,7 @@ fetching each key from its provider's dashboard and entering it again.
 ## 5. Schema and first account
 
 ```bash
-npx prisma migrate deploy
+npm run db:migrate:deploy
 npx tsx scripts/create-admin.ts <email> <password>
 ```
 
@@ -76,7 +77,7 @@ approves it, so the first account has to be made here.
 Two processes, two terminals.
 
 ```bash
-cd data-service && ../python-venv/bin/python -m app
+cd apps/data-service && ../../python-venv/bin/python -m app
 ```
 
 ```bash
@@ -126,7 +127,7 @@ lsof -ti:3000 | xargs kill -9
 executor requirements:
 
 ```bash
-./python-venv/bin/pip install -r data/python/requirements.txt
+./python-venv/bin/pip install -r packages/executors/requirements.txt
 ```
 
 **User Python cannot read a file it expects to.** It is confined on purpose.

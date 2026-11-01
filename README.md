@@ -114,8 +114,9 @@ npm install
 
 # 2. Python 环境（data-service 与指标/回测执行器共用）
 python3 -m venv python-venv
-./python-venv/bin/pip install -r data-service/requirements.txt
-./python-venv/bin/pip install -r data/python/requirements.txt
+./python-venv/bin/pip install -r apps/data-service/requirements.txt
+./python-venv/bin/pip install -r packages/executors/requirements.txt
+./python-venv/bin/pip install -e packages/ccm
 
 # 3. 项目本地的 PostgreSQL 16
 initdb -D .pgdata --encoding=UTF8 --locale=C
@@ -126,11 +127,11 @@ createdb stockviewer
 cp .env.local.example .env.local
 
 # 5. 建表并创建管理员
-npx prisma migrate deploy
+npm run db:migrate:deploy
 npx tsx scripts/create-admin.ts <email> <password>
 
 # 6. 启动数据服务
-cd data-service && ../python-venv/bin/python -m app
+cd apps/data-service && ../../python-venv/bin/python -m app
 
 # 7. 另开一个终端启动 web
 npm run dev
@@ -250,100 +251,61 @@ data-service 只监听回环，由 web 服务端调用并携带 `DATA_SERVICE_TO
 
 ## Project Structure
 
+One repository, four sub-projects. `apps/` holds what gets deployed, `packages/`
+holds what they depend on.
+
 ```
-/app
-  /api                  # API routes
-    /datasets           # Dataset CRUD
-    /indicators         # Indicator management
-    /strategies         # Strategy management
-    /groups             # Group management
-    /backtest           # Backtesting engine
-    /backtest-history   # Backtest history CRUD & rerun
-  /viewer               # Stock viewer page
-  /backtest             # Backtesting page
-  /datasets             # Dataset management page
-  page.tsx              # Homepage
+apps/
+  web/                      Next.js: pages, API routes, components
+    app/                    App Router — /api lives here, with the pages
+    components/             React components
+    lib/                    web-only: auth, logging, the Python bridge,
+                            the data service client, indicator computation
+  data-service/             FastAPI data collection (:8000)
+    app/providers/          EastMoney, Tencent, Tiingo, EODHD, Alpaca, …
+    app/routing/            which provider serves which market
+    app/credentials/        encrypted provider keys
 
-/components             # React components
-  ChartPanel.tsx        # Triple chart display
-  BacktestResults.tsx   # Results visualization with pie charts
-  IndicatorManager.tsx  # Indicator CRUD UI
-  StrategyManager.tsx   # Strategy CRUD UI
-  GroupManager.tsx      # Group management UI
-  BacktestHistorySidebar.tsx      # History sidebar with batch ops
-  BacktestHistoryDetailModal.tsx  # History detail/edit modal
+packages/
+  db/                       @stockviewer/db — schema, migrations, data access
+    prisma/                 schema.prisma and its migrations
+    src/                    the client, the user-scoped stores, the CRUD
+  shared/                   @stockviewer/shared — types crossing client/server
+  executors/                Python that runs user code, spawned per request
+    src/                    executor, backtest engine, MyTT, the sandbox guard
+  ccm/                      convergent cross mapping, a standalone library
 
-/lib                    # Utilities & business logic
-  csv.ts                # CSV operations
-  python-executor.ts    # Python subprocess execution
-  backtest-executor.ts  # Backtesting orchestration
-  indicator-storage.ts  # Indicator persistence
-  strategy-storage.ts   # Strategy persistence
-  group-storage.ts      # Group persistence
-  backtest-history-storage.ts  # Backtest history persistence
-  dataset-metadata.ts   # Dataset metadata management
-
-/data                   # Data storage
-  /csv                  # Stock CSV files
-  /indicators           # indicators.json
-  /strategies           # strategies.json
-  /groups               # groups.json
-  /backtest-history     # history.json
-  /datasets             # Dataset metadata
-  /python               # Python execution scripts
-    executor.py         # Indicator calculator
-    backtest-executor.py # Backtesting engine with validation
-    MyTT.py             # Technical analysis library
-    requirements.txt    # Python dependencies
-
-/scripts                # Automation scripts
-  setup.js              # Automated project setup
+scripts/                    one-off operational scripts, run from the root
+docs/                       the rest of the documentation
+python-venv/                one virtualenv, shared by all the Python above
+.env, .env.local            read by the web app, the data service and scripts
 ```
 
-## Data Folder Setup
+The boundaries are enforced by package dependency, not by convention:
 
-**Important**: Before using StockViewer, you need to set up a folder for your CSV stock data files.
+- a component may import `@stockviewer/shared`
+- an API route may import `@stockviewer/shared` and `@stockviewer/db`
+- a component importing `@stockviewer/db` is a mistake visible in the import
 
-### Default Setup (Recommended for First-Time Users)
+`app/api` stays inside `apps/web` because the App Router requires pages and
+routes in one project. Each package README says what belongs in it.
 
-The application will automatically use `{project_root}/data/csv` as the default data folder. This folder is created automatically when you run `npm run setup`.
+## Storage
 
-```bash
-# Verify the data folder exists
-ls data/csv
-```
+Everything an installation accumulates is in Postgres. There is no data folder
+and no CSV directory to set up.
 
-### Custom Data Folder
+| What | Where |
+|---|---|
+| Stock metadata and OHLC bars | `Stock`, `StockPrice` — shared by all users |
+| Indicators, strategies, groups, view settings | per-user rows, reached through the storage layer in `@stockviewer/db` |
+| Backtest history | per-user rows, with the full result kept |
+| Computed indicator values | `IndicatorValue`, versioned so a changed indicator invalidates its cache |
+| Users, teams, tickets, posts, logs | their own tables, queried directly |
+| Provider API keys | encrypted at rest (AES-256-GCM) under `CREDENTIAL_ENCRYPTION_KEY` |
 
-If you have existing stock CSV files in another location, configure the path in `.env.local`:
-
-```bash
-# Point to your existing CSV data folder
-CSV_DATA_PATH=/path/to/your/stock-data
-```
-
-### Data Folder Structure
-
-Your CSV data folder should contain stock CSV files with OHLC data:
-- Files should have headers: `date`, `open`, `high`, `low`, `close`, `volume`
-- Date format: `YYYY-MM-DD`
-- One file per stock (e.g., `000001.csv`, `600519.csv`)
-
-Example CSV format:
-```csv
-date,open,high,low,close,volume
-2024-01-02,10.50,10.80,10.40,10.75,1234567
-2024-01-03,10.75,11.00,10.60,10.90,2345678
-```
-
-### Storage Architecture
-
-| Data Type | Storage Location |
-|-----------|------------------|
-| CSV files | Local folder (`CSV_DATA_PATH`) - shared |
-| Indicators | Server database (per-user in database mode) |
-| Strategies | Server database (per-user in database mode) |
-| Dataset metadata | Server database (for restoration if files deleted) |
+Bars arrive from the data service rather than from files on disk; see
+[docs/DATA_SOURCES.md](docs/DATA_SOURCES.md).
 
 ## Configuration
 
@@ -417,7 +379,7 @@ Error: Failed to fetch stock data
 ```
 **Solution**: 确保 data-service 正在运行
 ```bash
-cd data-service && ../python-venv/bin/python -m app
+cd apps/data-service && ../../python-venv/bin/python -m app
 curl http://localhost:8000/api/v1/health
 ```
 

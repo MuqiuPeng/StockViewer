@@ -56,16 +56,17 @@ fix-up commits before opening the PR.
 
 ## Database Migrations
 
-Schema is managed by Prisma migrations under `prisma/migrations/`.
+Schema is managed by Prisma migrations under
+`packages/db/prisma/migrations/`.
 
-- Edit `prisma/schema.prisma`.
-- Run `npx prisma migrate dev --name <short_description>` against a local
+- Edit `packages/db/prisma/schema.prisma`.
+- Run `npm run db:migrate -- --name <short_description>` against a local
   Postgres to generate a migration directory.
 - Commit the generated `migration.sql` along with the schema change.
 - Never run `prisma db push` against a database holding real data — reconcile
-  it by running `npx prisma migrate deploy`.
+  it by running `npm run db:migrate:deploy`.
 
-For a database that pre-dates the `prisma/migrations/` directory, run once
+For a database that pre-dates the migrations directory, run once
 before the first `migrate deploy`:
 
 ```

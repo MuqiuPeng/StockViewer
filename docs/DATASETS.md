@@ -459,7 +459,7 @@ date,open,high,low,close,volume,turnover,amplitude,change_pct,change_amount,turn
 Error: Failed to fetch stock data
 ```
 **Solutions:**
-1. Ensure the data service is running (`cd data-service && ../python-venv/bin/python -m app`)
+1. Ensure the data service is running (`cd apps/data-service && ../../python-venv/bin/python -m app`)
 2. Check API URL in `.env.local`
 3. Verify stock symbol is valid (6-digit code)
 4. Test API endpoint manually:

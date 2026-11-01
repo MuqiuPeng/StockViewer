@@ -5,7 +5,7 @@ series drive another, in a system where the relationship need not be linear.
 
 Pure numpy. No subprocesses, no network, no file access — so it imports from
 user-authored Python running under StockViewer's audit-hook sandbox
-(`data/python/sandbox/sitecustomize.py`), which blocks all three.
+(`packages/executors/src/sandbox/sitecustomize.py`), which blocks all three.
 
 ## Install
 

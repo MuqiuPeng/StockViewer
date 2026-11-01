@@ -21,12 +21,15 @@ echo "== Paths that should never be tracked =="
 # what is on disk is not what is published.
 while IFS= read -r f; do
   case "$f" in
-    .env|.env.*) [[ "$f" == *.example ]] || report "secret file: $f" ;;
+    .env|.env.*|*/.env|*/.env.*)
+                          [[ "$f" == *.example ]] || report "secret file: $f" ;;
     .pgdata/*)            report "database cluster: $f" ;;
-    data/csv/*|data/strategies/*|data/indicators/*|data/groups/*)
-                          report "installation data: $f" ;;
-    data/datasets/*|data/backtest-history/*|data/view-settings/*)
-                          report "installation data: $f" ;;
+    # The directories a file-storage install used to accumulate. The app has
+    # been on Postgres for some time and data/ no longer exists, but these stay
+    # for the reason the whole script does: the cost of a case that never fires
+    # is a line, and these fire on exactly the files that must never be
+    # published.
+    data/*)               report "installation data: $f" ;;
     *.dump|*.pgdump|*.backup) report "database dump: $f" ;;
     *.sql) [[ "$f" == *prisma/migrations/* ]] || report "stray SQL: $f" ;;
     *.pem|*.key)          report "key material: $f" ;;
